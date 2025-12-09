@@ -1,8 +1,9 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
-import { Cat, ChevronLeft, ChevronRight, Plus, Upload, Wallet, TrendingUp, DollarSign, Calendar, X, Save, FileJson, ArrowUpRight, ArrowDownRight, ArrowLeft, Edit2, Trash2, Info, Check, TrendingDown, RefreshCw, FileText, Mountain, ArrowDown, AlertCircle, Building2, Lock, PieChart, Download, StickyNote, ShoppingBag, Filter, ChevronDown, PiggyBank, Activity } from 'lucide-react';
+import { Cat, ChevronLeft, ChevronRight, Plus, Upload, Wallet, TrendingUp, DollarSign, Calendar, X, Save, FileJson, ArrowUpRight, ArrowDownRight, ArrowLeft, Edit2, Trash2, Info, Check, TrendingDown, RefreshCw, FileText, Mountain, ArrowDown, AlertCircle, Building2, Lock, PieChart, Download, StickyNote, ShoppingBag, Filter, ChevronDown, PiggyBank, Activity, Sparkles } from 'lucide-react';
 
 // --- CSS 樣式與 Tailwind 設定模擬 ---
+// 原本 index.css 的內容與 tailwind.config.js 的動畫設定整合於此
 const GlobalStyles = () => (
   <style>{`
     @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@400;600;700&family=Inter:wght@300;400;500;600&display=swap');
@@ -544,6 +545,20 @@ const AddAssetModal = ({ onClose, onSave, historyRecords }) => {
         }
     };
 
+    // --- 新增：取得上筆紀錄的資產建議 ---
+    const prevAssets = useMemo(() => {
+        if (!date) return [];
+        const currentTimestamp = new Date(date).getTime();
+        const dates = Object.keys(historyRecords)
+            .filter(d => new Date(d).getTime() < currentTimestamp) // 找出比選擇日期更早的日期
+            .sort((a, b) => new Date(b) - new Date(a)); // 降序排列，取最近的
+        
+        if (dates.length === 0) return [];
+        return historyRecords[dates[0]]; // 回傳該日期的所有資產
+    }, [date, historyRecords]);
+
+    const suggestions = prevAssets.filter(a => a.type === type);
+
     const fetchRate = () => {
         if (currency === 'TWD') return;
         setIsFetchingRate(true);
@@ -617,6 +632,33 @@ const AddAssetModal = ({ onClose, onSave, historyRecords }) => {
                         <button onClick={() => { setType('fixed'); setName(''); }} className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${type === 'fixed' ? 'bg-white shadow text-teal-700' : 'text-slate-400 hover:text-slate-600'}`}>固定資產</button>
                         <button onClick={() => { setType('floating'); setName(''); }} className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${type === 'floating' ? 'bg-white shadow text-teal-700' : 'text-slate-400 hover:text-slate-600'}`}>浮動資產</button>
                     </div>
+
+                    {/* --- 新增：快速帶入區域 --- */}
+                    {suggestions.length > 0 && (
+                        <div className="mb-1 -mt-1">
+                            <label className="text-[10px] text-teal-600 font-bold mb-2 ml-1 flex items-center gap-1">
+                                <Sparkles size={10} /> 快速帶入 (來自上筆紀錄)
+                            </label>
+                            <div className="flex flex-wrap gap-2">
+                                {suggestions.map(asset => (
+                                    <button
+                                        key={asset.id}
+                                        onClick={() => {
+                                            setName(asset.name);
+                                            setCurrency(asset.currency || 'TWD');
+                                            setExchangeRate(String(asset.exchangeRate || 1));
+                                            setOriginalAmount(''); // 清空原幣金額
+                                            setAmount(''); // 清空台幣金額
+                                        }}
+                                        className="px-2 py-1.5 bg-slate-50 hover:bg-teal-50 text-slate-500 hover:text-teal-700 rounded-lg text-xs border border-slate-200 hover:border-teal-200 transition-all font-serif-tc shadow-sm"
+                                    >
+                                        {asset.name}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
                     <div>
                         <label className="text-xs text-slate-400 font-bold mb-1 block ml-1">名稱</label>
                         <div className="relative">
