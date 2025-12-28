@@ -1122,7 +1122,7 @@ const DetailView = ({ dateStr, data, onBack, onUpdateData, assetNames }) => {
                                         <div key={expense.id} className="p-4 flex justify-between items-center hover:bg-slate-50/50 transition-colors">
                                             <div className="flex-1 min-w-0 pr-4">
                                                 <div className="flex items-center gap-2 mb-1">
-                                                    <span className="font-serif-tc font-bold text-slate-700 truncate">{expense.name}</span>
+                                                    <span className="font-serif-tc font-bold text-slate-700 truncate">{expense.name || expense.subCategory || expense.category}</span>
                                                     <span className="text-[10px] px-1.5 py-0.5 bg-slate-100 text-slate-500 rounded whitespace-nowrap">{expense.category}-{expense.subCategory}</span>
                                                 </div>
                                                 <div className="flex items-center gap-3 text-xs text-slate-400 font-inter">
@@ -1254,7 +1254,7 @@ const StatementModal = ({ data, onClose }) => {
                                     {checkedItems.has(item.id) && <Check size={12} className="text-white" />}
                                 </div>
                                 <div>
-                                    <div className="font-bold text-slate-700 text-sm">{item.name}</div>
+                                    <div className="font-bold text-slate-700 text-sm">{item.name || item.subCategory || item.category}</div>
                                     <div className="text-xs text-slate-400 font-inter">{item.date} • {item.category}</div>
                                 </div>
                             </div>
