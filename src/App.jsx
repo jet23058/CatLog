@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, PieChart, Pie, Cell } from 'recharts';
-import { Cat, ChevronLeft, ChevronRight, Plus, Upload, Wallet, TrendingUp, DollarSign, Calendar, X, Save, FileJson, ArrowUpRight, ArrowDownRight, ArrowLeft, Edit2, Trash2, Info, Check, TrendingDown, RefreshCw, FileText, Mountain, ArrowDown, AlertCircle, Building2, Lock, PieChart as PieChartIcon, Download, StickyNote, ShoppingBag, Filter, ChevronDown, PiggyBank, Activity, Sparkles, LogOut, Coins, ClipboardCheck } from 'lucide-react';
+import { Cat, ChevronLeft, ChevronRight, Plus, Upload, Wallet, TrendingUp, DollarSign, Calendar, X, Save, FileJson, ArrowUpRight, ArrowDownRight, ArrowLeft, Edit2, Trash2, Info, Check, TrendingDown, RefreshCw, FileText, Mountain, ArrowDown, AlertCircle, Building2, Lock, PieChart as PieChartIcon, Download, StickyNote, ShoppingBag, Filter, ChevronDown, PiggyBank, Activity, Sparkles, LogOut, Coins, ClipboardCheck, LayoutGrid } from 'lucide-react';
 
 // --- CSS 樣式與 Tailwind 設定模擬 ---
 // 原本 index.css 的內容與 tailwind.config.js 的動畫設定整合於此
@@ -55,7 +55,8 @@ const INITIAL_DATA = {
     "records": {},
     "memos": {},
     "incomes": {},
-    "expenses": {}
+    "expenses": {},
+    "fireSettings": { "withdrawalRate": 4.0 }
 };
 
 // --- 工具函數 ---
@@ -1282,6 +1283,84 @@ const StatementModal = ({ data, onClose }) => {
     );
 };
 
+const FIREModal = ({ fireStats, yearlyStats = [], onRateChange, onClose }) => {
+    const [localRate, setLocalRate] = useState(fireStats.rate);
+    useEffect(() => { setLocalRate(fireStats.rate); }, [fireStats.rate]);
+    const handleBlur = () => { onRateChange(localRate); };
+
+    return (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-6 animate-[fadeIn_0.2s]">
+            <div className="bg-white w-full max-w-sm rounded-2xl p-6 shadow-2xl relative max-h-[85vh] flex flex-col">
+                <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"><X size={20} /></button>
+                <h3 className="text-xl font-serif-tc font-bold text-slate-800 mb-6 flex items-center gap-2 flex-shrink-0">
+                    <div className="bg-teal-100 p-2 rounded-lg"><Mountain size={20} className="text-teal-700" /></div> FIRE 目標
+                </h3>
+
+                <div className="bg-slate-50 p-5 rounded-2xl border border-slate-100 relative overflow-hidden group mb-4 flex-shrink-0">
+                    <div className="flex justify-between items-start mb-4">
+                        <div>
+                            <h3 className="text-sm font-serif-tc font-bold text-slate-500 flex items-center gap-2">
+                                達成進度
+                                <span className="bg-white text-slate-500 text-[10px] px-2 py-0.5 rounded-full font-inter border border-slate-200 flex items-center">
+                                    Rate:
+                                    <input
+                                        type="number"
+                                        step="0.1"
+                                        value={localRate}
+                                        onChange={(e) => setLocalRate(e.target.value)}
+                                        onBlur={handleBlur}
+                                        onKeyDown={(e) => e.key === 'Enter' && handleBlur()}
+                                        className="w-12 bg-transparent text-center outline-none border-b border-dashed border-slate-300 focus:border-teal-500 ml-1 font-bold text-teal-600 appearance-none"
+                                    />%
+                                </span>
+                            </h3>
+                            <p className="text-[10px] text-slate-400 mt-1">月均花費 {formatWan(fireStats.avgExpense)} / 年支預估 {formatWan(fireStats.avgExpense * 12)}</p>
+                        </div>
+                        <div className="text-right">
+                            <div className="text-xs text-slate-400 mb-1">目標資產</div>
+                            <div className="text-lg font-bold font-inter text-slate-800">{formatWan(fireStats.fireTarget)}</div>
+                        </div>
+                    </div>
+
+                    <div className="mb-2 flex justify-between items-end text-xs">
+                        <span className="font-bold text-teal-600 font-inter">{formatPercent(fireStats.progress)}</span>
+                        <span className="text-slate-400 font-inter">{formatWan(fireStats.currentAssets)} / {formatWan(fireStats.fireTarget)}</span>
+                    </div>
+                    <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
+                        <div
+                            className="h-full bg-gradient-to-r from-teal-400 to-emerald-500 rounded-full shadow-[0_0_10px_rgba(20,184,166,0.5)] transition-all duration-1000 ease-out"
+                            style={{ width: `${Math.min(fireStats.progress * 100, 100)}%` }}
+                        ></div>
+                    </div>
+                </div>
+                <div className="flex-1 overflow-y-auto min-h-0 mt-4 pr-1 -mr-2 custom-scrollbar">
+                    <div className="space-y-3 pr-2">
+                        <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 sticky top-0 bg-white z-10 py-1">年度花費統計</h4>
+                        {yearlyStats.map((stat) => (
+                            <div key={stat.year} className="flex items-center justify-between text-sm py-2 border-b border-slate-50 last:border-0">
+                                <span className="font-bold font-inter text-slate-600 w-12">{stat.year}</span>
+                                <div className="flex-1 px-2 text-right">
+                                    <span className="block font-inter font-bold text-slate-700">{formatWan(stat.avg)}</span>
+                                    <span className="text-[10px] text-slate-400">平均月花費</span>
+                                </div>
+                                <div className="w-px h-6 bg-slate-100 mx-2"></div>
+                                <div className="text-[10px] text-slate-400 flex flex-col items-end w-24">
+                                    <div className="flex items-center gap-1">Max <span className="font-inter text-slate-600">{formatWan(stat.max.val)}</span> ({stat.max.month}月)</div>
+                                    <div className="flex items-center gap-1">Min <span className="font-inter text-slate-600">{formatWan(stat.min.val)}</span> ({stat.min.month}月)</div>
+                                </div>
+                            </div>
+                        ))}
+                        {yearlyStats.length === 0 && <div className="text-center text-slate-300 text-xs py-2">尚無花費紀錄</div>}
+                        <div className="text-center text-xs text-slate-400 mt-4 pt-4 border-t border-slate-50 pb-2">
+                            設定您的提領率來動態計算 FIRE 目標金額。
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 import { AuthProvider, useAuth } from './AuthContext';
 import LoginPage from './LoginPage';
 import { db } from './firebase';
@@ -1408,6 +1487,8 @@ const AuthenticatedApp = () => {
     const [isSyncing, setIsSyncing] = useState(false);
 
     const [showStatementModal, setShowStatementModal] = useState(false);
+    const [showFIREModal, setShowFIREModal] = useState(false);
+    const [showAdvancedMenu, setShowAdvancedMenu] = useState(false);
 
     const fileInputRef = useRef(null);
     const expenseFileInputRef = useRef(null);
@@ -1639,6 +1720,59 @@ const AuthenticatedApp = () => {
         };
     }, [data, currentYear]);
 
+    // FIRE Stats
+    const fireStats = useMemo(() => {
+        const rate = data.fireSettings?.withdrawalRate || 4.0;
+        const expenseMonths = Object.keys(data.expenses || {});
+        let avgExpense = 0;
+
+        if (expenseMonths.length > 0) {
+            const totalExpense = Object.values(data.expenses).flat().reduce((sum, item) => sum + (item.amount || 0), 0);
+            avgExpense = totalExpense / expenseMonths.length;
+        }
+
+        const annualExpense = avgExpense * 12;
+        const fireTarget = rate > 0 ? annualExpense / (rate / 100) : 0;
+
+        // Current Assets (Latest)
+        let currentAssets = 0;
+        const sortedDates = Object.keys(data.records || {}).sort((a, b) => new Date(b) - new Date(a));
+        if (sortedDates.length > 0) {
+            currentAssets = data.records[sortedDates[0]].reduce((sum, i) => sum + (i.amount || 0), 0);
+        }
+
+        return { avgExpense, fireTarget, currentAssets, progress: fireTarget > 0 ? currentAssets / fireTarget : 0, rate };
+    }, [data]);
+
+    const fireYearlyStats = useMemo(() => {
+        const stats = {};
+        Object.entries(data.expenses || {}).forEach(([monthStr, items]) => {
+            const year = parseInt(monthStr.split('-')[0]);
+            const month = parseInt(monthStr.split('-')[1]);
+            const total = items.reduce((sum, i) => sum + (i.amount || 0), 0);
+
+            if (!stats[year]) stats[year] = { total: 0, months: 0, records: [] };
+            stats[year].total += total;
+            stats[year].months += 1;
+            stats[year].records.push({ month, val: total });
+        });
+
+        return Object.entries(stats)
+            .sort((a, b) => b[0] - a[0])
+            .map(([year, d]) => {
+                const max = d.records.reduce((prev, curr) => (prev.val > curr.val) ? prev : curr, { val: 0, month: 0 });
+                const min = d.records.reduce((prev, curr) => (prev.val < curr.val) ? prev : curr, { val: Infinity, month: 0 });
+                return {
+                    year,
+                    avg: d.total / d.months, // Average of recorded months
+                    max,
+                    min: min.val === Infinity ? { val: 0, month: 0 } : min
+                };
+            });
+    }, [data.expenses]);
+
+
+
     // Show loading if data is fetching to prevent overwriting cloud data with initial local state
     if (!isDataLoaded) {
         return (
@@ -1648,6 +1782,19 @@ const AuthenticatedApp = () => {
             </div>
         );
     }
+
+
+    const handleDataUpdate = (newData) => {
+        setData(newData);
+        saveToFirestoreChunks(newData);
+    };
+
+    const handleFireRateChange = (newRate) => {
+        const val = parseFloat(newRate);
+        if (isNaN(val) || val <= 0) return;
+        const newData = { ...data, fireSettings: { ...data.fireSettings, withdrawalRate: val } };
+        handleDataUpdate(newData);
+    };
 
     const handleShowAlert = (title, message) => setAlertInfo({ show: true, title, message });
 
@@ -1795,6 +1942,7 @@ const AuthenticatedApp = () => {
             {showAddAssetModal && <AddAssetModal onClose={() => setShowAddAssetModal(false)} onSave={handleSaveNewAsset} historyRecords={data.records} />}
 
             {showStatementModal && <StatementModal data={data} onClose={() => setShowStatementModal(false)} />}
+            {showFIREModal && <FIREModal fireStats={fireStats} yearlyStats={fireYearlyStats} onRateChange={handleFireRateChange} onClose={() => setShowFIREModal(false)} />}
             {/* Global Loading Overlay */}
             {(isImporting || isSaving || isSyncing) && (
                 <div className="fixed inset-0 z-[100] bg-black/50 backdrop-blur-sm flex items-center justify-center flex-col animate-[fadeIn_0.2s]">
@@ -1838,21 +1986,44 @@ const AuthenticatedApp = () => {
                                 {isSaving && <span className="text-[10px] bg-slate-100 text-slate-400 px-2 py-1 rounded-full animate-pulse border border-slate-200">儲存中...</span>}
                             </h1>
                         </div>
-                        <div className="flex gap-2 items-center">
+                        <div className="flex gap-2 items-center relative">
                             <button
-                                onClick={() => setShowStatementModal(true)}
+                                onClick={() => setShowAdvancedMenu(!showAdvancedMenu)}
                                 className="p-2 bg-white text-slate-400 hover:text-teal-600 hover:bg-teal-50 rounded-full transition-all border border-slate-100 shadow-sm"
-                                title="對帳單功能"
+                                title="進階功能"
                             >
-                                <ClipboardCheck size={18} />
+                                <LayoutGrid size={18} />
                             </button>
-                            <button
-                                onClick={() => setView('stock-analysis')}
-                                className="p-2 bg-white text-slate-400 hover:text-teal-600 hover:bg-teal-50 rounded-full transition-all border border-slate-100 shadow-sm"
-                                title="個股績效分析"
-                            >
-                                <TrendingUp size={18} />
-                            </button>
+
+                            {showAdvancedMenu && (
+                                <>
+                                    <div className="fixed inset-0 z-40" onClick={() => setShowAdvancedMenu(false)}></div>
+                                    <div className="absolute top-12 right-0 bg-white rounded-xl shadow-xl border border-slate-100 py-2 w-48 z-50 animate-[fadeIn_0.1s]">
+                                        <div className="px-3 py-2 text-xs font-bold text-slate-400 uppercase tracking-wider border-b border-slate-50 mb-1">Advanced</div>
+                                        <button
+                                            onClick={() => { setShowFIREModal(true); setShowAdvancedMenu(false); }}
+                                            className="w-full text-left px-4 py-3 hover:bg-slate-50 flex items-center gap-3 text-slate-700 transition-colors"
+                                        >
+                                            <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center"><Mountain size={16} /></div>
+                                            <span className="text-sm font-medium">FIRE 目標</span>
+                                        </button>
+                                        <button
+                                            onClick={() => { setShowStatementModal(true); setShowAdvancedMenu(false); }}
+                                            className="w-full text-left px-4 py-3 hover:bg-slate-50 flex items-center gap-3 text-slate-700 transition-colors"
+                                        >
+                                            <div className="w-8 h-8 rounded-lg bg-teal-50 text-teal-600 flex items-center justify-center"><ClipboardCheck size={16} /></div>
+                                            <span className="text-sm font-medium">對帳單</span>
+                                        </button>
+                                        <button
+                                            onClick={() => { setView('stock-analysis'); setShowAdvancedMenu(false); }}
+                                            className="w-full text-left px-4 py-3 hover:bg-slate-50 flex items-center gap-3 text-slate-700 transition-colors"
+                                        >
+                                            <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center"><TrendingUp size={16} /></div>
+                                            <span className="text-sm font-medium">個股績效</span>
+                                        </button>
+                                    </div>
+                                </>
+                            )}
                             <div className="relative group/user z-50">
                                 <img src={user.photoURL || "https://ui-avatars.com/api/?name=User"} alt="User" className="w-9 h-9 rounded-full border border-slate-200 shadow-sm cursor-pointer" />
                                 <div className="absolute top-10 right-0 w-32 bg-white rounded-xl shadow-xl border border-slate-100 p-1 opacity-0 group-hover/user:opacity-100 transition-all pointer-events-none group-hover/user:pointer-events-auto transform origin-top-right scale-95 group-hover/user:scale-100">
@@ -1994,6 +2165,10 @@ const AuthenticatedApp = () => {
                                 </div>
                             </div>
                         </div>
+
+
+
+
 
                         <h3 className="text-sm font-serif-tc text-slate-500 font-medium mb-4 flex justify-between items-center"><span>月份明細</span><span className="text-xs text-slate-300 font-inter font-light">點擊查看明細</span></h3>
                         <div className="space-y-0 divide-y divide-slate-100 border-t border-b border-slate-100">
