@@ -1,12 +1,13 @@
 {
   "name": "meow-assets",
   "private": true,
-  "version": "1.0.0",
+  "version": "2.6.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "vitest"
   },
   "dependencies": {
     "clsx": "^2.1.0",
@@ -18,12 +19,17 @@
     "tailwind-merge": "^2.2.1"
   },
   "devDependencies": {
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.1",
+    "@testing-library/user-event": "^14.6.1",
     "@types/react": "^18.2.64",
     "@types/react-dom": "^18.2.21",
     "@vitejs/plugin-react": "^4.2.1",
     "autoprefixer": "^10.4.18",
+    "jsdom": "^22.1.0",
     "postcss": "^8.4.35",
     "tailwindcss": "^3.4.1",
-    "vite": "^5.1.5"
+    "vite": "^5.1.5",
+    "vitest": "^4.0.16"
   }
 }

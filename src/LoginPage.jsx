@@ -35,7 +35,7 @@ const LoginPage = () => {
                     </div>
 
                     <h1 className="text-3xl font-serif-tc font-bold text-slate-800 mb-3">
-                        Meow Assets
+                        CatLog
                     </h1>
                     <p className="text-slate-500 mb-8 font-medium">
                         您的個人智慧資產管家

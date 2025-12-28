@@ -5,6 +5,27 @@
 
 
 
+## [2.6.0] - 2025-12-28
+
+### 🌟 品牌重塑 (Rebranding)
+- **全新名稱**：應用程式正式更名為 **CatLog**。
+  - 統一品牌識別：
+    - Browser Title: **CatLog**
+    - Login Screen: **CatLog**
+    - README: **CatLog**
+
+### ✨ 工程效能與品質 (Engineering Excellence)
+- **測試框架整合 (Testing Infrastructure)**：
+  - 引入 **Vitest** 與 **React Testing Library**，建立完整的單元測試與整合測試環境。
+  - **測試覆蓋**：
+    - 核心資料操作 (新增資產/收入、匯入/匯出)。
+    - 首頁與詳情頁 UI 互動。
+    - 驗證流程 (Authentication Flow)。
+  - **品質保證**：修復了 `DetailView` 資料並發更新 (Race Condition) 的潛在錯誤。
+- **CI/CD 自動化**：
+  - 建立 **GitHub Actions** Workflow (`ci.yml`)。
+  - 確保每次 Push 到 `main` 分支時自動執行完整測試套件，嚴格把關程式碼品質。
+
 ## [2.5.0] - 2025-12-28
 
 ### 🌟 品牌重塑 (Rebranding)

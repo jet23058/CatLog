@@ -1,13 +1,22 @@
-# Capital View 📊
+# CatLog 📊
 
-**Capital View** 是一個現代化、介面精美的個人資產與投資組合追蹤應用程式。專為重視數據分析的投資者設計，提供直觀的資產增長趨勢、月度收支管理，以及深度的個股績效分析。
+**CatLog** 是一個現代化、介面精美的個人資產與投資組合追蹤應用程式。專為重視數據分析的投資者設計，提供直觀的資產增長趨勢、月度收支管理，以及深度的個股績效分析。
 
-![Version](https://img.shields.io/badge/version-2.1.0-teal.svg)
+![Version](https://img.shields.io/badge/version-2.6.0-teal.svg)
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 
 ## ✨ 特色功能
 
-### 📈 投資組合分析 (New!)
+### 🔥 FIRE 目標計算器 (New!)
+- **即時試算**: 根據歷史花費自動計算「平均月支出」與「預估年支出」。
+- **參數調整**: 支援自訂「提領率 (Withdrawal Rate)」，模擬不同退休情境。
+- **進度追蹤**: 視覺化呈現 FIRE 目標達成率 (Progress Bar) 與年度花費統計。
+
+### 💳 對帳單核對
+- **智能篩選**: 可依照帳戶別 (信用卡/現金) 與日期區間篩選交易紀錄。
+- **快速核銷**: 互動式勾選核對，即時計算已確認金額，協助精準理財。
+
+### 📈 投資組合分析
 - **個股績效模組**: 專屬的「個股績效分析」儀表板。
 - **持倉分佈**: 自動計算持倉佔比 (Pie Chart) 與市值分佈。
 - **損益追蹤**: 結合 CSV 交易紀錄與每月浮動資產，精確計算未實現損益與報酬率 (ROI)。
@@ -33,10 +42,12 @@
 ## 🛠️ 技術棧
 
 - **Frontend**: React 18, Vite
-- **UI System**: Tailwind CSS (Custom Theme: Teal/Beige), Lucide Icons
+- **UI System**: Tailwind CSS (Custom Theme: Amber/Blue), Lucide Icons
 - **Visualization**: Recharts
 - **Backend/Cloud**: Firebase (Auth, Firestore)
 - **Deployment**: Vercel
+- **Testing**: Vitest, React Testing Library
+- **CI/CD**: GitHub Actions
 
 ## 🚀 快速開始
 
@@ -63,12 +74,35 @@ npm run dev
 ```
 開啟瀏覽器訪問 `http://localhost:5173`。
 
+### 4. 執行測試
+支援完整的單元測試與整合測試：
+
+```bash
+# 執行所有測試
+npm test
+
+# UI 測試模式
+npm run test:ui
+```
+
+### 5. CI/CD
+本專案已整合 GitHub Actions，在 `main` 分支的 Push 與 PR 事件將自動觸發 CI 流程，執行所有測試案例以確保程式碼品質。
+
 ## 📝 版本紀錄
 
-- **v2.1.0** (Current)
+- **v2.6.0** (Current)
+  - 品牌重塑：更名為 **CatLog**。
+  - 工程優化：導入 Vitest 測試框架與 GitHub Actions CI/CD。
+  - 介面升級：全新 Amber/Blue 主題色調。
+
+- **v2.5.0**
+  - 品牌重塑前導：視覺風格更新。
+  - 介面優化：背景與互動體驗改善。
+
+- **v2.1.0**
   - 新增 **個股績效分析** 模組。
   - 支援證券交易 CSV 匯入。
-  - App 更名為 **Capital View**。
+  - App 更名為 **CatLog**。
 
 - **v2.0.0**
   - 整合 Firebase 雲端儲存與身份驗證。

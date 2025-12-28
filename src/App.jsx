@@ -862,10 +862,13 @@ const DetailView = ({ dateStr, data, onBack, onUpdateData, assetNames }) => {
     const executeDeleteDay = () => onUpdateData('DELETE_DATE', dateStr);
 
     const handleSave = () => {
-        onUpdateData('UPDATE_RECORDS', { date: dateStr, assets: localAssets });
-        onUpdateData('UPDATE_MEMO', { date: dateStr, content: localMemo });
-        const cleanIncomes = localIncomes.map(({ _tempId, ...rest }) => rest);
-        onUpdateData('UPDATE_INCOME', { date: dateStr, sources: cleanIncomes });
+        const cleanIncomes = (localIncomes || []).map(({ _tempId, ...rest }) => rest);
+        onUpdateData('UPDATE_DETAILS', {
+            date: dateStr,
+            assets: localAssets,
+            memo: localMemo,
+            incomes: cleanIncomes
+        });
         setIsEditing(false);
     };
 
@@ -878,18 +881,18 @@ const DetailView = ({ dateStr, data, onBack, onUpdateData, assetNames }) => {
             {confirmDeleteDate && <ConfirmModal title="刪除整日紀錄" message={`確定要刪除 ${dateStr} 的所有資產與備忘嗎？\n此動作無法復原。`} onConfirm={executeDeleteDay} onCancel={() => setConfirmDeleteDate(false)} />}
 
             <header className="sticky top-0 bg-[#F9F9F7]/95 backdrop-blur-md border-b border-slate-200 px-6 py-4 flex items-center justify-between z-50">
-                <button onClick={onBack} className="p-2 -ml-2 text-slate-500 hover:text-slate-800 transition-colors"><ArrowLeft size={24} strokeWidth={1.5} /></button>
+                <button onClick={onBack} className="p-2 -ml-2 text-slate-500 hover:text-slate-800 transition-colors" aria-label="返回"><ArrowLeft size={24} strokeWidth={1.5} /></button>
                 <div className="flex flex-col items-center">
                     <div className="flex items-center gap-4">
-                        <button disabled={!prevDate} onClick={() => handleNavigate(prevDate)} className={`p-1 ${!prevDate ? 'text-slate-200' : 'text-slate-400 hover:text-slate-800'}`}><ChevronLeft size={20} /></button>
+                        <button disabled={!prevDate} onClick={() => handleNavigate(prevDate)} className={`p-1 ${!prevDate ? 'text-slate-200' : 'text-slate-400 hover:text-slate-800'}`} aria-label="上一日"><ChevronLeft size={20} /></button>
                         <span className="font-serif-tc font-bold text-xl text-slate-800 tracking-wide">{dateStr}</span>
-                        <button disabled={!nextDate} onClick={() => handleNavigate(nextDate)} className={`p-1 ${!nextDate ? 'text-slate-200' : 'text-slate-400 hover:text-slate-800'}`}><ChevronRight size={20} /></button>
+                        <button disabled={!nextDate} onClick={() => handleNavigate(nextDate)} className={`p-1 ${!nextDate ? 'text-slate-200' : 'text-slate-400 hover:text-slate-800'}`} aria-label="下一日"><ChevronRight size={20} /></button>
                     </div>
                 </div>
                 <div className="flex items-center gap-2 -mr-2">
-                    <button onClick={handleDeleteDay} className="p-2 rounded-full text-slate-400 hover:text-rose-500 hover:bg-rose-50 transition-colors" title="刪除整日紀錄"><Trash2 size={20} strokeWidth={1.5} /></button>
+                    <button onClick={handleDeleteDay} className="p-2 rounded-full text-slate-400 hover:text-rose-500 hover:bg-rose-50 transition-colors" title="刪除整日紀錄" aria-label="刪除整日紀錄"><Trash2 size={20} strokeWidth={1.5} /></button>
                     {(activeTab === 'assets' || activeTab === 'income') && (
-                        <button onClick={() => isEditing ? handleSave() : setIsEditing(true)} className={`p-2 rounded-full transition-colors flex items-center gap-1 ${isEditing ? 'bg-teal-600 text-white shadow-lg px-4' : 'text-slate-500 hover:bg-slate-200'}`}>
+                        <button onClick={() => isEditing ? handleSave() : setIsEditing(true)} className={`p-2 rounded-full transition-colors flex items-center gap-1 ${isEditing ? 'bg-teal-600 text-white shadow-lg px-4' : 'text-slate-500 hover:bg-slate-200'}`} aria-label={isEditing ? "儲存" : "編輯"}>
                             {isEditing ? <><Check size={18} /><span className="text-xs font-bold">儲存</span></> : <Edit2 size={20} strokeWidth={1.5} />}
                         </button>
                     )}
@@ -1628,7 +1631,7 @@ const AuthenticatedApp = () => {
 
         // 取得去年12月的收入作為初始比較基準 (若無則為0)
         const prevYearDecKey = `${currentYear - 1}-12`;
-        let prevIncome = data.incomes[prevYearDecKey]?.totalAmount || 0;
+        let prevIncome = (data.incomes || {})[prevYearDecKey]?.totalAmount || 0;
         let prevAsset = getYearEndAssets(currentYear - 1, data);
 
         for (let i = 0; i < 12; i++) {
@@ -1870,7 +1873,24 @@ const AuthenticatedApp = () => {
 
     const handleDetailUpdate = (type, payload) => {
         if (type === 'NAVIGATE_DATE') setSelectedDate(payload);
-        else if (type === 'UPDATE_RECORDS') {
+        else if (type === 'UPDATE_DETAILS') {
+            const { date, assets, memo, incomes } = payload;
+            const yearMonth = date.substring(0, 7);
+            const newTotal = incomes.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+            const existingIncomeMonth = data.incomes[yearMonth] || {};
+
+            const newData = {
+                ...data,
+                records: { ...data.records, [date]: assets },
+                memos: { ...data.memos, [date]: memo },
+                incomes: {
+                    ...data.incomes,
+                    [yearMonth]: { ...existingIncomeMonth, totalAmount: newTotal, sources: incomes }
+                }
+            };
+            setData(newData);
+            saveToFirestoreChunks(newData);
+        } else if (type === 'UPDATE_RECORDS') {
             const { date, assets } = payload;
             const newData = { ...data, records: { ...data.records, [date]: assets } };
             setData(newData);
