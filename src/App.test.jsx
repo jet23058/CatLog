@@ -328,6 +328,10 @@ describe('App Integration Tests', () => {
         await user.click(document.querySelector('button.fixed.bottom-8.right-6'));
         await waitFor(() => expect(screen.getByText('新增紀錄')).toBeInTheDocument());
 
+        // Open Import Modal
+        await user.click(screen.getByText('匯入資料'));
+        await waitFor(() => expect(screen.getByText('匯入花費 (Moze CSV)')).toBeInTheDocument());
+
         const csvContent = "日期,帳戶,金額\n2025/01/01,Cash,100";
         const csvFile = new File([csvContent], 'expenses.csv', { type: 'text/csv' });
         csvFile.mockContent = csvContent; // For our MockFileReader

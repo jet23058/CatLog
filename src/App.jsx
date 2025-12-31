@@ -403,7 +403,7 @@ const handleProcessExpenseCSV = (file, onSuccess, onError) => {
     reader.readAsText(file);
 };
 
-const AddIncomeModal = ({ onClose, onSave, assetNames }) => {
+const AddIncomeModal = ({ onClose, onSave, assetNames, exchangeRateCache }) => {
     const today = new Date();
     const currentMonthStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
 
@@ -417,6 +417,25 @@ const AddIncomeModal = ({ onClose, onSave, assetNames }) => {
     const [memo, setMemo] = useState("");
     const [errorMsg, setErrorMsg] = useState("");
 
+    // Cache Logic
+    useEffect(() => {
+        if (!exchangeRateCache) return;
+        const key = `${date}-${currency}`;
+        if (exchangeRateCache.current[key]) {
+            setExchangeRate(exchangeRateCache.current[key]);
+        } else if (currency === 'TWD') {
+            setExchangeRate('1');
+        }
+    }, [date, currency, exchangeRateCache]);
+
+    useEffect(() => {
+        if (!exchangeRateCache) return;
+        if (exchangeRate && !isNaN(parseFloat(exchangeRate))) {
+            const key = `${date}-${currency}`;
+            exchangeRateCache.current[key] = exchangeRate;
+        }
+    }, [exchangeRate, date, currency, exchangeRateCache]);
+
     useEffect(() => {
         if (originalAmount && exchangeRate) {
             const val = parseFloat(originalAmount) * parseFloat(exchangeRate);
@@ -429,11 +448,17 @@ const AddIncomeModal = ({ onClose, onSave, assetNames }) => {
     const handleCurrencyChange = (e) => {
         const newCurr = e.target.value;
         setCurrency(newCurr);
-        if (newCurr === 'TWD') {
-            setExchangeRate('1');
-        } else {
-            setExchangeRate("");
-        }
+        // Note: setExchangeRate logic is now handled by the cache effect above
+        // But for UX, if no cache, we might want to reset?
+        // The effect handles "else if TWD".
+        // If not TWD and no cache, it stays as is or we should reset?
+        // Existing logic: if TWD set 1, else "".
+        // My effect handles the "restore from cache" part.
+        // If I change currency, effect triggers.
+        // If cache exists -> sets rate.
+        // If cache NOT exists -> 
+        // We probably want to clear it if it's not TWD.
+        // Let's refine the effect.
     };
 
     const handleSubmit = () => {
@@ -525,7 +550,7 @@ const AddIncomeModal = ({ onClose, onSave, assetNames }) => {
     );
 };
 
-const AddAssetModal = ({ onClose, onSave, historyRecords }) => {
+const AddAssetModal = ({ onClose, onSave, historyRecords, exchangeRateCache }) => {
     const today = new Date();
     const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
 
@@ -538,6 +563,29 @@ const AddAssetModal = ({ onClose, onSave, historyRecords }) => {
     const [amount, setAmount] = useState('');
     const [isFetchingRate, setIsFetchingRate] = useState(false);
     const [errorMsg, setErrorMsg] = useState("");
+
+    // Cache Logic
+    useEffect(() => {
+        if (!exchangeRateCache) return;
+        // Extract YYYY-MM from YYYY-MM-DD to share cache with Income Modal
+        const monthStr = date.substring(0, 7);
+        const key = `${monthStr}-${currency}`;
+
+        if (exchangeRateCache.current[key]) {
+            setExchangeRate(exchangeRateCache.current[key]);
+        } else if (currency === 'TWD') {
+            setExchangeRate('1');
+        }
+    }, [date, currency, exchangeRateCache]);
+
+    useEffect(() => {
+        if (!exchangeRateCache) return;
+        if (exchangeRate && !isNaN(parseFloat(exchangeRate))) {
+            const monthStr = date.substring(0, 7);
+            const key = `${monthStr}-${currency}`;
+            exchangeRateCache.current[key] = exchangeRate;
+        }
+    }, [exchangeRate, date, currency, exchangeRateCache]);
 
     const uniqueAssetOptions = useMemo(() => {
         const map = new Map();
@@ -1497,6 +1545,8 @@ const AuthenticatedApp = () => {
     const fileInputRef = useRef(null);
     const expenseFileInputRef = useRef(null);
 
+    const exchangeRateCache = useRef({}); // Cache for foreign currency exchange rates
+
     // Dropbox Integration
     const dropboxAppKey = import.meta.env.VITE_DROPBOX_APP_KEY;
 
@@ -1835,7 +1885,12 @@ const AuthenticatedApp = () => {
 
 
 
+
+
+
+
     const handleDropboxChoose = () => {
+
         if (!window.Dropbox) {
             handleShowAlert("Dropbox 未載入", "請檢查網路或是 App Key 設定");
             return;
@@ -2016,8 +2071,8 @@ const AuthenticatedApp = () => {
             <GlobalStyles />
             {alertInfo.show && <AlertModal title={alertInfo.title} message={alertInfo.message} onClose={() => setAlertInfo({ ...alertInfo, show: false })} />}
             {showYearSelector && <YearSelectorModal currentYear={currentYear} availableYears={availableYears} yearlyTrendData={yearlyTrendData} onSelect={(year) => { setCurrentYear(year); setShowYearSelector(false); }} onClose={() => setShowYearSelector(false)} />}
-            {showAddIncomeModal && <AddIncomeModal onClose={() => setShowAddIncomeModal(false)} onSave={handleSaveNewIncome} assetNames={allAssetNames} />}
-            {showAddAssetModal && <AddAssetModal onClose={() => setShowAddAssetModal(false)} onSave={handleSaveNewAsset} historyRecords={data.records} />}
+            {showAddIncomeModal && <AddIncomeModal onClose={() => setShowAddIncomeModal(false)} onSave={handleSaveNewIncome} assetNames={allAssetNames} exchangeRateCache={exchangeRateCache} />}
+            {showAddAssetModal && <AddAssetModal onClose={() => setShowAddAssetModal(false)} onSave={handleSaveNewAsset} historyRecords={data.records} exchangeRateCache={exchangeRateCache} />}
 
             {showStatementModal && <StatementModal data={data} onClose={() => setShowStatementModal(false)} />}
             {showFIREModal && <FIREModal fireStats={fireStats} yearlyStats={fireYearlyStats} onRateChange={handleFireRateChange} onClose={() => setShowFIREModal(false)} />}
