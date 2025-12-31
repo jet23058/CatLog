@@ -331,74 +331,75 @@ const YearSelectorModal = ({ currentYear, availableYears, yearlyTrendData, onSel
     );
 };
 
+const processExpenseCSVText = (csvText, onSuccess, onError) => {
+    try {
+        const rows = parseCSV(csvText);
+
+        if (rows.length === 0) throw new Error("CSV 檔案是空的");
+
+        const headers = rows[0];
+        const idxDate = headers.indexOf('日期');
+        const idxAccount = headers.indexOf('帳戶');
+        const idxName = headers.indexOf('名稱');
+        const idxAmount = headers.indexOf('金額');
+        const idxMainCat = headers.indexOf('主類別');
+        const idxSubCat = headers.indexOf('子類別');
+        const idxType = headers.indexOf('類型');
+        const idxCurrency = headers.indexOf('幣種');
+
+        if (idxDate === -1 || idxAmount === -1) throw new Error("CSV 格式不符，找不到日期或金額欄位");
+
+        const expensesByMonth = {};
+
+        for (let i = 1; i < rows.length; i++) {
+            const row = rows[i];
+            if (row.length < headers.length) continue;
+            if (idxType !== -1 && row[idxType] !== '支出') continue;
+
+            const dateStr = row[idxDate];
+            const dateParts = dateStr.split('/');
+            if (dateParts.length !== 3) continue;
+
+            const y = dateParts[0];
+            const m = dateParts[1].padStart(2, '0');
+            const d = dateParts[2].padStart(2, '0');
+            const isoDate = `${y}-${m}-${d}`;
+            const monthKey = `${y}-${m}`;
+
+            let amountStr = row[idxAmount];
+            amountStr = amountStr.replace(/,/g, '').replace(/-/g, '');
+            const rawAmount = parseFloat(amountStr);
+
+            if (isNaN(rawAmount)) continue;
+
+            const currencyCode = idxCurrency !== -1 ? row[idxCurrency] : 'TWD';
+            const rate = DEFAULT_EXCHANGE_RATES[currencyCode] || 1;
+            const twdAmount = Math.round(rawAmount * rate);
+
+            if (!expensesByMonth[monthKey]) expensesByMonth[monthKey] = [];
+
+            expensesByMonth[monthKey].push({
+                date: isoDate,
+                account: idxAccount !== -1 ? row[idxAccount] : 'Unknown',
+                category: idxMainCat !== -1 ? row[idxMainCat] : '',
+                subCategory: idxSubCat !== -1 ? row[idxSubCat] : '',
+                name: idxName !== -1 ? row[idxName] : '',
+                amount: twdAmount,
+                originalAmount: rawAmount,
+                currency: currencyCode,
+                id: `csv-${i}-${Date.now()}`
+            });
+        }
+        onSuccess(expensesByMonth);
+    } catch (err) {
+        console.error(err);
+        onError(err.message);
+    }
+};
+
 const handleProcessExpenseCSV = (file, onSuccess, onError) => {
     const reader = new FileReader();
-    reader.onload = (e) => {
-        try {
-            const csvText = e.target.result;
-            const rows = parseCSV(csvText);
-
-            if (rows.length === 0) throw new Error("CSV 檔案是空的");
-
-            const headers = rows[0];
-            const idxDate = headers.indexOf('日期');
-            const idxAccount = headers.indexOf('帳戶');
-            const idxName = headers.indexOf('名稱');
-            const idxAmount = headers.indexOf('金額');
-            const idxMainCat = headers.indexOf('主類別');
-            const idxSubCat = headers.indexOf('子類別');
-            const idxType = headers.indexOf('類型');
-            const idxCurrency = headers.indexOf('幣種');
-
-            if (idxDate === -1 || idxAmount === -1) throw new Error("CSV 格式不符，找不到日期或金額欄位");
-
-            const expensesByMonth = {};
-
-            for (let i = 1; i < rows.length; i++) {
-                const row = rows[i];
-                if (row.length < headers.length) continue;
-                if (idxType !== -1 && row[idxType] !== '支出') continue;
-
-                const dateStr = row[idxDate];
-                const dateParts = dateStr.split('/');
-                if (dateParts.length !== 3) continue;
-
-                const y = dateParts[0];
-                const m = dateParts[1].padStart(2, '0');
-                const d = dateParts[2].padStart(2, '0');
-                const isoDate = `${y}-${m}-${d}`;
-                const monthKey = `${y}-${m}`;
-
-                let amountStr = row[idxAmount];
-                amountStr = amountStr.replace(/,/g, '').replace(/-/g, '');
-                const rawAmount = parseFloat(amountStr);
-
-                if (isNaN(rawAmount)) continue;
-
-                const currencyCode = idxCurrency !== -1 ? row[idxCurrency] : 'TWD';
-                const rate = DEFAULT_EXCHANGE_RATES[currencyCode] || 1;
-                const twdAmount = Math.round(rawAmount * rate);
-
-                if (!expensesByMonth[monthKey]) expensesByMonth[monthKey] = [];
-
-                expensesByMonth[monthKey].push({
-                    date: isoDate,
-                    account: idxAccount !== -1 ? row[idxAccount] : 'Unknown',
-                    category: idxMainCat !== -1 ? row[idxMainCat] : '',
-                    subCategory: idxSubCat !== -1 ? row[idxSubCat] : '',
-                    name: idxName !== -1 ? row[idxName] : '',
-                    amount: twdAmount,
-                    originalAmount: rawAmount,
-                    currency: currencyCode,
-                    id: `csv-${i}-${Date.now()}`
-                });
-            }
-            onSuccess(expensesByMonth);
-        } catch (err) {
-            console.error(err);
-            onError(err.message);
-        }
-    };
+    reader.onload = (e) => processExpenseCSVText(e.target.result, onSuccess, onError);
     reader.readAsText(file);
 };
 
@@ -1495,6 +1496,22 @@ const AuthenticatedApp = () => {
 
     const fileInputRef = useRef(null);
     const expenseFileInputRef = useRef(null);
+
+    // Dropbox Integration
+    const dropboxAppKey = import.meta.env.VITE_DROPBOX_APP_KEY;
+
+    useEffect(() => {
+        if (!dropboxAppKey) return;
+        const scriptId = 'dropboxjs';
+        if (document.getElementById(scriptId)) return;
+
+        const script = document.createElement('script');
+        script.id = scriptId;
+        script.type = 'text/javascript';
+        script.src = 'https://www.dropbox.com/static/api/2/dropins.js';
+        script.setAttribute('data-app-key', dropboxAppKey);
+        document.body.appendChild(script);
+    }, [dropboxAppKey]);
     const [alertInfo, setAlertInfo] = useState({ show: false, title: '', message: '' });
     const [view, setView] = useState('dashboard');
     const [selectedDate, setSelectedDate] = useState(null);
@@ -1814,6 +1831,47 @@ const AuthenticatedApp = () => {
         document.body.removeChild(link);
         URL.revokeObjectURL(href);
         handleShowAlert("匯出成功", "資料已成功下載");
+    };
+
+
+
+    const handleDropboxChoose = () => {
+        if (!window.Dropbox) {
+            handleShowAlert("Dropbox 未載入", "請檢查網路或是 App Key 設定");
+            return;
+        }
+
+        window.Dropbox.choose({
+            success: async (files) => {
+                const file = files[0];
+                if (!file) return;
+
+                setIsImporting(true);
+                try {
+                    const response = await fetch(file.link);
+                    const text = await response.text();
+
+                    processExpenseCSVText(text, (expensesByMonth) => {
+                        const newData = { ...data, expenses: expensesByMonth };
+                        setData(newData);
+                        saveToFirestoreChunks(newData);
+                        handleShowAlert("匯入成功", "Dropbox 花費細項已成功同步");
+                        setShowImportModal(false);
+                    }, (errorMsg) => {
+                        handleShowAlert("匯入失敗", errorMsg);
+                    });
+                } catch (err) {
+                    console.error(err);
+                    handleShowAlert("匯入失敗", "無法讀取 Dropbox 檔案");
+                } finally {
+                    setIsImporting(false);
+                }
+            },
+            cancel: () => { },
+            linkType: "direct",
+            multiselect: false,
+            extensions: ['.csv'],
+        });
     };
 
     const handleFileUpload = (event) => {
@@ -2261,15 +2319,42 @@ const AuthenticatedApp = () => {
                                         </svg>
                                         <div className="absolute inset-0 flex items-center justify-center text-xs font-bold text-teal-600">{uploadProgress}%</div>
                                     </div>
-                                    <p className="text-sm text-slate-500 font-bold animate-pulse">正在上傳並切割檔案...</p>
+                                    <p className="text-sm text-slate-500 font-bold animate-pulse">正在處理資料...</p>
                                     <p className="text-xs text-slate-400 mt-2 text-center max-w-[200px]">檔案較大時可能需要一點時間，請勿關閉視窗</p>
                                 </div>
                             ) : (
-                                <div className="relative group cursor-pointer">
-                                    <input type="file" accept=".json" onChange={handleFileUpload} ref={fileInputRef} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
-                                    <div className="w-full h-32 border border-dashed border-slate-300 rounded-lg bg-slate-50/50 group-hover:bg-slate-50 transition-colors flex flex-col items-center justify-center text-slate-400 group-hover:text-teal-600 group-hover:border-teal-300">
-                                        <Upload size={20} strokeWidth={1.5} className="mb-2" />
-                                        <span className="text-xs font-inter tracking-wide">點擊或拖曳檔案至此</span>
+                                <div className="flex flex-col gap-4">
+                                    {/* Section 1: JSON Backup */}
+                                    <div className="border border-slate-100 rounded-xl p-4 bg-slate-50/50">
+                                        <h4 className="text-sm font-bold text-slate-700 mb-2 flex items-center gap-2"><FileJson size={14} /> 匯入備份 (JSON)</h4>
+                                        <div className="relative group cursor-pointer bg-white border border-dashed border-slate-300 rounded-lg p-4 hover:border-teal-400 hover:text-teal-600 text-slate-400 transition-colors text-center">
+                                            <input type="file" accept=".json" onChange={handleFileUpload} ref={fileInputRef} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
+                                            <div className="flex flex-col items-center justify-center gap-1">
+                                                <Upload size={16} />
+                                                <span className="text-xs">上傳 JSON 備份檔</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Section 2: Expense CSV */}
+                                    <div className="border border-slate-100 rounded-xl p-4 bg-slate-50/50">
+                                        <h4 className="text-sm font-bold text-slate-700 mb-2 flex items-center gap-2"><FileText size={14} /> 匯入花費 (Moze CSV)</h4>
+                                        <div className="grid grid-cols-2 gap-3">
+                                            {/* Local Upload */}
+                                            <div className="relative group cursor-pointer bg-white border border-dashed border-slate-300 rounded-lg p-4 hover:border-teal-400 hover:text-teal-600 text-slate-400 transition-colors text-center">
+                                                <input type="file" accept=".csv" onChange={handleExpenseUpload} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
+                                                <div className="flex flex-col items-center justify-center gap-1">
+                                                    <Upload size={16} />
+                                                    <span className="text-xs">本機 CSV</span>
+                                                </div>
+                                            </div>
+
+                                            {/* Dropbox Chooser */}
+                                            <button onClick={handleDropboxChoose} className="bg-[#0061FE]/5 border border-[#0061FE]/20 rounded-lg p-4 hover:bg-[#0061FE]/10 transition-colors text-[#0061FE] flex flex-col items-center justify-center gap-1 text-center">
+                                                <Box size={16} />
+                                                <span className="text-xs font-bold">Dropbox</span>
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                             )}
@@ -2292,13 +2377,7 @@ const AuthenticatedApp = () => {
                                     <div className="w-10 h-10 rounded-full bg-sky-50 flex items-center justify-center mb-3 group-hover:bg-sky-100 transition-colors"><Download size={20} strokeWidth={1.5} className="text-sky-600" /></div><span className="text-sm font-serif-tc font-bold">匯出備份</span>
                                 </button>
                                 <button onClick={() => { setShowAddModal(false); setShowImportModal(true); }} className="flex flex-col items-center justify-center p-4 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-indigo-200 hover:text-indigo-700 transition-all group">
-                                    <div className="w-10 h-10 rounded-full bg-indigo-50 flex items-center justify-center mb-3 group-hover:bg-indigo-100 transition-colors"><Upload size={20} strokeWidth={1.5} className="text-indigo-600" /></div><span className="text-sm font-serif-tc font-bold">匯入資料</span>
-                                </button>
-                            </div>    <div className="relative col-span-2 mt-2">
-                                <input type="file" accept=".csv" ref={expenseFileInputRef} onChange={handleExpenseUpload} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
-                                <button className="w-full flex flex-col items-center justify-center p-4 rounded-xl border border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 hover:border-rose-200 hover:text-rose-700 transition-all group">
-                                    <div className="w-10 h-10 rounded-full bg-rose-50 flex items-center justify-center mb-3 group-hover:bg-rose-100 transition-colors"><ShoppingBag size={20} strokeWidth={1.5} className="text-rose-600" /></div>
-                                    <span className="text-sm font-serif-tc font-bold">匯入花費 (MOZE CSV)</span><span className="text-[10px] text-slate-400 mt-1 font-inter">將覆蓋所有花費細項</span>
+                                    <div className="w-10 h-10 rounded-full bg-indigo-50 flex items-center justify-center mb-3 group-hover:bg-indigo-100 transition-colors"><FileJson size={20} strokeWidth={1.5} className="text-indigo-600" /></div><span className="text-sm font-serif-tc font-bold">匯入資料</span>
                                 </button>
                             </div>
                         </div>

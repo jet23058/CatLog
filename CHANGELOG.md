@@ -25,6 +25,10 @@
 - **CI/CD 自動化**：
   - 建立 **GitHub Actions** Workflow (`ci.yml`)。
   - 確保每次 Push 到 `main` 分支時自動執行完整測試套件，嚴格把關程式碼品質。
+- **雲端整合 (Cloud Integration)**：
+  - **Dropbox 匯入**：新增從 Dropbox 直接匯入 Moze CSV 花費紀錄的功能。
+    - 採用 **Dropbox Chooser API**，無需額外授權即可安全選取檔案。
+    - 支援 Moze 匯出的標準 CSV 格式。
 
 ## [2.5.0] - 2025-12-28
 

@@ -66,6 +66,7 @@ VITE_FIREBASE_PROJECT_ID=your_project_id
 VITE_FIREBASE_STORAGE_BUCKET=your_storage_bucket
 VITE_FIREBASE_MESSAGING_SENDER_ID=your_sender_id
 VITE_FIREBASE_APP_ID=your_app_id
+VITE_DROPBOX_APP_KEY=your_dropbox_app_key (Optional: for Dropbox Import)
 ```
 
 ### 3. 啟動開發伺服器
@@ -93,6 +94,7 @@ npm run test:ui
 - **v2.6.0** (Current)
   - 品牌重塑：更名為 **CatLog**。
   - 工程優化：導入 Vitest 測試框架與 GitHub Actions CI/CD。
+  - 雲端整合：支援 **Dropbox** 直接匯入花費 CSV。
   - 介面升級：全新 Amber/Blue 主題色調。
 
 - **v2.5.0**
