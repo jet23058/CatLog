@@ -1335,6 +1335,329 @@ const StatementModal = ({ data, onClose }) => {
     );
 };
 
+const RangeStatsModal = ({ data, onClose }) => {
+    // Default Dates: Start of current month - Today
+    const [startDate, setStartDate] = useState(() => {
+        const d = new Date();
+        d.setDate(1);
+        return d.toISOString().split('T')[0];
+    });
+    const [endDate, setEndDate] = useState(() => {
+        return new Date().toISOString().split('T')[0];
+    });
+
+    // Calculate Income within range (based on month)
+    const incomeStats = useMemo(() => {
+        const startMonth = startDate.substring(0, 7);
+        const endMonth = endDate.substring(0, 7);
+        let total = 0;
+        const sources = [];
+
+        Object.entries(data.incomes || {}).forEach(([monthStr, incomeData]) => {
+            if (monthStr >= startMonth && monthStr <= endMonth) {
+                total += incomeData.totalAmount || 0;
+                (incomeData.sources || []).forEach(src => {
+                    sources.push({ ...src, month: monthStr });
+                });
+            }
+        });
+
+        return { total, sources, count: sources.length };
+    }, [data.incomes, startDate, endDate]);
+
+    // Calculate Asset change within range
+    const assetStats = useMemo(() => {
+        const start = new Date(startDate);
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+
+        const sortedDates = Object.keys(data.records || {}).sort((a, b) => new Date(a) - new Date(b));
+
+        // Find closest date at or before start
+        let startAssetDate = null;
+        let endAssetDate = null;
+
+        for (const d of sortedDates) {
+            const dateObj = new Date(d);
+            if (dateObj <= start) {
+                startAssetDate = d;
+            }
+            if (dateObj <= end) {
+                endAssetDate = d;
+            }
+        }
+
+        const startRecords = data.records[startAssetDate] || [];
+        const endRecords = data.records[endAssetDate] || [];
+
+        // Calculate totals by type
+        const calcByType = (records) => {
+            let fixed = 0, floating = 0;
+            const floatingItems = [];
+            records.forEach(item => {
+                if (item.type === 'floating') {
+                    floating += item.amount || 0;
+                    floatingItems.push({ name: item.name, amount: item.amount || 0 });
+                } else {
+                    fixed += item.amount || 0;
+                }
+            });
+            return { fixed, floating, floatingItems, total: fixed + floating };
+        };
+
+        const startStats = calcByType(startRecords);
+        const endStats = calcByType(endRecords);
+
+        // Calculate floating asset changes (compare by name)
+        const floatingChanges = [];
+        const startFloatingMap = new Map(startStats.floatingItems.map(i => [i.name, i.amount]));
+        const endFloatingMap = new Map(endStats.floatingItems.map(i => [i.name, i.amount]));
+
+        // All unique floating asset names
+        const allFloatingNames = new Set([...startFloatingMap.keys(), ...endFloatingMap.keys()]);
+        allFloatingNames.forEach(name => {
+            const startAmt = startFloatingMap.get(name) || 0;
+            const endAmt = endFloatingMap.get(name) || 0;
+            const change = endAmt - startAmt;
+            if (change !== 0) {
+                floatingChanges.push({ name, startAmt, endAmt, change });
+            }
+        });
+
+        // Sort by absolute change descending
+        floatingChanges.sort((a, b) => Math.abs(b.change) - Math.abs(a.change));
+
+        return {
+            startDate: startAssetDate,
+            endDate: endAssetDate,
+            startAssets: startStats.total,
+            endAssets: endStats.total,
+            change: endStats.total - startStats.total,
+            fixed: {
+                start: startStats.fixed,
+                end: endStats.fixed,
+                change: endStats.fixed - startStats.fixed
+            },
+            floating: {
+                start: startStats.floating,
+                end: endStats.floating,
+                change: endStats.floating - startStats.floating,
+                changes: floatingChanges
+            }
+        };
+    }, [data.records, startDate, endDate]);
+
+    // Calculate Expenses within range
+    const expenseStats = useMemo(() => {
+        const start = new Date(startDate);
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+
+        let total = 0;
+        const categories = {};
+        let count = 0;
+
+        Object.entries(data.expenses || {}).forEach(([month, list]) => {
+            list.forEach(item => {
+                const d = new Date(item.date.replace(/\//g, '-'));
+                if (d >= start && d <= end) {
+                    total += item.amount || 0;
+                    count++;
+                    const cat = item.category || '未分類';
+                    categories[cat] = (categories[cat] || 0) + (item.amount || 0);
+                }
+            });
+        });
+
+        const topCategories = Object.entries(categories)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 5);
+
+        return { total, count, topCategories };
+    }, [data.expenses, startDate, endDate]);
+
+    return (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-6 animate-[fadeIn_0.2s]">
+            <div className="bg-white w-full max-w-lg rounded-2xl p-6 shadow-2xl relative flex flex-col max-h-[85vh]">
+                <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"><X size={20} /></button>
+                <h3 className="text-xl font-serif-tc font-bold text-slate-800 mb-6 flex items-center gap-2">
+                    <div className="bg-purple-100 p-2 rounded-lg"><PieChartIcon size={20} className="text-purple-700" /></div> 區間統計 Report
+                </h3>
+
+                {/* Date Filters */}
+                <div className="grid grid-cols-2 gap-4 mb-3">
+                    <div>
+                        <label className="block text-xs font-bold text-slate-500 mb-1">開始日期</label>
+                        <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-full text-sm p-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-purple-500 font-inter" />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-bold text-slate-500 mb-1">結束日期</label>
+                        <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="w-full text-sm p-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-purple-500 font-inter" />
+                    </div>
+                </div>
+
+                {/* Quick Date Selection */}
+                <div className="flex gap-2 mb-6">
+                    {[
+                        { label: '近 3 個月', months: 3 },
+                        { label: '近半年', months: 6 },
+                        { label: '近 1 年', months: 12 }
+                    ].map(({ label, months }) => (
+                        <button
+                            key={months}
+                            onClick={() => {
+                                const now = new Date();
+                                // End date: last day of current month
+                                const endYear = now.getFullYear();
+                                const endMonth = now.getMonth();
+                                const lastDay = new Date(endYear, endMonth + 1, 0).getDate();
+                                const newEndDate = `${endYear}-${String(endMonth + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+
+                                // Start date: first day of (current month - months + 1)
+                                const startMonthDate = new Date(endYear, endMonth - months + 1, 1);
+                                const newStartDate = startMonthDate.toISOString().split('T')[0];
+
+                                setStartDate(newStartDate);
+                                setEndDate(newEndDate);
+                            }}
+                            className="flex-1 py-1.5 px-2 text-xs font-medium text-purple-600 bg-purple-50 hover:bg-purple-100 border border-purple-200 rounded-lg transition-colors"
+                        >
+                            {label}
+                        </button>
+                    ))}
+                </div>
+
+                {/* Stats Cards */}
+                <div className="flex-1 overflow-y-auto hide-scrollbar space-y-4">
+                    {/* Income Card */}
+                    <div className="bg-gradient-to-br from-emerald-50 to-teal-50 p-4 rounded-xl border border-emerald-100">
+                        <div className="flex items-center gap-2 mb-3">
+                            <div className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-600 flex items-center justify-center">
+                                <DollarSign size={16} />
+                            </div>
+                            <span className="font-bold text-slate-700">收入統計</span>
+                            <span className="text-xs text-slate-400 ml-auto">{incomeStats.count} 筆</span>
+                        </div>
+                        <div className="text-2xl font-inter font-bold text-emerald-600 mb-2">
+                            +{formatMoney(incomeStats.total)} <span className="text-sm font-normal text-slate-400">TWD</span>
+                        </div>
+                        {incomeStats.sources.length > 0 && (
+                            <div className="text-xs text-slate-500 space-y-1 pt-2 border-t border-emerald-100">
+                                {incomeStats.sources.slice(0, 3).map((src, idx) => (
+                                    <div key={idx} className="flex justify-between">
+                                        <span>{src.company}</span>
+                                        <span className="font-inter">{formatMoney(src.amount)}</span>
+                                    </div>
+                                ))}
+                                {incomeStats.sources.length > 3 && (
+                                    <div className="text-slate-400">...還有 {incomeStats.sources.length - 3} 筆</div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Asset Change Card */}
+                    <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-4 rounded-xl border border-blue-100">
+                        <div className="flex items-center gap-2 mb-3">
+                            <div className="w-8 h-8 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center">
+                                <TrendingUp size={16} />
+                            </div>
+                            <span className="font-bold text-slate-700">資產變化</span>
+                        </div>
+                        <div className={`text-2xl font-inter font-bold mb-2 ${assetStats.change >= 0 ? 'text-emerald-600' : 'text-rose-500'}`}>
+                            {assetStats.change >= 0 ? '+' : ''}{formatMoney(assetStats.change)} <span className="text-sm font-normal text-slate-400">TWD</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 pt-2 border-t border-blue-100 text-xs">
+                            <div>
+                                <div className="text-slate-400 mb-0.5">期初資產 {assetStats.startDate && `(${assetStats.startDate})`}</div>
+                                <div className="font-inter font-bold text-slate-600">{formatMoney(assetStats.startAssets)}</div>
+                            </div>
+                            <div className="text-right">
+                                <div className="text-slate-400 mb-0.5">期末資產 {assetStats.endDate && `(${assetStats.endDate})`}</div>
+                                <div className="font-inter font-bold text-slate-600">{formatMoney(assetStats.endAssets)}</div>
+                            </div>
+                        </div>
+
+                        {/* Fixed vs Floating Breakdown */}
+                        <div className="mt-3 pt-3 border-t border-blue-100 space-y-2 text-xs">
+                            {/* Fixed Assets Row */}
+                            <div className="flex justify-between items-center">
+                                <div className="flex items-center gap-2">
+                                    <Lock size={12} className="text-slate-400" />
+                                    <span className="text-slate-600 font-medium">固定資產</span>
+                                </div>
+                                <span className={`font-inter font-bold ${assetStats.fixed.change >= 0 ? 'text-emerald-600' : 'text-rose-500'}`}>
+                                    {assetStats.fixed.change >= 0 ? '+' : ''}{formatMoney(assetStats.fixed.change)}
+                                </span>
+                            </div>
+
+                            {/* Floating Assets Row */}
+                            <div className="flex justify-between items-center">
+                                <div className="flex items-center gap-2">
+                                    <Activity size={12} className="text-slate-400" />
+                                    <span className="text-slate-600 font-medium">浮動資產</span>
+                                </div>
+                                <span className={`font-inter font-bold ${assetStats.floating.change >= 0 ? 'text-emerald-600' : 'text-rose-500'}`}>
+                                    {assetStats.floating.change >= 0 ? '+' : ''}{formatMoney(assetStats.floating.change)}
+                                </span>
+                            </div>
+
+                            {/* Floating Asset Details (indented) */}
+                            {assetStats.floating.changes.length > 0 && (
+                                <div className="ml-6 pl-2 border-l-2 border-blue-200 space-y-1 mt-1">
+                                    {assetStats.floating.changes.map((item, idx) => (
+                                        <div key={idx} className="flex justify-between items-center text-[11px]">
+                                            <span className="text-slate-500 truncate max-w-[140px]">{item.name}</span>
+                                            <span className={`font-inter font-medium ${item.change >= 0 ? 'text-emerald-500' : 'text-rose-400'}`}>
+                                                {item.change >= 0 ? '+' : ''}{formatMoney(item.change)}
+                                            </span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Expense Card */}
+                    <div className="bg-gradient-to-br from-rose-50 to-orange-50 p-4 rounded-xl border border-rose-100">
+                        <div className="flex items-center gap-2 mb-3">
+                            <div className="w-8 h-8 rounded-lg bg-rose-100 text-rose-600 flex items-center justify-center">
+                                <ShoppingBag size={16} />
+                            </div>
+                            <span className="font-bold text-slate-700">花費統計</span>
+                            <span className="text-xs text-slate-400 ml-auto">{expenseStats.count} 筆</span>
+                        </div>
+                        <div className="text-2xl font-inter font-bold text-rose-500 mb-2">
+                            -{formatMoney(expenseStats.total)} <span className="text-sm font-normal text-slate-400">TWD</span>
+                        </div>
+                        {expenseStats.topCategories.length > 0 && (
+                            <div className="text-xs text-slate-500 space-y-1 pt-2 border-t border-rose-100">
+                                <div className="text-slate-400 mb-1">前五大類別</div>
+                                {expenseStats.topCategories.map(([cat, amt], idx) => (
+                                    <div key={idx} className="flex justify-between">
+                                        <span>{cat}</span>
+                                        <span className="font-inter">{formatMoney(amt)}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Summary */}
+                    <div className="bg-slate-800 text-white p-4 rounded-xl">
+                        <div className="flex justify-between items-center">
+                            <span className="text-slate-400 text-sm">淨收支 (收入 - 花費)</span>
+                            <span className={`text-xl font-inter font-bold ${(incomeStats.total - expenseStats.total) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                {(incomeStats.total - expenseStats.total) >= 0 ? '+' : ''}{formatMoney(incomeStats.total - expenseStats.total)}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 const FIREModal = ({ fireStats, yearlyStats = [], onRateChange, onClose }) => {
     const [localRate, setLocalRate] = useState(fireStats.rate);
     useEffect(() => { setLocalRate(fireStats.rate); }, [fireStats.rate]);
@@ -1540,6 +1863,7 @@ const AuthenticatedApp = () => {
 
     const [showStatementModal, setShowStatementModal] = useState(false);
     const [showFIREModal, setShowFIREModal] = useState(false);
+    const [showRangeStatsModal, setShowRangeStatsModal] = useState(false);
     const [showAdvancedMenu, setShowAdvancedMenu] = useState(false);
 
     const fileInputRef = useRef(null);
@@ -2076,6 +2400,7 @@ const AuthenticatedApp = () => {
 
             {showStatementModal && <StatementModal data={data} onClose={() => setShowStatementModal(false)} />}
             {showFIREModal && <FIREModal fireStats={fireStats} yearlyStats={fireYearlyStats} onRateChange={handleFireRateChange} onClose={() => setShowFIREModal(false)} />}
+            {showRangeStatsModal && <RangeStatsModal data={data} onClose={() => setShowRangeStatsModal(false)} />}
             {/* Global Loading Overlay */}
             {(isImporting || isSaving || isSyncing) && (
                 <div className="fixed inset-0 z-[100] bg-black/50 backdrop-blur-sm flex items-center justify-center flex-col animate-[fadeIn_0.2s]">
@@ -2154,6 +2479,13 @@ const AuthenticatedApp = () => {
                                         >
                                             <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center"><TrendingUp size={16} /></div>
                                             <span className="text-sm font-medium">個股績效</span>
+                                        </button>
+                                        <button
+                                            onClick={() => { setShowRangeStatsModal(true); setShowAdvancedMenu(false); }}
+                                            className="w-full text-left px-4 py-3 hover:bg-slate-50 flex items-center gap-3 text-slate-700 transition-colors"
+                                        >
+                                            <div className="w-8 h-8 rounded-lg bg-purple-50 text-purple-600 flex items-center justify-center"><PieChartIcon size={16} /></div>
+                                            <span className="text-sm font-medium">區間統計</span>
                                         </button>
                                     </div>
                                 </>

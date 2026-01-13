@@ -395,6 +395,33 @@ describe('App Integration Tests', () => {
         await waitFor(() => expect(screen.queryByText('達成進度')).not.toBeInTheDocument());
     });
 
+    test('Opens Range Statistics Modal', async () => {
+        const user = userEvent.setup();
+        render(<App />);
+        await waitFor(() => expect(screen.getByText(/CatLog/i)).toBeInTheDocument());
+
+        // Click Advanced Menu button (LayoutGrid icon)
+        const advancedBtn = document.querySelector('.lucide-layout-grid').closest('button');
+        await user.click(advancedBtn);
+
+        await waitFor(() => expect(screen.getByText('Advanced')).toBeInTheDocument());
+        expect(screen.getByText('區間統計')).toBeInTheDocument();
+
+        // Click Range Statistics Modal
+        await user.click(screen.getByText('區間統計'));
+
+        // Check for unique content
+        await waitFor(() => expect(screen.getByText('區間統計 Report')).toBeInTheDocument());
+        expect(screen.getByText('收入統計')).toBeInTheDocument();
+        expect(screen.getByText('資產變化')).toBeInTheDocument();
+        expect(screen.getByText('花費統計')).toBeInTheDocument();
+
+        // Close Modal
+        const closeBtn = document.querySelector('.lucide-x').closest('button');
+        await user.click(closeBtn);
+        await waitFor(() => expect(screen.queryByText('區間統計 Report')).not.toBeInTheDocument());
+    });
+
     test.skip('Detail Page Components: Edit, Delete, Navigation', async () => {
         const user = userEvent.setup();
         const currentYear = new Date().getFullYear();
