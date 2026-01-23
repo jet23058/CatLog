@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, PieChart, Pie, Cell } from 'recharts';
-import { Cat, ChevronLeft, ChevronRight, Plus, Upload, Wallet, TrendingUp, DollarSign, Calendar, X, Save, FileJson, ArrowUpRight, ArrowDownRight, ArrowLeft, ArrowRight, Edit2, Trash2, Info, Check, TrendingDown, RefreshCw, FileText, Mountain, ArrowDown, AlertCircle, Building2, Lock, PieChart as PieChartIcon, Download, StickyNote, ShoppingBag, Filter, ChevronDown, PiggyBank, Activity, Sparkles, LogOut, Coins, ClipboardCheck, LayoutGrid, Package, Box, Footprints, Eye, EyeOff } from 'lucide-react';
+import { Cat, ChevronLeft, ChevronRight, Plus, Upload, Wallet, TrendingUp, DollarSign, Calendar, X, Save, FileJson, ArrowUpRight, ArrowDownRight, ArrowLeft, ArrowRight, Edit2, Trash2, Info, Check, TrendingDown, RefreshCw, FileText, Mountain, ArrowDown, AlertCircle, Building2, Lock, PieChart as PieChartIcon, Download, StickyNote, ShoppingBag, Filter, ChevronDown, PiggyBank, Activity, Sparkles, LogOut, Coins, ClipboardCheck, LayoutGrid, Package, Box, Footprints, Eye, EyeOff, ScanFace, ShieldCheck, ShieldAlert } from 'lucide-react';
 
 // --- CSS 樣式與 Tailwind 設定模擬 ---
 // 原本 index.css 的內容與 tailwind.config.js 的動畫設定整合於此
@@ -578,6 +578,128 @@ const handleProcessExpenseCSV = (file, onSuccess, onError) => {
     reader.onload = (e) => processExpenseCSVText(e.target.result, onSuccess, onError);
     reader.readAsText(file);
 };
+
+// --- WebAuthn Security Logic ---
+const BIOMETRIC_STORAGE_KEY = 'biometric_enabled';
+const BIOMETRIC_CREDENTIAL_ID_KEY = 'biometric_credential_id';
+
+const registerBiometric = async (userEmail) => {
+    if (!window.PublicKeyCredential) {
+        throw new Error("您的裝置不支援生物辨識驗證");
+    }
+
+    try {
+        // Create random challenge
+        const challenge = new Uint8Array(32);
+        window.crypto.getRandomValues(challenge);
+
+        // User ID needs to be a buffer
+        const userId = new Uint8Array(16);
+        window.crypto.getRandomValues(userId);
+
+        const publicKey = {
+            challenge,
+            rp: {
+                name: "CatLog App",
+                id: window.location.hostname // Should be effective domain
+            },
+            user: {
+                id: userId,
+                name: userEmail,
+                displayName: userEmail
+            },
+            pubKeyCredParams: [{ alg: -7, type: "public-key" }, { alg: -257, type: "public-key" }],
+            authenticatorSelection: {
+                authenticatorAttachment: "platform", // Face ID / Touch ID
+                userVerification: "required",
+                requireResidentKey: false
+            },
+            timeout: 60000,
+            attestation: "none"
+        };
+
+        const credential = await navigator.credentials.create({ publicKey });
+        
+        // In a real backend scenario, we would send this credential to the server.
+        // For local "App Lock", we just mark it as enabled. 
+        // We save the credential ID to verify later if needed, though for local "Unlock", 
+        // mere possession and successful .get() challenge is the gatekeeper.
+        
+        localStorage.setItem(BIOMETRIC_STORAGE_KEY, 'true');
+        // Convert ArrayBuffer to Base64 string for storage
+        const credId = btoa(String.fromCharCode(...new Uint8Array(credential.rawId)));
+        localStorage.setItem(BIOMETRIC_CREDENTIAL_ID_KEY, credId);
+        
+        return true;
+    } catch (err) {
+        console.error("Biometric registration failed", err);
+        throw err;
+    }
+};
+
+const verifyBiometric = async () => {
+    if (!window.PublicKeyCredential) return false;
+
+    try {
+        const challenge = new Uint8Array(32);
+        window.crypto.getRandomValues(challenge);
+
+        // Retrieve stored credential ID if available (optional for 'discoverable' creds but good for specific targeting)
+        const storedId = localStorage.getItem(BIOMETRIC_CREDENTIAL_ID_KEY);
+        let allowCredentials = [];
+        
+        if (storedId) {
+            const rawId = Uint8Array.from(atob(storedId), c => c.charCodeAt(0));
+            allowCredentials.push({
+                type: "public-key",
+                id: rawId,
+                transports: ["internal"]
+            });
+        }
+
+        const publicKey = {
+            challenge,
+            allowCredentials,
+            userVerification: "required", // This triggers Face ID
+            timeout: 60000
+        };
+
+        const assertion = await navigator.credentials.get({ publicKey });
+        return !!assertion;
+    } catch (err) {
+        console.error("Biometric verification failed", err);
+        return false;
+    }
+};
+
+const BiometricLockScreen = ({ onUnlock, errorMsg }) => (
+    <div className="fixed inset-0 z-[100] bg-slate-900 flex flex-col items-center justify-center p-6 text-white animate-[fadeIn_0.3s]">
+        <div className="w-24 h-24 bg-slate-800 rounded-full flex items-center justify-center mb-8 shadow-2xl ring-4 ring-slate-700/50">
+            <Lock size={48} className="text-teal-400" />
+        </div>
+        <h2 className="text-2xl font-serif-tc font-bold mb-2">CatLog 已鎖定</h2>
+        <p className="text-slate-400 text-sm mb-8 font-inter text-center">請使用 Face ID / Touch ID 解鎖以繼續訪問</p>
+        
+        <button 
+            onClick={onUnlock} 
+            className="w-full max-w-xs bg-teal-600 hover:bg-teal-500 text-white font-bold py-3.5 rounded-xl transition-all shadow-lg hover:shadow-teal-500/20 active:scale-95 flex items-center justify-center gap-2"
+        >
+            <ScanFace size={20} />
+            點擊解鎖
+        </button>
+
+        {errorMsg && (
+            <div className="mt-6 flex items-center gap-2 text-rose-400 bg-rose-400/10 px-4 py-2 rounded-lg text-sm animate-shake">
+                <ShieldAlert size={16} />
+                {errorMsg}
+            </div>
+        )}
+        
+        <div className="mt-12 text-slate-600 text-xs font-inter flex items-center gap-1">
+            <ShieldCheck size={12} /> Secured by WebAuthn
+        </div>
+    </div>
+);
 
 const AddIncomeModal = ({ onClose, onSave, assetNames, exchangeRateCache }) => {
     const today = new Date();
@@ -1962,9 +2084,53 @@ const AuthenticatedApp = () => {
         return localStorage.getItem('isPrivacyMode') === 'true';
     });
 
+    // --- Biometric Lock State ---
+    const [isAppLocked, setIsAppLocked] = useState(false);
+    const [biometricEnabled, setBiometricEnabled] = useState(() => localStorage.getItem(BIOMETRIC_STORAGE_KEY) === 'true');
+    const [biometricError, setBiometricError] = useState("");
+
     useEffect(() => {
         localStorage.setItem('isPrivacyMode', isPrivacyMode);
     }, [isPrivacyMode]);
+
+    // Check Lock State on Startup
+    useEffect(() => {
+        if (biometricEnabled) {
+            setIsAppLocked(true);
+        }
+    }, []); // Only run once on mount
+
+    // Handle Unlock
+    const handleUnlockApp = async () => {
+        setBiometricError("");
+        const success = await verifyBiometric();
+        if (success) {
+            setIsAppLocked(false);
+        } else {
+            setBiometricError("驗證失敗，請重試");
+        }
+    };
+
+    // Toggle Biometric Setting
+    const toggleBiometric = async () => {
+        if (biometricEnabled) {
+            // Disable it
+            localStorage.removeItem(BIOMETRIC_STORAGE_KEY);
+            localStorage.removeItem(BIOMETRIC_CREDENTIAL_ID_KEY);
+            setBiometricEnabled(false);
+            setAlertInfo({ show: true, title: "已停用", message: "Face ID 鎖定已關閉" });
+        } else {
+            // Enable it
+            try {
+                await registerBiometric(user.email);
+                setBiometricEnabled(true);
+                setAlertInfo({ show: true, title: "已啟用", message: "下次開啟 App 時將需要 Face ID 解鎖" });
+            } catch (err) {
+                setAlertInfo({ show: true, title: "啟用失敗", message: "無法註冊 Face ID: " + err.message });
+            }
+        }
+    };
+
     const [importConfirmation, setImportConfirmation] = useState({ show: false, type: null, summary: null, pendingData: null });
 
     // --- Helper Functions for Chunking ---
@@ -2643,6 +2809,7 @@ const AuthenticatedApp = () => {
     return (
         <div className="min-h-screen max-w-md mx-auto bg-white text-slate-800 relative font-sans shadow-2xl overflow-hidden">
             <GlobalStyles />
+            {isAppLocked && <BiometricLockScreen onUnlock={handleUnlockApp} errorMsg={biometricError} />}
             {alertInfo.show && <AlertModal title={alertInfo.title} message={alertInfo.message} onClose={() => setAlertInfo({ ...alertInfo, show: false })} />}
             {importConfirmation.show && (
                 <ImportConfirmationModal 
@@ -2750,6 +2917,13 @@ const AuthenticatedApp = () => {
                                     </div>
                                 </>
                             )}
+                            <button
+                                onClick={toggleBiometric}
+                                className={`p-2 rounded-full transition-all border border-slate-100 shadow-sm ${biometricEnabled ? 'bg-teal-50 text-teal-600' : 'bg-white text-slate-400 hover:text-teal-500 hover:bg-teal-50'}`}
+                                title={biometricEnabled ? "已啟用 Face ID" : "啟用 Face ID"}
+                            >
+                                <ScanFace size={18} />
+                            </button>
                             <button
                                 onClick={() => setIsPrivacyMode(!isPrivacyMode)}
                                 className="p-2 bg-white text-slate-400 hover:text-indigo-500 hover:bg-indigo-50 rounded-full transition-all border border-slate-100 shadow-sm"
