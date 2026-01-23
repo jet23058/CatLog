@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, PieChart, Pie, Cell } from 'recharts';
-import { Cat, ChevronLeft, ChevronRight, Plus, Upload, Wallet, TrendingUp, DollarSign, Calendar, X, Save, FileJson, ArrowUpRight, ArrowDownRight, ArrowLeft, Edit2, Trash2, Info, Check, TrendingDown, RefreshCw, FileText, Mountain, ArrowDown, AlertCircle, Building2, Lock, PieChart as PieChartIcon, Download, StickyNote, ShoppingBag, Filter, ChevronDown, PiggyBank, Activity, Sparkles, LogOut, Coins, ClipboardCheck, LayoutGrid, Package, Box, Footprints } from 'lucide-react';
+import { Cat, ChevronLeft, ChevronRight, Plus, Upload, Wallet, TrendingUp, DollarSign, Calendar, X, Save, FileJson, ArrowUpRight, ArrowDownRight, ArrowLeft, ArrowRight, Edit2, Trash2, Info, Check, TrendingDown, RefreshCw, FileText, Mountain, ArrowDown, AlertCircle, Building2, Lock, PieChart as PieChartIcon, Download, StickyNote, ShoppingBag, Filter, ChevronDown, PiggyBank, Activity, Sparkles, LogOut, Coins, ClipboardCheck, LayoutGrid, Package, Box, Footprints, Eye, EyeOff } from 'lucide-react';
 
 // --- CSS 樣式與 Tailwind 設定模擬 ---
 // 原本 index.css 的內容與 tailwind.config.js 的動畫設定整合於此
@@ -108,25 +108,29 @@ const parseCSV = (text) => {
 };
 
 // --- 組件 ---
-const AmountWithTooltip = ({ amount, className = "", iconColor = "text-slate-300", align = "center", prefix = "" }) => (
+const AmountWithTooltip = ({ amount, className = "", iconColor = "text-slate-300", align = "center", prefix = "", masked = false }) => (
     <div className={`flex items-center gap-1 w-fit ${className}`}>
-        <span>{prefix}{formatWan(amount)}</span>
+        <span className={masked ? "font-mono tracking-widest" : ""}>{masked ? '****' : `${prefix}${formatWan(amount)}`}</span>
         {/* 將 Tooltip 結構與 hover 效果移至 icon 的包覆層，而非最外層 */}
-        <div className="group relative">
-            <Info size={14} className={`${iconColor} opacity-70 group-hover:opacity-100 transition-opacity cursor-help`} />
-            <div className={`absolute bottom-full mb-2 bg-slate-800 text-white text-xs px-3 py-2 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 shadow-xl whitespace-nowrap ${align === 'center' ? 'left-1/2 -translate-x-1/2' : ''} ${align === 'left' ? 'left-0' : ''} ${align === 'right' ? 'right-0' : ''}`}>
-                完整金額: {formatMoney(amount)} TWD
-                <div className={`absolute top-full w-2 h-2 bg-slate-800 rotate-45 ${align === 'center' ? 'left-1/2 -translate-x-1/2' : ''} ${align === 'left' ? 'left-2' : ''} ${align === 'right' ? 'right-2' : ''}`}></div>
+        {!masked && (
+            <div className="group relative">
+                <Info size={14} className={`${iconColor} opacity-70 group-hover:opacity-100 transition-opacity cursor-help`} />
+                <div className={`absolute bottom-full mb-2 bg-slate-800 text-white text-xs px-3 py-2 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 shadow-xl whitespace-nowrap ${align === 'center' ? 'left-1/2 -translate-x-1/2' : ''} ${align === 'left' ? 'left-0' : ''} ${align === 'right' ? 'right-0' : ''}`}>
+                    完整金額: {formatMoney(amount)} TWD
+                    <div className={`absolute top-full w-2 h-2 bg-slate-800 rotate-45 ${align === 'center' ? 'left-1/2 -translate-x-1/2' : ''} ${align === 'left' ? 'left-2' : ''} ${align === 'right' ? 'right-2' : ''}`}></div>
+                </div>
             </div>
-        </div>
+        )}
     </div>
 );
 
 // 新增：綜合損益分析 Tooltip 組件，支援 align 屬性控制左右對齊
-const AnalysisTooltip = ({ incomeDiff, assetDiff, compositeScore, align = "center" }) => {
+const AnalysisTooltip = ({ incomeDiff, assetDiff, compositeScore, align = "center", masked = false }) => {
     // 根據 align 屬性決定 Tooltip 與箭頭的位置
     const tooltipPosition = align === "right" ? "right-0 translate-x-0" : "left-1/2 -translate-x-1/2";
     const arrowPosition = align === "right" ? "right-3 translate-x-1/2" : "left-1/2 -translate-x-1/2";
+
+    if (masked) return null;
 
     return (
         <div className={`absolute bottom-full mb-2 w-[220px] rounded-xl bg-slate-800 p-4 text-[11px] text-white opacity-0 shadow-2xl transition-all group-hover/tooltip:opacity-100 pointer-events-none z-50 scale-95 group-hover/tooltip:scale-100 origin-bottom ${tooltipPosition}`}>
@@ -331,6 +335,164 @@ const YearSelectorModal = ({ currentYear, availableYears, yearlyTrendData, onSel
     );
 };
 
+const ImportConfirmationModal = ({ type, summary, onConfirm, onCancel, currentData, pendingData }) => {
+    const [expandedMonth, setExpandedMonth] = useState(null);
+
+    return (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-[fadeIn_0.2s]">
+            <div className="bg-white w-full max-w-sm rounded-2xl p-6 shadow-2xl relative flex flex-col max-h-[80vh]">
+                <div className="w-12 h-12 bg-indigo-50 rounded-full flex items-center justify-center mb-4 text-indigo-600 mx-auto">
+                    <FileJson size={24} />
+                </div>
+                <h3 className="text-lg font-serif-tc font-bold text-slate-800 mb-2 text-center">
+                    確認匯入{type === 'json' ? '備份' : '資料'}
+                </h3>
+                
+                <div className="flex-1 overflow-y-auto min-h-[100px] mb-6 p-4 bg-slate-50 rounded-xl text-sm text-slate-600 font-inter space-y-3">
+                    {type === 'json' ? (
+                        <>
+                            <p className="font-bold text-slate-700 border-b border-slate-200 pb-2 mb-2">
+                                即將覆蓋現有資料庫：
+                            </p>
+                            <div className="grid grid-cols-2 gap-x-2 gap-y-3 text-xs">
+                                {/* Assets */}
+                                <div className="col-span-2 flex justify-between items-center bg-white p-2 rounded border border-slate-100">
+                                    <span className="text-slate-500">資產紀錄</span>
+                                    <div className="flex items-center gap-2">
+                                        <span className="line-through text-slate-400">{Object.values(currentData.records || {}).flat().length}</span>
+                                        <ArrowRight size={12} className="text-slate-300" />
+                                        <span className="font-bold text-indigo-600">{summary.records}</span>
+                                    </div>
+                                </div>
+                                {/* Incomes */}
+                                <div className="col-span-2 flex justify-between items-center bg-white p-2 rounded border border-slate-100">
+                                    <span className="text-slate-500">收入紀錄</span>
+                                    <div className="flex items-center gap-2">
+                                        <span className="line-through text-slate-400">{Object.values(currentData.incomes || {}).reduce((acc, curr) => acc + (curr.sources?.length || 0), 0)}</span>
+                                        <ArrowRight size={12} className="text-slate-300" />
+                                        <span className="font-bold text-indigo-600">{summary.incomes}</span>
+                                    </div>
+                                </div>
+                                {/* Expenses */}
+                                <div className="col-span-2 flex justify-between items-center bg-white p-2 rounded border border-slate-100">
+                                    <span className="text-slate-500">花費紀錄(月)</span>
+                                    <div className="flex items-center gap-2">
+                                        <span className="line-through text-slate-400">{Object.keys(currentData.expenses || {}).length}</span>
+                                        <ArrowRight size={12} className="text-slate-300" />
+                                        <span className="font-bold text-indigo-600">{summary.expenses}</span>
+                                    </div>
+                                </div>
+                                {/* Memos */}
+                                <div className="col-span-2 flex justify-between items-center bg-white p-2 rounded border border-slate-100">
+                                    <span className="text-slate-500">備忘錄</span>
+                                    <div className="flex items-center gap-2">
+                                        <span className="line-through text-slate-400">{Object.keys(currentData.memos || {}).length}</span>
+                                        <ArrowRight size={12} className="text-slate-300" />
+                                        <span className="font-bold text-indigo-600">{summary.memos}</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <p className="text-xs text-rose-500 mt-2 font-bold flex items-center gap-1">
+                                <AlertCircle size={12} /> 注意：此操作無法復原
+                            </p>
+                        </>
+                    ) : (
+                        <>
+                            <p className="font-bold text-slate-700 border-b border-slate-200 pb-2 mb-2">
+                                花費匯入分析：
+                            </p>
+                            <div className="space-y-3">
+                                {summary.months.map(month => {
+                                    const oldItems = currentData.expenses?.[month] || [];
+                                    const newItems = pendingData[month] || [];
+                                    
+                                    const oldTotal = oldItems.reduce((sum, i) => sum + i.amount, 0);
+                                    const newTotal = newItems.reduce((sum, i) => sum + i.amount, 0);
+                                    
+                                    const oldCount = oldItems.length;
+                                    const newCount = newItems.length;
+                                    
+                                    const isExpanded = expandedMonth === month;
+
+                                    return (
+                                        <div key={month} className="bg-white rounded-lg border border-slate-100 overflow-hidden">
+                                            <div 
+                                                className="p-3 flex flex-col gap-2 cursor-pointer hover:bg-slate-50 transition-colors"
+                                                onClick={() => setExpandedMonth(isExpanded ? null : month)}
+                                            >
+                                                <div className="flex justify-between items-center font-bold text-slate-700 text-xs">
+                                                    <span className="bg-slate-100 px-2 py-0.5 rounded flex items-center gap-1">
+                                                        {month} 
+                                                        <ChevronDown size={12} className={`transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
+                                                    </span>
+                                                    <span className={`text-[10px] px-1.5 py-0.5 rounded ${newTotal !== oldTotal ? 'bg-amber-50 text-amber-600' : 'bg-slate-50 text-slate-400'}`}>
+                                                        {newTotal !== oldTotal ? '金額變動' : '金額無變化'}
+                                                    </span>
+                                                </div>
+                                                <div className="grid grid-cols-2 gap-2 text-center text-xs">
+                                                    <div className="border-r border-slate-100 pr-2">
+                                                        <div className="text-[10px] text-slate-400 mb-1">原有的 ({oldCount}筆)</div>
+                                                        <div className="font-mono text-slate-500 line-through">{formatMoney(oldTotal)}</div>
+                                                    </div>
+                                                    <div className="pl-2">
+                                                        <div className="text-[10px] text-indigo-500 mb-1">新的 ({newCount}筆)</div>
+                                                        <div className="font-mono font-bold text-indigo-600">{formatMoney(newTotal)}</div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            
+                                            {isExpanded && (
+                                                <div className="bg-slate-50 border-t border-slate-100 max-h-[200px] overflow-y-auto">
+                                                    <table className="w-full text-[10px] text-left">
+                                                        <thead className="text-slate-400 font-medium sticky top-0 bg-slate-50 border-b border-slate-200">
+                                                            <tr>
+                                                                <th className="px-3 py-1.5 font-normal">日期</th>
+                                                                <th className="px-2 py-1.5 font-normal">類別/名稱</th>
+                                                                <th className="px-3 py-1.5 font-normal text-right">金額</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody className="divide-y divide-slate-100">
+                                                            {newItems.map((item) => (
+                                                                <tr key={item.id}>
+                                                                    <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{item.date.split('-')[2]}日</td>
+                                                                    <td className="px-2 py-2">
+                                                                        <div className="text-slate-700 font-bold truncate max-w-[100px]">{item.name || item.subCategory}</div>
+                                                                        <div className="text-slate-400 scale-90 origin-left">{item.category}-{item.subCategory}</div>
+                                                                    </td>
+                                                                    <td className={`px-3 py-2 text-right font-mono font-bold ${item.amount < 0 ? 'text-emerald-500' : 'text-slate-600'}`}>
+                                                                        {item.amount < 0 ? '+' : ''}{formatMoney(Math.abs(item.amount))}
+                                                                    </td>
+                                                                </tr>
+                                                            ))}
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                                
+                                <p className="text-xs text-slate-500 mt-2 bg-amber-50 text-amber-600 p-2 rounded">
+                                    注意：上述月份的舊有花費資料將被完全覆蓋。
+                                </p>
+                            </div>
+                        </>
+                    )}
+                </div>
+
+                <div className="flex gap-3 w-full">
+                    <button onClick={onCancel} className="flex-1 py-2.5 bg-slate-100 text-slate-500 rounded-xl font-bold text-sm hover:bg-slate-200 transition-colors">
+                        取消
+                    </button>
+                    <button onClick={onConfirm} className="flex-1 py-2.5 bg-indigo-600 text-white rounded-xl font-bold text-sm hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-200">
+                        確認匯入
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 const processExpenseCSVText = (csvText, onSuccess, onError) => {
     try {
         const rows = parseCSV(csvText);
@@ -354,7 +516,8 @@ const processExpenseCSVText = (csvText, onSuccess, onError) => {
         for (let i = 1; i < rows.length; i++) {
             const row = rows[i];
             if (row.length < headers.length) continue;
-            if (idxType !== -1 && row[idxType] !== '支出') continue;
+            // Removed strict type filtering to allow refunds/other types
+            // if (idxType !== -1 && row[idxType] !== '支出') continue;
 
             const dateStr = row[idxDate];
             const dateParts = dateStr.split('/');
@@ -367,10 +530,23 @@ const processExpenseCSVText = (csvText, onSuccess, onError) => {
             const monthKey = `${y}-${m}`;
 
             let amountStr = row[idxAmount];
-            amountStr = amountStr.replace(/,/g, '').replace(/-/g, '');
-            const rawAmount = parseFloat(amountStr);
+            amountStr = amountStr.replace(/,/g, '');
+            let rawAmount = parseFloat(amountStr);
 
             if (isNaN(rawAmount)) continue;
+
+            // Handle sign based on type if available
+            if (idxType !== -1) {
+                if (row[idxType] === '支出') {
+                    rawAmount = Math.abs(rawAmount);
+                } else {
+                    // Treat other types (refunds, income, etc.) as negative expenses (credits)
+                    rawAmount = -Math.abs(rawAmount);
+                }
+            } else {
+                // Legacy behavior: treat as expense (positive) if no type specified
+                rawAmount = Math.abs(rawAmount);
+            }
 
             const currencyCode = idxCurrency !== -1 ? row[idxCurrency] : 'TWD';
             const rate = DEFAULT_EXCHANGE_RATES[currencyCode] || 1;
@@ -777,7 +953,7 @@ const AddAssetModal = ({ onClose, onSave, historyRecords, exchangeRateCache }) =
     );
 };
 
-const DetailView = ({ dateStr, data, onBack, onUpdateData, assetNames }) => {
+const DetailView = ({ dateStr, data, onBack, onUpdateData, assetNames, isPrivacyMode }) => {
     const [isEditing, setIsEditing] = useState(false);
     const [activeTab, setActiveTab] = useState('assets');
     const [localAssets, setLocalAssets] = useState([]);
@@ -958,15 +1134,15 @@ const DetailView = ({ dateStr, data, onBack, onUpdateData, assetNames }) => {
                     <div className="grid grid-cols-3 gap-3">
                         <button onClick={() => { setActiveTab('assets'); setIsEditing(false); }} className={`p-4 rounded-xl border shadow-sm flex flex-col items-center justify-center text-center transition-all ${activeTab === 'assets' ? 'bg-teal-50 border-teal-500 ring-1 ring-teal-500 text-teal-900' : 'bg-white border-slate-100 text-slate-600 hover:bg-slate-50'}`}>
                             <div className={`text-[10px] uppercase tracking-wider font-inter mb-1 ${activeTab === 'assets' ? 'text-teal-600 font-bold' : 'text-slate-400'}`}>總資產 (Total)</div>
-                            <AmountWithTooltip amount={stats.totalAssets} className={`text-lg font-serif-tc font-bold justify-center ${activeTab === 'assets' ? 'text-teal-800' : 'text-slate-800'}`} align="center" />
+                            <AmountWithTooltip amount={stats.totalAssets} className={`text-lg font-serif-tc font-bold justify-center ${activeTab === 'assets' ? 'text-teal-800' : 'text-slate-800'}`} align="center" masked={isPrivacyMode} />
                         </button>
                         <button onClick={() => { setActiveTab('income'); setIsEditing(false); }} className={`p-4 rounded-xl border shadow-sm flex flex-col items-center justify-center text-center transition-all ${activeTab === 'income' ? 'bg-emerald-50 border-emerald-500 ring-1 ring-emerald-500 text-emerald-900' : 'bg-white border-slate-100 text-slate-600 hover:bg-slate-50'}`}>
                             <div className={`text-[10px] uppercase tracking-wider font-inter mb-1 ${activeTab === 'income' ? 'text-emerald-600 font-bold' : 'text-slate-400'}`}>本月收入 (Income)</div>
-                            <AmountWithTooltip amount={stats.monthlyIncome} className={`text-lg font-serif-tc font-bold justify-center ${activeTab === 'income' ? 'text-emerald-800' : 'text-emerald-700'}`} align="center" prefix="+" />
+                            <AmountWithTooltip amount={stats.monthlyIncome} className={`text-lg font-serif-tc font-bold justify-center ${activeTab === 'income' ? 'text-emerald-800' : 'text-emerald-700'}`} align="center" prefix="+" masked={isPrivacyMode} />
                         </button>
                         <button onClick={() => { setActiveTab('cost'); setIsEditing(false); }} className={`p-4 rounded-xl border shadow-sm flex flex-col items-center justify-center text-center transition-all ${activeTab === 'cost' ? 'bg-rose-50 border-rose-500 ring-1 ring-rose-500 text-rose-900' : 'bg-white border-slate-100 text-slate-600 hover:bg-slate-50'}`}>
                             <div className={`text-[10px] uppercase tracking-wider font-inter mb-1 ${activeTab === 'cost' ? 'text-rose-600 font-bold' : 'text-slate-400'}`}>本月花費 (Cost)</div>
-                            <AmountWithTooltip amount={stats.monthlyCost} className={`text-lg font-serif-tc font-bold justify-center ${activeTab === 'cost' ? 'text-rose-800' : 'text-rose-700'}`} align="center" prefix="-" />
+                            <AmountWithTooltip amount={stats.monthlyCost} className={`text-lg font-serif-tc font-bold justify-center ${activeTab === 'cost' ? 'text-rose-800' : 'text-rose-700'}`} align="center" prefix="-" masked={isPrivacyMode} />
                         </button>
                     </div>
 
@@ -974,13 +1150,15 @@ const DetailView = ({ dateStr, data, onBack, onUpdateData, assetNames }) => {
                         <div className="p-4 rounded-xl border border-slate-100 bg-white shadow-sm flex flex-col items-center justify-center text-center">
                             <div className="text-[10px] text-slate-400 uppercase tracking-wider font-inter mb-1 flex items-center gap-1">
                                 綜合損益 <Activity size={12} />
-                                <div className="group/tooltip relative">
-                                    <Info size={10} className="cursor-help text-slate-300 hover:text-slate-500 transition-colors" />
-                                    <AnalysisTooltip incomeDiff={stats.incomeDiff} assetDiff={stats.assetDiff} compositeScore={stats.compositeScore} />
-                                </div>
+                                {!isPrivacyMode && (
+                                    <div className="group/tooltip relative">
+                                        <Info size={10} className="cursor-help text-slate-300 hover:text-slate-500 transition-colors" />
+                                        <AnalysisTooltip incomeDiff={stats.incomeDiff} assetDiff={stats.assetDiff} compositeScore={stats.compositeScore} />
+                                    </div>
+                                )}
                             </div>
-                            <div className={`text-lg font-serif-tc font-bold ${stats.compositeScore >= 0 ? 'text-emerald-600' : 'text-rose-500'}`}>
-                                {stats.compositeScore >= 0 ? '+' : ''}{formatWan(stats.compositeScore)}
+                            <div className={`text-lg font-serif-tc font-bold ${stats.compositeScore >= 0 ? 'text-emerald-600' : 'text-rose-500'} ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>
+                                {isPrivacyMode ? '****' : (stats.compositeScore >= 0 ? '+' : '') + formatWan(stats.compositeScore)}
                             </div>
                         </div>
 
@@ -1006,7 +1184,12 @@ const DetailView = ({ dateStr, data, onBack, onUpdateData, assetNames }) => {
                                         ) : (
                                             <>
                                                 <span className="font-serif-tc text-slate-700">{asset.name}</span>
-                                                <div className="flex flex-col items-end"><span className="font-inter font-medium text-slate-800">{formatMoney(asset.amount)}</span><DiffBadge current={asset.amount} prev={prevMonthAssetsMap[`${asset.type}-${asset.name}`]} /></div>
+                                                <div className="flex flex-col items-end">
+                                                    <span className={`font-inter font-medium text-slate-800 ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>
+                                                        {isPrivacyMode ? '****' : formatMoney(asset.amount)}
+                                                    </span>
+                                                    {!isPrivacyMode && <DiffBadge current={asset.amount} prev={prevMonthAssetsMap[`${asset.type}-${asset.name}`]} />}
+                                                </div>
                                             </>
                                         )}
                                     </div>
@@ -1039,7 +1222,12 @@ const DetailView = ({ dateStr, data, onBack, onUpdateData, assetNames }) => {
                                                         </div>
                                                     )}
                                                 </div>
-                                                <div className="flex flex-col items-end"><span className="font-inter font-medium text-slate-800">{formatMoney(asset.amount)}</span><DiffBadge current={asset.amount} prev={prevMonthAssetsMap[`${asset.type}-${asset.name}`]} /></div>
+                                                <div className="flex flex-col items-end">
+                                                    <span className={`font-inter font-medium text-slate-800 ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>
+                                                        {isPrivacyMode ? '****' : formatMoney(asset.amount)}
+                                                    </span>
+                                                    {!isPrivacyMode && <DiffBadge current={asset.amount} prev={prevMonthAssetsMap[`${asset.type}-${asset.name}`]} />}
+                                                </div>
                                             </>
                                         )}
                                     </div>
@@ -1183,8 +1371,18 @@ const DetailView = ({ dateStr, data, onBack, onUpdateData, assetNames }) => {
                                                 </div>
                                             </div>
                                             <div className="flex flex-col items-end">
-                                                <span className="font-inter font-medium text-rose-500">-{formatMoney(expense.amount)}</span>
-                                                {expense.currency !== 'TWD' && <span className="text-[10px] text-slate-300 font-inter">{new Intl.NumberFormat().format(expense.originalAmount)} {expense.currency}</span>}
+                                                <span className={`font-inter font-medium ${expense.amount < 0 ? 'text-emerald-500' : 'text-rose-500'} ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>
+                                                    {isPrivacyMode ? '****' : (
+                                                        <>
+                                                            {expense.amount < 0 ? '+' : '-'}{formatMoney(Math.abs(expense.amount))}
+                                                        </>
+                                                    )}
+                                                </span>
+                                                {expense.currency !== 'TWD' && !isPrivacyMode && (
+                                                    <span className="text-[10px] text-slate-300 font-inter">
+                                                        {expense.amount < 0 ? '+' : ''}{new Intl.NumberFormat().format(Math.abs(expense.originalAmount))} {expense.currency}
+                                                    </span>
+                                                )}
                                             </div>
                                         </div>
                                     ))}
@@ -1760,6 +1958,14 @@ const AuthenticatedApp = () => {
     const [isSaving, setIsSaving] = useState(false);
     const [isImporting, setIsImporting] = useState(false);
     const [uploadProgress, setUploadProgress] = useState(0);
+    const [isPrivacyMode, setIsPrivacyMode] = useState(() => {
+        return localStorage.getItem('isPrivacyMode') === 'true';
+    });
+
+    useEffect(() => {
+        localStorage.setItem('isPrivacyMode', isPrivacyMode);
+    }, [isPrivacyMode]);
+    const [importConfirmation, setImportConfirmation] = useState({ show: false, type: null, summary: null, pendingData: null });
 
     // --- Helper Functions for Chunking ---
     // --- Helper Functions for Chunking ---
@@ -2178,6 +2384,35 @@ const AuthenticatedApp = () => {
     }
 
 
+    const handleConfirmImport = async () => {
+        const { type, pendingData } = importConfirmation;
+        setIsImporting(true);
+        try {
+            if (type === 'json') {
+                if (user) await saveToFirestoreChunks(pendingData);
+                setData(pendingData);
+                setCurrentYear(new Date().getFullYear());
+                handleShowAlert("匯入成功", "資料已同步至雲端");
+            } else if (type === 'csv') {
+                // Merge logic: Overwrite only the months present in pendingData, keep others
+                const newData = { 
+                    ...data, 
+                    expenses: { ...data.expenses, ...pendingData } 
+                };
+                setData(newData);
+                saveToFirestoreChunks(newData);
+                handleShowAlert("匯入成功", "花費細項已成功覆蓋");
+            }
+            setImportConfirmation({ show: false, type: null, summary: null, pendingData: null });
+        } catch (err) {
+            console.error(err);
+            handleShowAlert("匯入失敗", err.message);
+        } finally {
+            setIsImporting(false);
+            setUploadProgress(0);
+        }
+    };
+
     const handleDataUpdate = (newData) => {
         setData(newData);
         saveToFirestoreChunks(newData);
@@ -2231,10 +2466,16 @@ const AuthenticatedApp = () => {
                     const text = await response.text();
 
                     processExpenseCSVText(text, (expensesByMonth) => {
-                        const newData = { ...data, expenses: expensesByMonth };
-                        setData(newData);
-                        saveToFirestoreChunks(newData);
-                        handleShowAlert("匯入成功", "Dropbox 花費細項已成功同步");
+                        const monthsCount = Object.keys(expensesByMonth).length;
+                        const totalRecords = Object.values(expensesByMonth).flat().length;
+                        const months = Object.keys(expensesByMonth).sort();
+
+                        setImportConfirmation({
+                            show: true,
+                            type: 'csv',
+                            summary: { monthsCount, totalRecords, months },
+                            pendingData: expensesByMonth
+                        });
                         setShowImportModal(false);
                     }, (errorMsg) => {
                         handleShowAlert("匯入失敗", errorMsg);
@@ -2266,19 +2507,21 @@ const AuthenticatedApp = () => {
                 const parsed = JSON.parse(e.target.result);
                 if (!parsed.records) throw new Error("缺少 records 欄位");
 
-                // 1. Save to Cloud First (Blocking)
-                if (user) {
-                    await saveToFirestoreChunks(parsed);
-                }
+                const summary = {
+                    records: Object.values(parsed.records || {}).flat().length,
+                    incomes: Object.values(parsed.incomes || {}).reduce((acc, curr) => acc + (curr.sources?.length || 0), 0),
+                    expenses: Object.keys(parsed.expenses || {}).length,
+                    memos: Object.keys(parsed.memos || {}).length
+                };
 
-                // 2. Update Local State
-                setData(parsed);
-                setCurrentYear(new Date().getFullYear());
-
-                // 3. Close Modal & Reset
+                setImportConfirmation({
+                    show: true,
+                    type: 'json',
+                    summary,
+                    pendingData: parsed
+                });
                 setShowImportModal(false);
                 if (fileInputRef.current) fileInputRef.current.value = "";
-                handleShowAlert("匯入成功", "資料已同步至雲端");
             } catch (err) {
                 console.error(err);
                 handleShowAlert("匯入失敗", "格式錯誤或網路連線問題");
@@ -2294,11 +2537,18 @@ const AuthenticatedApp = () => {
         const file = event.target.files[0];
         if (!file) return;
         handleProcessExpenseCSV(file, (expensesByMonth) => {
-            const newData = { ...data, expenses: expensesByMonth };
-            setData(newData);
-            saveToFirestoreChunks(newData); // Push to cloud
-            handleShowAlert("匯入成功", "花費細項已成功覆蓋");
+            const monthsCount = Object.keys(expensesByMonth).length;
+            const totalRecords = Object.values(expensesByMonth).flat().length;
+            const months = Object.keys(expensesByMonth).sort();
+
+            setImportConfirmation({
+                show: true,
+                type: 'csv',
+                summary: { monthsCount, totalRecords, months },
+                pendingData: expensesByMonth
+            });
             setShowAddModal(false);
+            setShowImportModal(false);
             if (expenseFileInputRef.current) expenseFileInputRef.current.value = "";
         }, (errorMsg) => {
             handleShowAlert("匯入失敗", errorMsg);
@@ -2394,6 +2644,16 @@ const AuthenticatedApp = () => {
         <div className="min-h-screen max-w-md mx-auto bg-white text-slate-800 relative font-sans shadow-2xl overflow-hidden">
             <GlobalStyles />
             {alertInfo.show && <AlertModal title={alertInfo.title} message={alertInfo.message} onClose={() => setAlertInfo({ ...alertInfo, show: false })} />}
+            {importConfirmation.show && (
+                <ImportConfirmationModal 
+                    type={importConfirmation.type} 
+                    summary={importConfirmation.summary} 
+                    onConfirm={handleConfirmImport} 
+                    onCancel={() => setImportConfirmation({ show: false, type: null, summary: null, pendingData: null })}
+                    currentData={data} // Pass current data
+                    pendingData={importConfirmation.pendingData} // Pass pending data
+                />
+            )}
             {showYearSelector && <YearSelectorModal currentYear={currentYear} availableYears={availableYears} yearlyTrendData={yearlyTrendData} onSelect={(year) => { setCurrentYear(year); setShowYearSelector(false); }} onClose={() => setShowYearSelector(false)} />}
             {showAddIncomeModal && <AddIncomeModal onClose={() => setShowAddIncomeModal(false)} onSave={handleSaveNewIncome} assetNames={allAssetNames} exchangeRateCache={exchangeRateCache} />}
             {showAddAssetModal && <AddAssetModal onClose={() => setShowAddAssetModal(false)} onSave={handleSaveNewAsset} historyRecords={data.records} exchangeRateCache={exchangeRateCache} />}
@@ -2421,7 +2681,7 @@ const AuthenticatedApp = () => {
 
             {view === 'detail' && selectedDate && (
                 <div className="w-full max-w-md mx-auto">
-                    <DetailView dateStr={selectedDate} data={data} onBack={() => setView('dashboard')} onUpdateData={handleDetailUpdate} assetNames={allAssetNames} />
+                    <DetailView dateStr={selectedDate} data={data} onBack={() => setView('dashboard')} onUpdateData={handleDetailUpdate} assetNames={allAssetNames} isPrivacyMode={isPrivacyMode} />
                 </div>
             )}
             <div className={`transition-transform duration-300 w-full max-w-md mx-auto ${view === 'detail' ? 'scale-95 opacity-50 pointer-events-none hidden' : ''}`}>
@@ -2490,6 +2750,13 @@ const AuthenticatedApp = () => {
                                     </div>
                                 </>
                             )}
+                            <button
+                                onClick={() => setIsPrivacyMode(!isPrivacyMode)}
+                                className="p-2 bg-white text-slate-400 hover:text-indigo-500 hover:bg-indigo-50 rounded-full transition-all border border-slate-100 shadow-sm"
+                                title={isPrivacyMode ? "顯示金額" : "隱藏金額"}
+                            >
+                                {isPrivacyMode ? <EyeOff size={18} /> : <Eye size={18} />}
+                            </button>
                             <div className="relative group/user z-50">
                                 <img src={user.photoURL || "https://ui-avatars.com/api/?name=User"} alt="User" className="w-9 h-9 rounded-full border border-slate-200 shadow-sm cursor-pointer" />
                                 <div className="absolute top-10 right-0 w-32 bg-white rounded-xl shadow-xl border border-slate-100 p-1 opacity-0 group-hover/user:opacity-100 transition-all pointer-events-none group-hover/user:pointer-events-auto transform origin-top-right scale-95 group-hover/user:scale-100">
@@ -2540,8 +2807,8 @@ const AuthenticatedApp = () => {
                                 <span className="text-xs text-slate-400 font-inter mb-1 block flex items-center justify-center gap-1 cursor-help">
                                     年度資產增長金額 <Info size={12} />
                                 </span>
-                                <span className={`text-2xl font-inter font-bold ${yearStats.realAssetGrowthAmount >= 0 ? 'text-emerald-600' : 'text-rose-500'}`}>
-                                    {yearStats.realAssetGrowthAmount > 0 ? '+' : ''}{formatWan(yearStats.realAssetGrowthAmount)}
+                                <span className={`text-2xl font-inter font-bold ${yearStats.realAssetGrowthAmount >= 0 ? 'text-emerald-600' : 'text-rose-500'} ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>
+                                    {isPrivacyMode ? '****' : (yearStats.realAssetGrowthAmount > 0 ? '+' : '') + formatWan(yearStats.realAssetGrowthAmount)}
                                 </span>
                                 <div className="absolute bottom-full left-0 mb-2 w-48 bg-slate-800 text-white text-xs p-3 rounded-lg opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none shadow-xl z-20">
                                     <div className="font-bold border-b border-slate-600 pb-1 mb-1">計算明細</div>
@@ -2555,8 +2822,8 @@ const AuthenticatedApp = () => {
                                 <span className="text-xs text-slate-400 font-inter mb-1 block flex items-center justify-center gap-1 cursor-help">
                                     年度資產增長比例 <Info size={12} />
                                 </span>
-                                <span className="text-2xl font-inter font-bold text-emerald-600">
-                                    {formatRate(yearStats.assetGrowthRatio)}
+                                <span className={`text-2xl font-inter font-bold text-emerald-600 ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>
+                                    {isPrivacyMode ? '****' : formatRate(yearStats.assetGrowthRatio)}
                                 </span>
                                 <div className="absolute bottom-full right-0 mb-2 w-48 bg-slate-800 text-white text-xs p-3 rounded-lg opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none shadow-xl z-20">
                                     <div className="font-bold border-b border-slate-600 pb-1 mb-1">計算明細</div>
@@ -2570,9 +2837,9 @@ const AuthenticatedApp = () => {
                         <div className="mt-4 p-4 bg-slate-800 text-white rounded-xl shadow-lg relative overflow-hidden">
                             <div className="absolute top-0 right-0 w-32 h-32 bg-teal-500/20 rounded-full blur-2xl -mr-10 -mt-10"></div>
                             <div className="relative z-10 flex justify-around items-center px-4">
-                                <div className="flex flex-col gap-1 items-center text-center"><span className="text-[10px] text-slate-400 uppercase tracking-wider flex items-center justify-center gap-1"><Mountain size={12} className="text-emerald-400" /> 年度最高 ({assetExtremes.max.month}月)</span><span className="text-lg font-inter font-bold text-white">{formatWan(assetExtremes.max.val)}</span></div>
+                                <div className="flex flex-col gap-1 items-center text-center"><span className="text-[10px] text-slate-400 uppercase tracking-wider flex items-center justify-center gap-1"><Mountain size={12} className="text-emerald-400" /> 年度最高 ({assetExtremes.max.month}月)</span><span className={`text-lg font-inter font-bold text-white ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>{isPrivacyMode ? '****' : formatWan(assetExtremes.max.val)}</span></div>
                                 <div className="w-px h-8 bg-slate-600 mx-2"></div>
-                                <div className="flex flex-col gap-1 items-center text-center"><span className="text-[10px] text-slate-400 uppercase tracking-wider flex items-center justify-center gap-1">年度最低 ({assetExtremes.min.month}月) <ArrowDown size={12} className="text-rose-400" /></span><span className="text-lg font-inter font-bold text-white">{formatWan(assetExtremes.min.val)}</span></div>
+                                <div className="flex flex-col gap-1 items-center text-center"><span className="text-[10px] text-slate-400 uppercase tracking-wider flex items-center justify-center gap-1">年度最低 ({assetExtremes.min.month}月) <ArrowDown size={12} className="text-rose-400" /></span><span className={`text-lg font-inter font-bold text-white ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>{isPrivacyMode ? '****' : formatWan(assetExtremes.min.val)}</span></div>
                             </div>
                         </div>
                     </section>
@@ -2584,7 +2851,7 @@ const AuthenticatedApp = () => {
                                 <span className="text-[10px] text-slate-400 font-inter mb-1 flex items-center gap-1 cursor-help">
                                     年總和 <Info size={10} />
                                 </span>
-                                <span className="text-sm font-bold font-inter text-slate-700">{formatWan(yearStats.totalIncome)}</span>
+                                <span className={`text-sm font-bold font-inter text-slate-700 ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>{isPrivacyMode ? '****' : formatWan(yearStats.totalIncome)}</span>
                                 <div className="absolute bottom-full mb-2 w-48 bg-slate-800 text-white text-xs p-3 rounded-lg opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none shadow-xl">
                                     <div className="font-bold border-b border-slate-600 pb-1 mb-1">計算明細</div>
                                     <div className="flex justify-between"><span>本年度總收入</span></div>
@@ -2595,7 +2862,7 @@ const AuthenticatedApp = () => {
                                 <span className="text-[10px] text-slate-400 font-inter mb-1 flex items-center gap-1 cursor-help">
                                     年平均 <Info size={10} />
                                 </span>
-                                <span className="text-sm font-bold font-inter text-slate-700">{formatWan(yearStats.avgIncome)}</span>
+                                <span className={`text-sm font-bold font-inter text-slate-700 ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>{isPrivacyMode ? '****' : formatWan(yearStats.avgIncome)}</span>
                                 <div className="absolute bottom-full mb-2 w-48 bg-slate-800 text-white text-xs p-3 rounded-lg opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none shadow-xl">
                                     <div className="font-bold border-b border-slate-600 pb-1 mb-1">計算明細</div>
                                     <div className="flex justify-between mb-1"><span>年總和</span><span className="font-inter">{formatWan(yearStats.totalIncome)}</span></div>
@@ -2607,9 +2874,13 @@ const AuthenticatedApp = () => {
                                 <span className="text-[10px] text-slate-400 font-inter mb-1 flex items-center gap-1 cursor-help">
                                     收入年增長 <Info size={10} />
                                 </span>
-                                <span className={`text-sm font-bold font-inter flex items-center justify-center gap-1 ${yearStats.assetGrowthRate < 1 ? 'text-rose-500' : 'text-emerald-600'}`}>
-                                    {yearStats.assetGrowthRate < 1 && yearStats.assetGrowthRate > 0 ? <TrendingDown size={14} /> : null}
-                                    {formatRate(yearStats.assetGrowthRate)}
+                                <span className={`text-sm font-bold font-inter flex items-center justify-center gap-1 ${yearStats.assetGrowthRate < 1 ? 'text-rose-500' : 'text-emerald-600'} ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>
+                                    {isPrivacyMode ? '****' : (
+                                        <>
+                                            {yearStats.assetGrowthRate < 1 && yearStats.assetGrowthRate > 0 ? <TrendingDown size={14} /> : null}
+                                            {formatRate(yearStats.assetGrowthRate)}
+                                        </>
+                                    )}
                                 </span>
                                 <div className="absolute bottom-full mb-2 w-56 bg-slate-800 text-white text-xs p-3 rounded-lg opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none shadow-xl">
                                     <div className="font-bold border-b border-slate-600 pb-1 mb-1">計算明細 {(currentYear - 1)} vs {currentYear}</div>
@@ -2622,8 +2893,8 @@ const AuthenticatedApp = () => {
                                 <span className="text-[10px] text-slate-400 font-inter mb-1 flex items-center gap-1 cursor-help">
                                     收入占總所得%數 <Info size={10} />
                                 </span>
-                                <span className="text-sm font-bold font-inter text-emerald-600">
-                                    {formatRate(yearStats.incomeGrowthRate)}
+                                <span className={`text-sm font-bold font-inter text-emerald-600 ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>
+                                    {isPrivacyMode ? '****' : formatRate(yearStats.incomeGrowthRate)}
                                 </span>
                                 <div className="absolute bottom-full mb-2 w-56 bg-slate-800 text-white text-xs p-3 rounded-lg opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none shadow-xl">
                                     <div className="font-bold border-b border-slate-600 pb-1 mb-1">計算明細</div>
@@ -2647,28 +2918,34 @@ const AuthenticatedApp = () => {
                                             <span className="text-sm font-inter font-medium text-slate-400 w-8">{String(monthData.month).padStart(2, '0')}</span>
                                             {monthData.allRecords.length > 1 ? (<div className="flex flex-col gap-1">{monthData.allRecords.map((r, idx) => (
                                                 <div key={idx} className={`flex items-center gap-2 text-base font-inter font-normal ${monthData.latestDate ? 'text-slate-700' : 'text-slate-400'}`}>
-                                                    <AmountWithTooltip amount={r.assets} className="font-inter text-slate-700" align="left" />
+                                    <AmountWithTooltip amount={r.assets} className="font-inter text-slate-700" align="left" masked={isPrivacyMode} />
                                                     <span className="text-xs text-slate-400">({parseInt(r.dateStr.split('-')[2])}日)</span>
                                                 </div>
-                                            ))}</div>) : (<span className={`text-base font-inter font-normal ${monthData.latestDate ? 'text-slate-700' : 'text-slate-400'}`}><AmountWithTooltip amount={monthData.assets} className="font-inter text-slate-700" align="left" /></span>)}
+                                            ))}</div>) : (<span className={`text-base font-inter font-normal ${monthData.latestDate ? 'text-slate-700' : 'text-slate-400'}`}><AmountWithTooltip amount={monthData.assets} className="font-inter text-slate-700" align="left" masked={isPrivacyMode} /></span>)}
                                         </div>
                                         {monthData.memo && (<div className="ml-11 mt-1 text-xs text-slate-400 font-serif-tc italic flex items-center gap-1"><span className="w-1 h-1 rounded-full bg-slate-300"></span>{monthData.memo}</div>)}
                                     </div>
                                     <div className="text-right flex flex-col items-end gap-1">
-                                        {monthData.income > 0 && <div className="text-xs text-emerald-600 font-inter bg-emerald-50 px-2 py-1 rounded-md">+{formatMoney(monthData.income)}</div>}
+                                        {monthData.income > 0 && <div className={`text-xs text-emerald-600 font-inter bg-emerald-50 px-2 py-1 rounded-md ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>{isPrivacyMode ? '****' : '+' + formatMoney(monthData.income)}</div>}
                                         {monthData.analysis && (
-                                            <div className={`text-[10px] font-bold flex items-center gap-1 ${monthData.analysis.compositeScore >= 0 ? 'text-emerald-500' : 'text-rose-400'}`}>
-                                                {monthData.analysis.compositeScore >= 0 ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
-                                                {monthData.analysis.compositeScore > 0 ? '+' : ''}{formatWan(monthData.analysis.compositeScore)}
-                                                <div className="group/tooltip relative">
-                                                    <Info size={10} className="cursor-help text-slate-300 hover:text-slate-500 transition-colors ml-1" />
-                                                    <AnalysisTooltip
-                                                        incomeDiff={monthData.analysis.incomeDiff}
-                                                        assetDiff={monthData.analysis.assetDiff}
-                                                        compositeScore={monthData.analysis.compositeScore}
-                                                        align="right"
-                                                    />
-                                                </div>
+                                            <div className={`text-[10px] font-bold flex items-center gap-1 ${monthData.analysis.compositeScore >= 0 ? 'text-emerald-500' : 'text-rose-400'} ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>
+                                                {isPrivacyMode ? '****' : (
+                                                    <>
+                                                        {monthData.analysis.compositeScore >= 0 ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
+                                                        {monthData.analysis.compositeScore > 0 ? '+' : ''}{formatWan(monthData.analysis.compositeScore)}
+                                                    </>
+                                                )}
+                                                {!isPrivacyMode && (
+                                                    <div className="group/tooltip relative">
+                                                        <Info size={10} className="cursor-help text-slate-300 hover:text-slate-500 transition-colors ml-1" />
+                                                        <AnalysisTooltip
+                                                            incomeDiff={monthData.analysis.incomeDiff}
+                                                            assetDiff={monthData.analysis.assetDiff}
+                                                            compositeScore={monthData.analysis.compositeScore}
+                                                            align="right"
+                                                        />
+                                                    </div>
+                                                )}
                                             </div>
                                         )}
                                     </div>
