@@ -600,7 +600,7 @@ const registerBiometric = async (userEmail) => {
         const publicKey = {
             challenge,
             rp: {
-                name: "CatLog App",
+                name: "極簡貓資產",
                 id: window.location.hostname // Should be effective domain
             },
             user: {
@@ -677,7 +677,7 @@ const BiometricLockScreen = ({ onUnlock, errorMsg }) => (
         <div className="w-24 h-24 bg-slate-800 rounded-full flex items-center justify-center mb-8 shadow-2xl ring-4 ring-slate-700/50">
             <Lock size={48} className="text-teal-400" />
         </div>
-        <h2 className="text-2xl font-serif-tc font-bold mb-2">CatLog 已鎖定</h2>
+        <h2 className="text-2xl font-serif-tc font-bold mb-2">極簡貓資產 已鎖定</h2>
         <p className="text-slate-400 text-sm mb-8 font-inter text-center">請使用 Face ID / Touch ID 解鎖以繼續訪問</p>
         
         <button 
@@ -2857,7 +2857,7 @@ const AuthenticatedApp = () => {
                     <div className="flex justify-between items-end mb-4">
                         <div>
                             <div className="flex items-center gap-2 mb-1">
-                                <span className="text-xs uppercase tracking-[0.2em] text-slate-400 font-inter">Personal Catalog</span>
+                                <span className="text-xs uppercase tracking-[0.2em] text-slate-400 font-inter">CatLog</span>
                                 <button
                                     onClick={handleManualSync}
                                     className="p-1 text-slate-300 hover:text-amber-500 transition-colors"
@@ -2867,8 +2867,8 @@ const AuthenticatedApp = () => {
                                 </button>
                             </div>
                             <h1 className="text-2xl font-serif-tc font-bold text-slate-800 flex items-center gap-2">
-                                <img src="/favicon.png" alt="CatLog Logo" className="w-[30px] h-[30px] object-contain" />
-                                CatLog
+                                <img src="/favicon.png" alt="極簡貓資產 Logo" className="w-[30px] h-[30px] object-contain" />
+                                極簡貓資產
                                 {isSaving && <span className="text-[10px] bg-amber-50 text-amber-500 px-2 py-1 rounded-full animate-pulse border border-amber-200">儲存中...</span>}
                             </h1>
                         </div>
@@ -2979,32 +2979,36 @@ const AuthenticatedApp = () => {
                         <div className="mt-8 grid grid-cols-2 gap-3">
                             <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 relative group/tooltip z-10 flex flex-col items-center justify-center text-center">
                                 <span className="text-xs text-slate-400 font-inter mb-1 block flex items-center justify-center gap-1 cursor-help">
-                                    年度資產增長金額 <Info size={12} />
+                                    年度資產增長金額 {!isPrivacyMode && <Info size={12} />}
                                 </span>
                                 <span className={`text-2xl font-inter font-bold ${yearStats.realAssetGrowthAmount >= 0 ? 'text-emerald-600' : 'text-rose-500'} ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>
                                     {isPrivacyMode ? '****' : (yearStats.realAssetGrowthAmount > 0 ? '+' : '') + formatWan(yearStats.realAssetGrowthAmount)}
                                 </span>
-                                <div className="absolute bottom-full left-0 mb-2 w-48 bg-slate-800 text-white text-xs p-3 rounded-lg opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none shadow-xl z-20">
-                                    <div className="font-bold border-b border-slate-600 pb-1 mb-1">計算明細</div>
-                                    <div className="flex justify-between mb-1"><span className="text-slate-400">今年資產:</span><span className="font-inter">{formatWan(yearStats.thisYearAssets)}</span></div>
-                                    <div className="flex justify-between mb-1"><span className="text-slate-400">去年資產:</span><span className="font-inter">{formatWan(yearStats.lastYearAssets)}</span></div>
-                                    <div className="text-[10px] text-slate-400 mt-2 pt-2 border-t border-slate-600">公式: 今年度資產 - 去年度資產</div>
-                                </div>
+                                {!isPrivacyMode && (
+                                    <div className="absolute bottom-full left-0 mb-2 w-48 bg-slate-800 text-white text-xs p-3 rounded-lg opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none shadow-xl z-20">
+                                        <div className="font-bold border-b border-slate-600 pb-1 mb-1">計算明細</div>
+                                        <div className="flex justify-between mb-1"><span className="text-slate-400">今年資產:</span><span className="font-inter">{formatWan(yearStats.thisYearAssets)}</span></div>
+                                        <div className="flex justify-between mb-1"><span className="text-slate-400">去年資產:</span><span className="font-inter">{formatWan(yearStats.lastYearAssets)}</span></div>
+                                        <div className="text-[10px] text-slate-400 mt-2 pt-2 border-t border-slate-600">公式: 今年度資產 - 去年度資產</div>
+                                    </div>
+                                )}
                                 <Footprints className="absolute -bottom-3 -right-2 text-amber-100 opacity-40 rotate-[-15deg]" size={50} />
                             </div>
                             <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 relative group/tooltip z-10 flex flex-col items-center justify-center text-center">
                                 <span className="text-xs text-slate-400 font-inter mb-1 block flex items-center justify-center gap-1 cursor-help">
-                                    年度資產增長比例 <Info size={12} />
+                                    年度資產增長比例 {!isPrivacyMode && <Info size={12} />}
                                 </span>
                                 <span className={`text-2xl font-inter font-bold text-emerald-600 ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>
                                     {isPrivacyMode ? '****' : formatRate(yearStats.assetGrowthRatio)}
                                 </span>
-                                <div className="absolute bottom-full right-0 mb-2 w-48 bg-slate-800 text-white text-xs p-3 rounded-lg opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none shadow-xl z-20">
-                                    <div className="font-bold border-b border-slate-600 pb-1 mb-1">計算明細</div>
-                                    <div className="flex justify-between mb-1"><span className="text-slate-400">今年資產:</span><span className="font-inter">{formatWan(yearStats.thisYearAssets)}</span></div>
-                                    <div className="flex justify-between mb-1"><span className="text-slate-400">去年資產:</span><span className="font-inter">{formatWan(yearStats.lastYearAssets)}</span></div>
-                                    <div className="text-[10px] text-slate-400 mt-2 pt-2 border-t border-slate-600">公式: 今年度資產 / 去年度資產</div>
-                                </div>
+                                {!isPrivacyMode && (
+                                    <div className="absolute bottom-full right-0 mb-2 w-48 bg-slate-800 text-white text-xs p-3 rounded-lg opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none shadow-xl z-20">
+                                        <div className="font-bold border-b border-slate-600 pb-1 mb-1">計算明細</div>
+                                        <div className="flex justify-between mb-1"><span className="text-slate-400">今年資產:</span><span className="font-inter">{formatWan(yearStats.thisYearAssets)}</span></div>
+                                        <div className="flex justify-between mb-1"><span className="text-slate-400">去年資產:</span><span className="font-inter">{formatWan(yearStats.lastYearAssets)}</span></div>
+                                        <div className="text-[10px] text-slate-400 mt-2 pt-2 border-t border-slate-600">公式: 今年度資產 / 去年度資產</div>
+                                    </div>
+                                )}
                                 <Cat className="absolute -bottom-2 -left-2 text-amber-100 opacity-40 rotate-[15deg] scale-x-[-1]" size={50} />
                             </div>
                         </div>
@@ -3023,30 +3027,34 @@ const AuthenticatedApp = () => {
                         <div className="grid grid-cols-2 gap-3 mb-6">
                             <div className="bg-white p-3 rounded-xl border border-slate-100 shadow-sm flex flex-col items-center justify-center text-center relative group/tooltip z-10">
                                 <span className="text-[10px] text-slate-400 font-inter mb-1 flex items-center gap-1 cursor-help">
-                                    年總和 <Info size={10} />
+                                    年總和 {!isPrivacyMode && <Info size={10} />}
                                 </span>
                                 <span className={`text-sm font-bold font-inter text-slate-700 ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>{isPrivacyMode ? '****' : formatWan(yearStats.totalIncome)}</span>
-                                <div className="absolute bottom-full mb-2 w-48 bg-slate-800 text-white text-xs p-3 rounded-lg opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none shadow-xl">
-                                    <div className="font-bold border-b border-slate-600 pb-1 mb-1">計算明細</div>
-                                    <div className="flex justify-between"><span>本年度總收入</span></div>
-                                    <div className="font-inter text-emerald-400 mt-1 text-right">{formatMoney(yearStats.totalIncome)}</div>
-                                </div>
+                                {!isPrivacyMode && (
+                                    <div className="absolute bottom-full mb-2 w-48 bg-slate-800 text-white text-xs p-3 rounded-lg opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none shadow-xl">
+                                        <div className="font-bold border-b border-slate-600 pb-1 mb-1">計算明細</div>
+                                        <div className="flex justify-between"><span>本年度總收入</span></div>
+                                        <div className="font-inter text-emerald-400 mt-1 text-right">{formatMoney(yearStats.totalIncome)}</div>
+                                    </div>
+                                )}
                             </div>
                             <div className="bg-white p-3 rounded-xl border border-slate-100 shadow-sm flex flex-col items-center justify-center text-center relative group/tooltip z-10">
                                 <span className="text-[10px] text-slate-400 font-inter mb-1 flex items-center gap-1 cursor-help">
-                                    年平均 <Info size={10} />
+                                    年平均 {!isPrivacyMode && <Info size={10} />}
                                 </span>
                                 <span className={`text-sm font-bold font-inter text-slate-700 ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>{isPrivacyMode ? '****' : formatWan(yearStats.avgIncome)}</span>
-                                <div className="absolute bottom-full mb-2 w-48 bg-slate-800 text-white text-xs p-3 rounded-lg opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none shadow-xl">
-                                    <div className="font-bold border-b border-slate-600 pb-1 mb-1">計算明細</div>
-                                    <div className="flex justify-between mb-1"><span>年總和</span><span className="font-inter">{formatWan(yearStats.totalIncome)}</span></div>
-                                    <div className="flex justify-between border-t border-slate-600 pt-1"><span>除以 12 個月</span></div>
-                                    <div className="font-inter text-emerald-400 mt-1 text-right">= {formatMoney(yearStats.avgIncome)} / 月</div>
-                                </div>
+                                {!isPrivacyMode && (
+                                    <div className="absolute bottom-full mb-2 w-48 bg-slate-800 text-white text-xs p-3 rounded-lg opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none shadow-xl">
+                                        <div className="font-bold border-b border-slate-600 pb-1 mb-1">計算明細</div>
+                                        <div className="flex justify-between mb-1"><span>年總和</span><span className="font-inter">{formatWan(yearStats.totalIncome)}</span></div>
+                                        <div className="flex justify-between border-t border-slate-600 pt-1"><span>除以 12 個月</span></div>
+                                        <div className="font-inter text-emerald-400 mt-1 text-right">= {formatMoney(yearStats.avgIncome)} / 月</div>
+                                    </div>
+                                )}
                             </div>
                             <div className="bg-white p-3 rounded-xl border border-slate-100 shadow-sm flex flex-col items-center justify-center text-center relative group/tooltip z-10">
                                 <span className="text-[10px] text-slate-400 font-inter mb-1 flex items-center gap-1 cursor-help">
-                                    收入年增長 <Info size={10} />
+                                    收入年增長 {!isPrivacyMode && <Info size={10} />}
                                 </span>
                                 <span className={`text-sm font-bold font-inter flex items-center justify-center gap-1 ${yearStats.assetGrowthRate < 1 ? 'text-rose-500' : 'text-emerald-600'} ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>
                                     {isPrivacyMode ? '****' : (
@@ -3056,26 +3064,30 @@ const AuthenticatedApp = () => {
                                         </>
                                     )}
                                 </span>
-                                <div className="absolute bottom-full mb-2 w-56 bg-slate-800 text-white text-xs p-3 rounded-lg opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none shadow-xl">
-                                    <div className="font-bold border-b border-slate-600 pb-1 mb-1">計算明細 {(currentYear - 1)} vs {currentYear}</div>
-                                    <div className="flex justify-between mb-1"><span className="text-slate-400">今年收入:</span><span className="font-inter">{formatWan(yearStats.totalIncome)}</span></div>
-                                    <div className="flex justify-between mb-1"><span className="text-slate-400">去年收入:</span><span className="font-inter">{formatWan(yearStats.lastYearIncome)}</span></div>
-                                    <div className="text-[10px] text-slate-400 mt-2 pt-2 border-t border-slate-600">公式: 今年收入 / 去年收入</div>
-                                </div>
+                                {!isPrivacyMode && (
+                                    <div className="absolute bottom-full mb-2 w-56 bg-slate-800 text-white text-xs p-3 rounded-lg opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none shadow-xl">
+                                        <div className="font-bold border-b border-slate-600 pb-1 mb-1">計算明細 {(currentYear - 1)} vs {currentYear}</div>
+                                        <div className="flex justify-between mb-1"><span className="text-slate-400">今年收入:</span><span className="font-inter">{formatWan(yearStats.totalIncome)}</span></div>
+                                        <div className="flex justify-between mb-1"><span className="text-slate-400">去年收入:</span><span className="font-inter">{formatWan(yearStats.lastYearIncome)}</span></div>
+                                        <div className="text-[10px] text-slate-400 mt-2 pt-2 border-t border-slate-600">公式: 今年收入 / 去年收入</div>
+                                    </div>
+                                )}
                             </div>
                             <div className="bg-white p-3 rounded-xl border border-slate-100 shadow-sm flex flex-col items-center justify-center text-center relative group/tooltip z-10">
                                 <span className="text-[10px] text-slate-400 font-inter mb-1 flex items-center gap-1 cursor-help">
-                                    收入占總所得%數 <Info size={10} />
+                                    收入占總所得%數 {!isPrivacyMode && <Info size={10} />}
                                 </span>
                                 <span className={`text-sm font-bold font-inter text-emerald-600 ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>
                                     {isPrivacyMode ? '****' : formatRate(yearStats.incomeGrowthRate)}
                                 </span>
-                                <div className="absolute bottom-full mb-2 w-56 bg-slate-800 text-white text-xs p-3 rounded-lg opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none shadow-xl">
-                                    <div className="font-bold border-b border-slate-600 pb-1 mb-1">計算明細</div>
-                                    <div className="flex justify-between mb-1"><span className="text-slate-400">本年度收入:</span><span className="font-inter">{formatWan(yearStats.totalIncome)}</span></div>
-                                    <div className="flex justify-between mb-1"><span className="text-slate-400">歷年總收入:</span><span className="font-inter">{formatWan(yearStats.totalAccumulatedIncome)}</span></div>
-                                    <div className="text-[10px] text-slate-400 mt-2 pt-2 border-t border-slate-600">公式: 今年收入 / 歷年總收入</div>
-                                </div>
+                                {!isPrivacyMode && (
+                                    <div className="absolute bottom-full mb-2 w-56 bg-slate-800 text-white text-xs p-3 rounded-lg opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none shadow-xl">
+                                        <div className="font-bold border-b border-slate-600 pb-1 mb-1">計算明細</div>
+                                        <div className="flex justify-between mb-1"><span className="text-slate-400">本年度收入:</span><span className="font-inter">{formatWan(yearStats.totalIncome)}</span></div>
+                                        <div className="flex justify-between mb-1"><span className="text-slate-400">歷年總收入:</span><span className="font-inter">{formatWan(yearStats.totalAccumulatedIncome)}</span></div>
+                                        <div className="text-[10px] text-slate-400 mt-2 pt-2 border-t border-slate-600">公式: 今年收入 / 歷年總收入</div>
+                                    </div>
+                                )}
                             </div>
                         </div>
 
