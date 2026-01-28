@@ -35,7 +35,7 @@ const LoginPage = () => {
                     </div>
 
                     <h1 className="text-3xl font-serif-tc font-bold text-slate-800 mb-3">
-                        CatLog
+                        極簡貓資產
                     </h1>
                     <p className="text-slate-500 mb-8 font-medium">
                         您的個人智慧資產管家
@@ -84,9 +84,16 @@ const LoginPage = () => {
                         </div>
                     </button>
 
-                    <div className="mt-6 text-xs text-slate-400 flex items-center justify-center gap-1">
-                        <ShieldCheck size={12} />
-                        <span>資料安全加密保護</span>
+                    <div className="mt-6 flex flex-col items-center gap-2">
+                        <div className="text-xs text-slate-400 flex items-center justify-center gap-1">
+                            <ShieldCheck size={12} />
+                            <span>資料安全加密保護</span>
+                        </div>
+                        <div className="text-[10px] text-slate-300 flex gap-3">
+                            <a href="/privacy.html" target="_blank" rel="noopener noreferrer" className="hover:text-slate-500 transition-colors">隱私權政策</a>
+                            <span>•</span>
+                            <a href="/terms.html" target="_blank" rel="noopener noreferrer" className="hover:text-slate-500 transition-colors">服務條款</a>
+                        </div>
                     </div>
                 </div>
             </div>

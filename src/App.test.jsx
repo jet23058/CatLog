@@ -135,7 +135,7 @@ describe('App Integration Tests', () => {
             signInWithGoogle: mockSignIn,
         });
         render(<App />);
-        expect(screen.getByText(/CatLog/i)).toBeInTheDocument();
+        expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument();
         expect(screen.getByText(/使用 Google 帳號登入/i)).toBeInTheDocument();
     });
 
