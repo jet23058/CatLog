@@ -922,19 +922,53 @@ const AddAssetModal = ({ onClose, onSave, historyRecords, exchangeRateCache }) =
 
     const suggestions = prevAssets.filter(a => a.type === type);
 
-    const fetchRate = () => {
+    const fetchRate = async () => {
         if (currency === 'TWD') return;
         setIsFetchingRate(true);
-        setTimeout(() => {
-            const mockRates = DEFAULT_EXCHANGE_RATES;
-            const rate = mockRates[currency] || (Math.random() * 30 + 1).toFixed(2);
-            setExchangeRate(String(rate));
-            setIsFetchingRate(false);
-            if (originalAmount) {
-                const twd = (parseFloat(originalAmount) * rate).toFixed(0);
-                setAmount(twd);
+        setErrorMsg("");
+
+        try {
+            // Using a reliable free API
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
+
+            const response = await fetch(`https://api.exchangerate-api.com/v4/latest/${currency}`, {
+                signal: controller.signal
+            });
+            clearTimeout(timeoutId);
+
+            if (!response.ok) throw new Error('Network response was not ok');
+
+            const data = await response.json();
+            const rate = data.rates['TWD'];
+
+            if (rate) {
+                setExchangeRate(String(rate));
+                if (originalAmount) {
+                    const twd = (parseFloat(originalAmount) * rate).toFixed(0);
+                    setAmount(twd);
+                }
+            } else {
+                throw new Error('Rate not found');
             }
-        }, 800);
+        } catch (err) {
+            if (err.name === 'AbortError') {
+                console.log('Fetch aborted');
+                return;
+            }
+            console.warn("API Error, falling back to cache/mock", err);
+            // Fallback logic
+            const mockRates = DEFAULT_EXCHANGE_RATES;
+            const rate = mockRates[currency];
+            if (rate) {
+                setExchangeRate(String(rate));
+                setErrorMsg("無法連線，已使用預設匯率");
+            } else {
+                setErrorMsg("匯率抓取失敗，請手動輸入");
+            }
+        } finally {
+            setIsFetchingRate(false);
+        }
     };
 
     useEffect(() => {
@@ -2137,33 +2171,43 @@ const AuthenticatedApp = () => {
     // --- Helper Functions for Chunking ---
     const saveToFirestoreChunks = async (userData) => {
         if (!user) return;
-        const jsonString = JSON.stringify(userData);
-        // Reduced chunk size to avoid 1MB limit with multi-byte chars
-        const CHUNK_SIZE = 250000;
-        const totalChunks = Math.ceil(jsonString.length / CHUNK_SIZE);
+        if (isSaving) return; // Prevent concurrent writes
+        setIsSaving(true);
+        try {
+            const jsonString = JSON.stringify(userData);
+            // Reduced chunk size to avoid 1MB limit with multi-byte chars
+            const CHUNK_SIZE = 250000;
+            const totalChunks = Math.ceil(jsonString.length / CHUNK_SIZE);
 
-        const chunksRef = collection(db, "users", user.uid, "chunks");
+            const chunksRef = collection(db, "users", user.uid, "chunks");
 
-        // 1. Write new chunks sequentially for progress updates
-        for (let i = 0; i < totalChunks; i++) {
-            const chunkContent = jsonString.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
-            const docRef = doc(chunksRef, i.toString());
-            // Use setDoc directly instead of batch to update progress in real-time
-            await setDoc(docRef, { index: i, content: chunkContent });
+            // 1. Write new chunks sequentially for progress updates
+            for (let i = 0; i < totalChunks; i++) {
+                const chunkContent = jsonString.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
+                const docRef = doc(chunksRef, i.toString());
+                // Use setDoc directly instead of batch to update progress in real-time
+                await setDoc(docRef, { index: i, content: chunkContent });
 
-            // Update progress
-            setUploadProgress(Math.round(((i + 1) / totalChunks) * 100));
-        }
+                // Update progress
+                setUploadProgress(Math.round(((i + 1) / totalChunks) * 100));
+            }
 
-        // 2. Delete excess chunks (if previous save had more)
-        const batch = writeBatch(db); // Use batch for deletion as it's fast and doesn't need progress
-        const q = query(chunksRef, where("index", ">=", totalChunks));
-        const snapshot = await getDocs(q);
-        if (!snapshot.empty) {
-            snapshot.forEach(doc => {
-                batch.delete(doc.ref);
-            });
-            await batch.commit();
+            // 2. Delete excess chunks (if previous save had more)
+            const batch = writeBatch(db); // Use batch for deletion as it's fast and doesn't need progress
+            const q = query(chunksRef, where("index", ">=", totalChunks));
+            const snapshot = await getDocs(q);
+            if (!snapshot.empty) {
+                snapshot.forEach(doc => {
+                    batch.delete(doc.ref);
+                });
+                await batch.commit();
+            }
+        } catch (error) {
+            console.error("Save failed:", error);
+            handleShowAlert("儲存失敗", "無法同步至雲端，請檢查網路連線。");
+        } finally {
+            setIsSaving(false);
+            setUploadProgress(0);
         }
     };
 
