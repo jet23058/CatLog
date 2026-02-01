@@ -3157,7 +3157,18 @@ const AuthenticatedApp = () => {
                                                 </div>
                                             ))}</div>) : (<span className={`text-base font-inter font-normal ${monthData.latestDate ? 'text-slate-700' : 'text-slate-400'}`}><AmountWithTooltip amount={monthData.assets} className="font-inter text-slate-700" align="left" masked={isPrivacyMode} /></span>)}
                                         </div>
-                                        {monthData.memo && (<div className="ml-11 mt-1 text-xs text-slate-400 font-serif-tc italic flex items-center gap-1"><span className="w-1 h-1 rounded-full bg-slate-300"></span>{monthData.memo}</div>)}
+                                        {monthData.memo && (
+                                            !isPrivacyMode && (
+                                                <div className="ml-11 mt-1 text-xs text-slate-400 font-serif-tc italic flex items-center gap-1 group/memo relative cursor-help w-fit max-w-[120px]">
+                                                    <span className="w-1 h-1 rounded-full bg-slate-300 flex-shrink-0"></span>
+                                                    <span className="truncate">{monthData.memo}</span>
+                                                    <div className="absolute bottom-full left-0 mb-2 w-48 bg-slate-800 text-white text-xs p-3 rounded-lg opacity-0 group-hover/memo:opacity-100 transition-opacity pointer-events-none z-50 shadow-xl whitespace-normal break-words">
+                                                        {monthData.memo}
+                                                        <div className="absolute top-full left-4 w-2 h-2 bg-slate-800 rotate-45 transform -translate-x-1/2 -translate-y-1/2"></div>
+                                                    </div>
+                                                </div>
+                                            )
+                                        )}
                                     </div>
                                     <div className="text-right flex flex-col items-end gap-1">
                                         {monthData.income > 0 && <div className={`text-xs text-emerald-600 font-inter bg-emerald-50 px-2 py-1 rounded-md ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>{isPrivacyMode ? '****' : '+' + formatMoney(monthData.income)}</div>}
