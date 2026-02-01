@@ -993,10 +993,14 @@ const AddAssetModal = ({ onClose, onSave, historyRecords, exchangeRateCache }) =
 
         const cleanName = name.trim();
         const assetsInDate = historyRecords[date] || [];
-        const isDuplicate = assetsInDate.some(asset => asset.name === cleanName);
+        
+        // Duplicate check logic:
+        // Same Name AND Same Currency = Duplicate (Block)
+        // Same Name BUT Different Currency = Allowed (e.g. Taishin TWD vs Taishin JPY)
+        const isDuplicate = assetsInDate.some(asset => asset.name === cleanName && asset.currency === currency);
 
         if (isDuplicate) {
-            setErrorMsg(`「${cleanName}」在 ${date} 已存在，請使用編輯功能。`);
+            setErrorMsg(`「${cleanName} (${currency})」在 ${date} 已存在，請使用編輯功能。`);
             return;
         }
 
