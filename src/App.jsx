@@ -56,6 +56,8 @@ const INITIAL_DATA = {
     "memos": {},
     "incomes": {},
     "expenses": {},
+    "debts": {},
+    "debtEvents": {},
     "fireSettings": { "withdrawalRate": 4.0 }
 };
 
@@ -68,6 +70,34 @@ const formatWan = (val) => {
 };
 const formatRate = (val) => `${(val * 100).toFixed(1)}%`;
 const formatPercent = (value) => !isFinite(value) ? "0.0%" : `${Math.abs(value).toFixed(1)}%`;
+const getDebtTotal = (debts = []) => debts.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+const getDebtEventImpact = (event) => {
+    if (event.type === 'borrow') return Number(event.amount) || 0;
+    if (event.type === 'repay') return -(Number(event.amount) || 0);
+    return 0;
+};
+const getDebtEventLabel = (type) => ({
+    borrow: '借款',
+    repay: '還本金',
+    interest: '利息',
+    fee: '手續費',
+    collateral: '擔保品'
+}[type] || '異動');
+const getLatestSnapshotTotal = (records = {}, targetDateStr, calculator) => {
+    const targetDate = new Date(targetDateStr);
+    let latestDate = null;
+    let total = 0;
+
+    Object.entries(records || {}).forEach(([dateStr, items]) => {
+        const date = new Date(dateStr);
+        if (date <= targetDate && (!latestDate || date > latestDate)) {
+            latestDate = date;
+            total = calculator(items);
+        }
+    });
+
+    return total;
+};
 
 const parseCSV = (text) => {
     const rows = [];
@@ -390,7 +420,7 @@ const ImportConfirmationModal = ({ type, summary, onConfirm, onCancel, currentDa
         );
     };
 
-    const renderIncomeRow = (item, tone = 'default') => {
+const renderIncomeRow = (item, tone = 'default') => {
         const toneClasses = {
             added: 'bg-emerald-50/70',
             removed: 'bg-rose-50/70',
@@ -398,8 +428,8 @@ const ImportConfirmationModal = ({ type, summary, onConfirm, onCancel, currentDa
         };
 
         return (
-            <tr key={`${item.month}-${item.company}-${item.bank}-${item.amount}-${tone}`} className={toneClasses[tone] || ''}>
-                <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{item.month}</td>
+            <tr key={`${item.date || item.month}-${item.company}-${item.bank}-${item.amount}-${tone}`} className={toneClasses[tone] || ''}>
+                <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{item.date || item.month}</td>
                 <td className="px-2 py-2">
                     <div className="text-slate-700 font-bold truncate max-w-[100px]">{item.company}</div>
                     <div className="text-slate-400 scale-90 origin-left">{item.bank || '未指定帳戶'} / {item.currency || 'TWD'}</div>
@@ -420,6 +450,48 @@ const ImportConfirmationModal = ({ type, summary, onConfirm, onCancel, currentDa
             <tr key={`${item.date}-${tone}`} className={toneClasses[tone] || ''}>
                 <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{item.date}</td>
                 <td className="px-2 py-2 text-slate-700 break-words">{item.content || '空白備忘'}</td>
+            </tr>
+        );
+    };
+
+    const renderDebtRow = (item, tone = 'default') => {
+        const toneClasses = {
+            added: 'bg-emerald-50/70',
+            removed: 'bg-rose-50/70',
+            default: ''
+        };
+
+        return (
+            <tr key={`${item.date}-${item.name}-${item.lender}-${item.amount}-${tone}`} className={toneClasses[tone] || ''}>
+                <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{item.date}</td>
+                <td className="px-2 py-2">
+                    <div className="text-slate-700 font-bold truncate max-w-[100px]">{item.name}</div>
+                    <div className="text-slate-400 scale-90 origin-left">{item.lender || '未指定機構'}</div>
+                </td>
+                <td className="px-3 py-2 text-right font-mono font-bold text-rose-500">-{formatMoney(item.amount || 0)}</td>
+            </tr>
+        );
+    };
+
+    const renderDebtEventRow = (item, tone = 'default') => {
+        const toneClasses = {
+            added: 'bg-emerald-50/70',
+            removed: 'bg-rose-50/70',
+            default: ''
+        };
+        const impact = getDebtEventImpact(item);
+        const isCostOnly = item.type === 'interest' || item.type === 'fee';
+
+        return (
+            <tr key={`${item.month}-${item.date}-${item.type}-${item.name}-${item.amount}-${tone}`} className={toneClasses[tone] || ''}>
+                <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{item.date}</td>
+                <td className="px-2 py-2">
+                    <div className="text-slate-700 font-bold truncate max-w-[100px]">{getDebtEventLabel(item.type)} / {item.name}</div>
+                    <div className="text-slate-400 scale-90 origin-left">{item.lender || '未指定機構'}</div>
+                </td>
+                <td className={`px-3 py-2 text-right font-mono font-bold ${isCostOnly ? 'text-rose-500' : impact >= 0 ? 'text-emerald-600' : 'text-blue-600'}`}>
+                    {isCostOnly ? '-' : impact >= 0 ? '+' : ''}{formatMoney(isCostOnly ? item.amount : impact)}
+                </td>
             </tr>
         );
     };
@@ -547,7 +619,7 @@ const ImportConfirmationModal = ({ type, summary, onConfirm, onCancel, currentDa
                                                 jsonSections.incomes?.diff,
                                                 renderIncomeRow,
                                                 <>
-                                                    <th className="px-3 py-1.5 font-normal">月份</th>
+                                                    <th className="px-3 py-1.5 font-normal">日期</th>
                                                     <th className="px-2 py-1.5 font-normal">收入來源</th>
                                                     <th className="px-3 py-1.5 font-normal text-right">金額</th>
                                                 </>
@@ -640,6 +712,64 @@ const ImportConfirmationModal = ({ type, summary, onConfirm, onCancel, currentDa
                                                 <>
                                                     <th className="px-3 py-1.5 font-normal">日期</th>
                                                     <th className="px-2 py-1.5 font-normal">內容</th>
+                                                </>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="bg-white rounded-lg border border-slate-100 overflow-hidden">
+                                    <div className="p-3 flex justify-between items-center cursor-pointer hover:bg-slate-50" onClick={() => setExpandedJsonSection(expandedJsonSection === 'json-debts' ? null : 'json-debts')}>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-slate-500">負債紀錄</span>
+                                            <ChevronDown size={12} className={`transition-transform duration-200 ${expandedJsonSection === 'json-debts' ? 'rotate-180' : ''}`} />
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <span className="line-through text-slate-400">{jsonSections.debts?.currentCount ?? 0}</span>
+                                            <ArrowRight size={12} className="text-slate-300" />
+                                            <span className="font-bold text-indigo-600">{summary.debts ?? 0}</span>
+                                            {renderDiffBadge(jsonSections.debts?.changed)}
+                                        </div>
+                                    </div>
+                                    {expandedJsonSection === 'json-debts' && jsonSections.debts?.changed && (
+                                        <div className="bg-slate-50 border-t border-slate-100 p-3">
+                                            {renderGenericDiffBlock(
+                                                'debts',
+                                                jsonSections.debts?.diff,
+                                                renderDebtRow,
+                                                <>
+                                                    <th className="px-3 py-1.5 font-normal">日期</th>
+                                                    <th className="px-2 py-1.5 font-normal">負債</th>
+                                                    <th className="px-3 py-1.5 font-normal text-right">金額</th>
+                                                </>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="bg-white rounded-lg border border-slate-100 overflow-hidden">
+                                    <div className="p-3 flex justify-between items-center cursor-pointer hover:bg-slate-50" onClick={() => setExpandedJsonSection(expandedJsonSection === 'json-debt-events' ? null : 'json-debt-events')}>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-slate-500">負債異動</span>
+                                            <ChevronDown size={12} className={`transition-transform duration-200 ${expandedJsonSection === 'json-debt-events' ? 'rotate-180' : ''}`} />
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <span className="line-through text-slate-400">{jsonSections.debtEvents?.currentCount ?? 0}</span>
+                                            <ArrowRight size={12} className="text-slate-300" />
+                                            <span className="font-bold text-indigo-600">{summary.debtEvents ?? 0}</span>
+                                            {renderDiffBadge(jsonSections.debtEvents?.changed)}
+                                        </div>
+                                    </div>
+                                    {expandedJsonSection === 'json-debt-events' && jsonSections.debtEvents?.changed && (
+                                        <div className="bg-slate-50 border-t border-slate-100 p-3">
+                                            {renderGenericDiffBlock(
+                                                'debtEvents',
+                                                jsonSections.debtEvents?.diff,
+                                                renderDebtEventRow,
+                                                <>
+                                                    <th className="px-3 py-1.5 font-normal">日期</th>
+                                                    <th className="px-2 py-1.5 font-normal">異動</th>
+                                                    <th className="px-3 py-1.5 font-normal text-right">金額</th>
                                                 </>
                                             )}
                                         </div>
@@ -1106,34 +1236,50 @@ const flattenRecords = (records = {}) => Object.entries(records).flatMap(([date,
 );
 
 const flattenIncomeSources = (incomes = {}) => Object.entries(incomes).flatMap(([month, value]) =>
-    (value?.sources || []).map((source) => ({ ...source, month }))
+    (value?.sources || []).map((source) => ({ ...source, month, date: source.date || month }))
 );
 
 const flattenMemos = (memos = {}) => Object.entries(memos).map(([date, content]) => ({ date, content: content || '' }));
+const flattenDebts = (debts = {}) => Object.entries(debts).flatMap(([date, items]) =>
+    (items || []).map((item) => ({ ...item, date }))
+);
+const flattenDebtEvents = (debtEvents = {}) => Object.entries(debtEvents).flatMap(([month, items]) =>
+    (items || []).map((item) => ({ ...item, month }))
+);
 
 const getRecordIdentityKey = (item) => [item.date || '', item.type || '', item.name || '', item.currency || 'TWD'].join('|');
 const getRecordFullKey = (item) => [getRecordIdentityKey(item), Number(item.amount) || 0, Number(item.originalAmount) || 0, Number(item.exchangeRate) || 0].join('|');
 
 const getIncomeIdentityKey = (item) => [item.month || '', item.company || '', item.bank || '', item.currency || 'TWD', item.memo || ''].join('|');
-const getIncomeFullKey = (item) => [getIncomeIdentityKey(item), Number(item.amount) || 0, Number(item.originalAmount) || 0, Number(item.exchangeRate) || 0].join('|');
+const getIncomeFullKey = (item) => [getIncomeIdentityKey(item), item.date || '', Number(item.amount) || 0, Number(item.originalAmount) || 0, Number(item.exchangeRate) || 0].join('|');
 
 const getMemoIdentityKey = (item) => item.date || '';
 const getMemoFullKey = (item) => [item.date || '', item.content || ''].join('|');
+const getDebtIdentityKey = (item) => [item.date || '', item.name || '', item.lender || ''].join('|');
+const getDebtFullKey = (item) => [getDebtIdentityKey(item), Number(item.amount) || 0, item.memo || ''].join('|');
+const getDebtEventIdentityKey = (item) => [item.month || '', item.date || '', item.type || '', item.name || '', item.lender || '', item.memo || ''].join('|');
+const getDebtEventFullKey = (item) => [getDebtEventIdentityKey(item), Number(item.amount) || 0, JSON.stringify(getSortedValue(item.collateral || []))].join('|');
 
 const getJsonImportSummary = (currentData = {}, parsedData = {}) => {
     const currentRecords = currentData.records || {};
     const currentIncomes = currentData.incomes || {};
     const currentExpenses = currentData.expenses || {};
     const currentMemos = currentData.memos || {};
+    const currentDebts = currentData.debts || {};
+    const currentDebtEvents = currentData.debtEvents || {};
 
     const nextRecords = parsedData.records || {};
     const nextIncomes = parsedData.incomes || {};
     const nextExpenses = parsedData.expenses || {};
     const nextMemos = parsedData.memos || {};
+    const nextDebts = parsedData.debts || {};
+    const nextDebtEvents = parsedData.debtEvents || {};
 
     const recordDiff = buildCollectionDiff(flattenRecords(currentRecords), flattenRecords(nextRecords), getRecordIdentityKey, getRecordFullKey);
     const incomeDiff = buildCollectionDiff(flattenIncomeSources(currentIncomes), flattenIncomeSources(nextIncomes), getIncomeIdentityKey, getIncomeFullKey);
     const memoDiff = buildCollectionDiff(flattenMemos(currentMemos), flattenMemos(nextMemos), getMemoIdentityKey, getMemoFullKey);
+    const debtDiff = buildCollectionDiff(flattenDebts(currentDebts), flattenDebts(nextDebts), getDebtIdentityKey, getDebtFullKey);
+    const debtEventDiff = buildCollectionDiff(flattenDebtEvents(currentDebtEvents), flattenDebtEvents(nextDebtEvents), getDebtEventIdentityKey, getDebtEventFullKey);
     const expenseSummary = getExpenseImportSummary(currentExpenses, nextExpenses);
 
     const sections = {
@@ -1160,6 +1306,18 @@ const getJsonImportSummary = (currentData = {}, parsedData = {}) => {
             nextCount: Object.keys(nextMemos).length,
             changed: memoDiff.hasChanges,
             diff: memoDiff
+        },
+        debts: {
+            currentCount: Object.values(currentDebts).flat().length,
+            nextCount: Object.values(nextDebts).flat().length,
+            changed: debtDiff.hasChanges,
+            diff: debtDiff
+        },
+        debtEvents: {
+            currentCount: Object.values(currentDebtEvents).flat().length,
+            nextCount: Object.values(nextDebtEvents).flat().length,
+            changed: debtEventDiff.hasChanges,
+            diff: debtEventDiff
         }
     };
 
@@ -1168,6 +1326,8 @@ const getJsonImportSummary = (currentData = {}, parsedData = {}) => {
         incomes: sections.incomes.nextCount,
         expenses: sections.expenses.nextCount,
         memos: sections.memos.nextCount,
+        debts: sections.debts.nextCount,
+        debtEvents: sections.debtEvents.nextCount,
         sections,
         hasChanges: Object.values(sections).some((section) => section.changed)
     };
@@ -1297,9 +1457,9 @@ const BiometricLockScreen = ({ onUnlock, errorMsg }) => (
 
 const AddIncomeModal = ({ onClose, onSave, assetNames, exchangeRateCache }) => {
     const today = new Date();
-    const currentMonthStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
 
-    const [date, setDate] = useState(currentMonthStr);
+    const [date, setDate] = useState(todayStr);
     const [company, setCompany] = useState("");
     const [bank, setBank] = useState("");
     const [currency, setCurrency] = useState("TWD");
@@ -1312,7 +1472,7 @@ const AddIncomeModal = ({ onClose, onSave, assetNames, exchangeRateCache }) => {
     // Cache Logic
     useEffect(() => {
         if (!exchangeRateCache) return;
-        const key = `${date}-${currency}`;
+        const key = `${date.substring(0, 7)}-${currency}`;
         if (exchangeRateCache.current[key]) {
             setExchangeRate(exchangeRateCache.current[key]);
         } else if (currency === 'TWD') {
@@ -1323,7 +1483,7 @@ const AddIncomeModal = ({ onClose, onSave, assetNames, exchangeRateCache }) => {
     useEffect(() => {
         if (!exchangeRateCache) return;
         if (exchangeRate && !isNaN(parseFloat(exchangeRate))) {
-            const key = `${date}-${currency}`;
+            const key = `${date.substring(0, 7)}-${currency}`;
             exchangeRateCache.current[key] = exchangeRate;
         }
     }, [exchangeRate, date, currency, exchangeRateCache]);
@@ -1355,11 +1515,12 @@ const AddIncomeModal = ({ onClose, onSave, assetNames, exchangeRateCache }) => {
 
     const handleSubmit = () => {
         setErrorMsg("");
-        if (!date) return setErrorMsg("請選擇月份");
+        if (!date) return setErrorMsg("請選擇日期");
         if (!company) return setErrorMsg("請輸入收入來源");
         if (!amount) return setErrorMsg("請輸入金額");
 
         const newIncomeSource = {
+            date,
             company,
             bank,
             currency,
@@ -1381,8 +1542,8 @@ const AddIncomeModal = ({ onClose, onSave, assetNames, exchangeRateCache }) => {
                 <div className="space-y-4 max-h-[60vh] overflow-y-auto hide-scrollbar px-1">
                     {errorMsg && <div className="bg-rose-50 text-rose-500 text-xs p-3 rounded-xl flex items-center gap-2 font-bold animate-shake"><AlertCircle size={16} />{errorMsg}</div>}
                     <div>
-                        <label className="text-xs text-slate-400 font-bold mb-1 block ml-1">月份</label>
-                        <input type="month" value={date} onChange={(e) => setDate(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl focus:border-teal-500 focus:ring-1 focus:ring-teal-500 outline-none bg-slate-50 font-inter text-slate-800" />
+                        <label className="text-xs text-slate-400 font-bold mb-1 block ml-1">日期</label>
+                        <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl focus:border-teal-500 focus:ring-1 focus:ring-teal-500 outline-none bg-slate-50 font-inter text-slate-800" />
                     </div>
                     <div>
                         <label className="text-xs text-slate-400 font-bold mb-1 block ml-1">收入來源 (公司/客戶)</label>
@@ -1707,88 +1868,287 @@ const AddAssetModal = ({ onClose, onSave, historyRecords, exchangeRateCache }) =
     );
 };
 
-const DetailView = ({ dateStr, data, onBack, onUpdateData, assetNames, isPrivacyMode }) => {
+const AddDebtModal = ({ onClose, onSave, debtNames = [] }) => {
+    const today = new Date();
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
+    const [date, setDate] = useState(todayStr);
+    const [name, setName] = useState('');
+    const [lender, setLender] = useState('');
+    const [amount, setAmount] = useState('');
+    const [memo, setMemo] = useState('');
+    const [errorMsg, setErrorMsg] = useState('');
+
+    const handleSubmit = () => {
+        setErrorMsg('');
+        if (!date) return setErrorMsg("請選擇日期");
+        if (!name.trim()) return setErrorMsg("請輸入負債名稱");
+        if (!amount || Number(amount) <= 0) return setErrorMsg("請輸入有效金額");
+
+        onSave({
+            id: Date.now(),
+            name: name.trim(),
+            lender: lender.trim(),
+            amount: Number(amount),
+            memo: memo.trim()
+        }, date);
+    };
+
+    return (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-6 animate-[fadeIn_0.2s]">
+            <div className="bg-white w-full max-w-sm rounded-2xl p-6 shadow-2xl relative">
+                <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"><X size={20} /></button>
+                <h3 className="text-xl font-serif-tc font-bold text-slate-800 mb-4 flex items-center gap-2">
+                    <div className="bg-rose-100 p-2 rounded-lg"><ArrowDownRight size={20} className="text-rose-700" /></div> 新增負債
+                </h3>
+                <div className="space-y-4 max-h-[60vh] overflow-y-auto hide-scrollbar px-1">
+                    {errorMsg && <div className="bg-rose-50 text-rose-500 text-xs p-3 rounded-xl flex items-center gap-2 font-bold animate-shake"><AlertCircle size={16} />{errorMsg}</div>}
+                    <div>
+                        <label className="text-xs text-slate-400 font-bold mb-1 block ml-1">日期</label>
+                        <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl focus:border-rose-500 focus:ring-1 focus:ring-rose-500 outline-none bg-slate-50 font-inter text-slate-800" />
+                    </div>
+                    <div>
+                        <label className="text-xs text-slate-400 font-bold mb-1 block ml-1">負債名稱</label>
+                        <input list="history-debts" type="text" value={name} onChange={(e) => setName(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl focus:border-rose-500 focus:ring-1 focus:ring-rose-500 outline-none bg-slate-50 font-serif-tc text-slate-800 placeholder:text-slate-300" placeholder="例如：股票質押借款" />
+                        <datalist id="history-debts">
+                            {debtNames.map((item) => <option key={item} value={item} />)}
+                        </datalist>
+                    </div>
+                    <div>
+                        <label className="text-xs text-slate-400 font-bold mb-1 block ml-1">機構 / 帳戶</label>
+                        <input type="text" value={lender} onChange={(e) => setLender(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl focus:border-rose-500 focus:ring-1 focus:ring-rose-500 outline-none bg-slate-50 font-serif-tc text-slate-800 placeholder:text-slate-300" placeholder="例如：國泰證券 / 永豐金" />
+                    </div>
+                    <div>
+                        <label className="text-xs text-slate-400 font-bold mb-1 block ml-1">金額 (TWD)</label>
+                        <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl focus:border-rose-500 focus:ring-1 focus:ring-rose-500 outline-none bg-slate-50 text-sm font-inter text-right placeholder:text-slate-300" placeholder="0" />
+                    </div>
+                    <div>
+                        <label className="text-xs text-slate-400 font-bold mb-1 block ml-1">備註</label>
+                        <input type="text" value={memo} onChange={(e) => setMemo(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl focus:border-rose-500 focus:ring-1 focus:ring-rose-500 outline-none bg-slate-50 text-sm font-serif-tc text-slate-800 placeholder:text-slate-300" placeholder="例如：0050 質押、年利率 3.5%" />
+                    </div>
+                </div>
+                <div className="mt-6 flex gap-3">
+                    <button onClick={onClose} className="flex-1 py-2.5 rounded-xl text-slate-500 hover:bg-slate-100 font-bold text-sm transition-colors">取消</button>
+                    <button onClick={handleSubmit} className="flex-1 py-2.5 rounded-xl bg-rose-600 text-white font-bold text-sm hover:bg-rose-700 shadow-lg shadow-rose-200 transition-all">確認新增</button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const AddDebtEventModal = ({ monthKey, onClose, onSave, debtNames = [] }) => {
+    const today = new Date();
+    const fallbackDate = `${monthKey}-${String(new Date(Number(monthKey.split('-')[0]), Number(monthKey.split('-')[1]), 0).getDate()).padStart(2, '0')}`;
+    const todayStr = today.toISOString().split('T')[0].startsWith(monthKey) ? today.toISOString().split('T')[0] : fallbackDate;
+
+    const [date, setDate] = useState(todayStr);
+    const [type, setType] = useState('borrow');
+    const [name, setName] = useState('股票質押借款');
+    const [lender, setLender] = useState('');
+    const [amount, setAmount] = useState('');
+    const [memo, setMemo] = useState('');
+    const [collateralText, setCollateralText] = useState('');
+    const [errorMsg, setErrorMsg] = useState('');
+
+    const parseCollateral = (text) => text
+        .split(',')
+        .map((part) => part.trim())
+        .filter(Boolean)
+        .map((part) => {
+            const [symbol, shares] = part.split(/[:xX* ]+/).filter(Boolean);
+            return { symbol: symbol || part, shares: Number(shares) || 0 };
+        });
+
+    const handleSubmit = () => {
+        setErrorMsg('');
+        if (!date || !date.startsWith(monthKey)) return setErrorMsg("日期需在目前月份內");
+        if (!name.trim()) return setErrorMsg("請輸入負債名稱");
+        if (type !== 'collateral' && (!amount || Number(amount) <= 0)) return setErrorMsg("請輸入有效金額");
+
+        onSave({
+            id: Date.now(),
+            date,
+            type,
+            name: name.trim(),
+            lender: lender.trim(),
+            amount: type === 'collateral' ? 0 : Number(amount),
+            collateral: parseCollateral(collateralText),
+            memo: memo.trim()
+        });
+    };
+
+    return (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[60] flex items-center justify-center p-6 animate-[fadeIn_0.2s]">
+            <div className="bg-white w-full max-w-sm rounded-2xl p-6 shadow-2xl relative">
+                <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"><X size={20} /></button>
+                <h3 className="text-xl font-serif-tc font-bold text-slate-800 mb-4 flex items-center gap-2">
+                    <div className="bg-orange-100 p-2 rounded-lg"><ClipboardCheck size={20} className="text-orange-700" /></div> 新增負債異動
+                </h3>
+                <div className="space-y-4 max-h-[65vh] overflow-y-auto hide-scrollbar px-1">
+                    {errorMsg && <div className="bg-rose-50 text-rose-500 text-xs p-3 rounded-xl flex items-center gap-2 font-bold animate-shake"><AlertCircle size={16} />{errorMsg}</div>}
+                    <div>
+                        <label className="text-xs text-slate-400 font-bold mb-1 block ml-1">日期</label>
+                        <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none bg-slate-50 font-inter text-slate-800" />
+                    </div>
+                    <div>
+                        <label className="text-xs text-slate-400 font-bold mb-1 block ml-1">類型</label>
+                        <select value={type} onChange={(e) => setType(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl focus:border-orange-500 outline-none bg-slate-50 text-sm appearance-none">
+                            <option value="borrow">借款增加</option>
+                            <option value="repay">還本金</option>
+                            <option value="interest">利息</option>
+                            <option value="fee">手續費</option>
+                            <option value="collateral">只記擔保品</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label className="text-xs text-slate-400 font-bold mb-1 block ml-1">負債名稱</label>
+                        <input list="history-debt-events" type="text" value={name} onChange={(e) => setName(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none bg-slate-50 font-serif-tc text-slate-800 placeholder:text-slate-300" placeholder="例如：股票質押借款" />
+                        <datalist id="history-debt-events">
+                            {debtNames.map((item) => <option key={item} value={item} />)}
+                        </datalist>
+                    </div>
+                    <div>
+                        <label className="text-xs text-slate-400 font-bold mb-1 block ml-1">機構 / 帳戶</label>
+                        <input type="text" value={lender} onChange={(e) => setLender(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none bg-slate-50 font-serif-tc text-slate-800 placeholder:text-slate-300" placeholder="例如：國泰證券" />
+                    </div>
+                    {type !== 'collateral' && (
+                        <div>
+                            <label className="text-xs text-slate-400 font-bold mb-1 block ml-1">金額 (TWD)</label>
+                            <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none bg-slate-50 text-sm font-inter text-right placeholder:text-slate-300" placeholder="0" />
+                        </div>
+                    )}
+                    <div>
+                        <label className="text-xs text-slate-400 font-bold mb-1 block ml-1">擔保品</label>
+                        <input type="text" value={collateralText} onChange={(e) => setCollateralText(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none bg-slate-50 text-sm font-inter text-slate-800 placeholder:text-slate-300" placeholder="例如：0050:2, 0052:1" />
+                        <p className="text-[10px] text-slate-400 mt-1 ml-1">多檔請用逗號分隔，格式：代號:張數</p>
+                    </div>
+                    <div>
+                        <label className="text-xs text-slate-400 font-bold mb-1 block ml-1">備註</label>
+                        <input type="text" value={memo} onChange={(e) => setMemo(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none bg-slate-50 text-sm font-serif-tc text-slate-800 placeholder:text-slate-300" placeholder="例如：新增質押額度 / 展延" />
+                    </div>
+                </div>
+                <div className="mt-6 flex gap-3">
+                    <button onClick={onClose} className="flex-1 py-2.5 rounded-xl text-slate-500 hover:bg-slate-100 font-bold text-sm transition-colors">取消</button>
+                    <button onClick={handleSubmit} className="flex-1 py-2.5 rounded-xl bg-orange-600 text-white font-bold text-sm hover:bg-orange-700 shadow-lg shadow-orange-200 transition-all">確認新增</button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const DetailView = ({ monthKey, data, onBack, onUpdateData, assetNames, isPrivacyMode, debtNames = [] }) => {
     const [isEditing, setIsEditing] = useState(false);
     const [activeTab, setActiveTab] = useState('assets');
     const [localAssets, setLocalAssets] = useState([]);
     const [localMemo, setLocalMemo] = useState("");
     const [localIncomes, setLocalIncomes] = useState([]);
+    const [localDebts, setLocalDebts] = useState([]);
     const [expenseFilter, setExpenseFilter] = useState("all");
     const [confirmDeleteId, setConfirmDeleteId] = useState(null);
-    const [confirmDeleteDate, setConfirmDeleteDate] = useState(false);
+    const [confirmDeleteMonth, setConfirmDeleteMonth] = useState(false);
+    const [showDebtEventModal, setShowDebtEventModal] = useState(false);
+
+    const getLatestDateInMonth = (records = {}, month) => {
+        return Object.keys(records || {})
+            .filter((date) => date.startsWith(month))
+            .sort()
+            .pop() || null;
+    };
+
+    const assetDate = useMemo(() => getLatestDateInMonth(data.records, monthKey), [data.records, monthKey]);
+    const debtDate = useMemo(() => getLatestDateInMonth(data.debts, monthKey), [data.debts, monthKey]);
+    const memoDate = useMemo(() => getLatestDateInMonth(data.memos, monthKey), [data.memos, monthKey]);
+    const writeDate = assetDate || debtDate || memoDate || `${monthKey}-01`;
 
     useEffect(() => {
-        if (data.records[dateStr]) {
-            const assets = data.records[dateStr].map((item, idx) => ({ ...item, id: item.id || `legacy-${Date.now()}-${idx}` }));
+        if (assetDate && data.records[assetDate]) {
+            const assets = data.records[assetDate].map((item, idx) => ({ ...item, id: item.id || `legacy-${Date.now()}-${idx}` }));
             setLocalAssets(JSON.parse(JSON.stringify(assets)));
         } else {
             setLocalAssets([]);
         }
-        let memoContent = data.memos[dateStr] || "";
+        let memoContent = memoDate ? (data.memos[memoDate] || "") : "";
         setLocalMemo(memoContent);
-        const yearMonth = dateStr.substring(0, 7);
-        const incomes = data.incomes[yearMonth]?.sources || [];
+        const incomes = data.incomes[monthKey]?.sources || [];
         setLocalIncomes(incomes.map((item, idx) => ({ ...item, _tempId: idx })));
-    }, [dateStr, data]);
+        const debts = debtDate ? (data.debts?.[debtDate] || []) : [];
+        setLocalDebts(debts.map((item, idx) => ({ ...item, _tempId: item.id || idx })));
+    }, [assetDate, debtDate, memoDate, monthKey, data]);
 
-    const sortedDates = useMemo(() => {
-        const allDates = new Set(Object.keys(data.records));
-        Object.keys(data.memos || {}).forEach(d => allDates.add(d));
-        Object.keys(data.incomes || {}).forEach(monthStr => {
-            const hasDateInMonth = Array.from(allDates).some(d => d.startsWith(monthStr));
-            if (!hasDateInMonth) allDates.add(`${monthStr}-01`);
-        });
-        Object.keys(data.expenses || {}).forEach(monthStr => {
-            const hasDateInMonth = Array.from(allDates).some(d => d.startsWith(monthStr));
-            if (!hasDateInMonth) allDates.add(`${monthStr}-01`);
-        });
-        return Array.from(allDates).sort();
+    const sortedMonths = useMemo(() => {
+        const months = new Set();
+        Object.keys(data.records || {}).forEach(d => months.add(d.substring(0, 7)));
+        Object.keys(data.memos || {}).forEach(d => months.add(d.substring(0, 7)));
+        Object.keys(data.debts || {}).forEach(d => months.add(d.substring(0, 7)));
+        Object.keys(data.incomes || {}).forEach(monthStr => months.add(monthStr));
+        Object.keys(data.expenses || {}).forEach(monthStr => months.add(monthStr));
+        return Array.from(months).sort();
     }, [data]);
 
-    const currentIndex = sortedDates.indexOf(dateStr);
-    const prevDate = currentIndex > 0 ? sortedDates[currentIndex - 1] : null;
-    const nextDate = currentIndex < sortedDates.length - 1 ? sortedDates[currentIndex + 1] : null;
+    const currentIndex = sortedMonths.indexOf(monthKey);
+    const prevMonth = currentIndex > 0 ? sortedMonths[currentIndex - 1] : null;
+    const nextMonth = currentIndex < sortedMonths.length - 1 ? sortedMonths[currentIndex + 1] : null;
+    const prevAssetDate = prevMonth ? getLatestDateInMonth(data.records, prevMonth) : null;
+    const prevDebtDate = prevMonth ? getLatestDateInMonth(data.debts, prevMonth) : null;
 
     const prevMonthAssetsMap = useMemo(() => {
-        if (!prevDate) return {};
-        const assets = data.records[prevDate] || [];
+        if (!prevAssetDate) return {};
+        const assets = data.records[prevAssetDate] || [];
         return assets.reduce((acc, item) => {
             acc[`${item.type}-${item.name}`] = item.amount;
             return acc;
         }, {});
-    }, [prevDate, data.records]);
+    }, [prevAssetDate, data.records]);
 
     const prevTotalAssets = useMemo(() => {
-        if (!prevDate) return 0;
-        const assets = data.records[prevDate] || [];
+        if (!prevAssetDate) return 0;
+        const assets = data.records[prevAssetDate] || [];
         return assets.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
-    }, [prevDate, data.records]);
+    }, [prevAssetDate, data.records]);
+
+    const prevTotalDebts = useMemo(() => {
+        if (!prevDebtDate) return 0;
+        return getDebtTotal(data.debts?.[prevDebtDate] || []);
+    }, [prevDebtDate, data.debts]);
 
     const currentMonthExpenses = useMemo(() => {
-        const yearMonth = dateStr.substring(0, 7);
-        return data.expenses?.[yearMonth] || [];
-    }, [dateStr, data.expenses]);
+        return data.expenses?.[monthKey] || [];
+    }, [monthKey, data.expenses]);
+
+    const currentDebtEvents = useMemo(() => {
+        return [...(data.debtEvents?.[monthKey] || [])].sort((a, b) => new Date(a.date) - new Date(b.date));
+    }, [data.debtEvents, monthKey]);
+
+    const debtEventStats = useMemo(() => {
+        return currentDebtEvents.reduce((acc, item) => {
+            acc.principal += getDebtEventImpact(item);
+            if (item.type === 'interest') acc.interest += Number(item.amount) || 0;
+            if (item.type === 'fee') acc.fees += Number(item.amount) || 0;
+            return acc;
+        }, { principal: 0, interest: 0, fees: 0 });
+    }, [currentDebtEvents]);
 
     const prevMonthIncome = useMemo(() => {
-        if (!prevDate) return 0;
-        const prevYearMonth = prevDate.substring(0, 7);
-        const prevIncomeData = data.incomes[prevYearMonth];
+        if (!prevMonth) return 0;
+        const prevIncomeData = data.incomes[prevMonth];
         return prevIncomeData ? (prevIncomeData.totalAmount || 0) : 0;
-    }, [prevDate, data.incomes]);
+    }, [prevMonth, data.incomes]);
 
     const stats = useMemo(() => {
         const totalAssets = localAssets.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+        const totalDebts = getDebtTotal(localDebts);
+        const netAssets = totalAssets - totalDebts;
         const floatingAssets = localAssets.filter(item => item.type === 'floating').reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
         const investmentRate = totalAssets > 0 ? floatingAssets / totalAssets : 0;
         const monthlyIncome = localIncomes.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
         const monthlyCost = currentMonthExpenses.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
 
         const incomeDiff = monthlyIncome - prevMonthIncome;
-        const assetDiff = totalAssets - prevTotalAssets;
+        const assetDiff = netAssets - (prevTotalAssets - prevTotalDebts);
         const compositeScore = incomeDiff + assetDiff;
 
-        return { totalAssets, investmentRate, monthlyIncome, monthlyCost, incomeDiff, assetDiff, compositeScore };
-    }, [localAssets, localIncomes, currentMonthExpenses, prevTotalAssets, prevMonthIncome]);
+        return { totalAssets, totalDebts, netAssets, investmentRate, monthlyIncome, monthlyCost, incomeDiff, assetDiff, compositeScore };
+    }, [localAssets, localDebts, localIncomes, currentMonthExpenses, prevTotalAssets, prevTotalDebts, prevMonthIncome]);
 
     const filteredExpenses = useMemo(() => {
         if (expenseFilter === 'all') return currentMonthExpenses;
@@ -1813,7 +2173,7 @@ const DetailView = ({ dateStr, data, onBack, onUpdateData, assetNames, isPrivacy
 
     const COLORS = ['#0D9488', '#059669', '#10B981', '#34D399', '#6EE7B7', '#A7F3D0', '#D1FAE5'];
 
-    const handleNavigate = (targetDate) => { if (targetDate) onUpdateData('NAVIGATE_DATE', targetDate); };
+    const handleNavigate = (targetMonth) => { if (targetMonth) onUpdateData('NAVIGATE_MONTH', targetMonth); };
     const handleAssetChange = (id, field, value) => setLocalAssets(prev => prev.map(item => item.id === id ? { ...item, [field]: value } : item));
 
     const handleIncomeChange = (idx, field, value) => {
@@ -1835,18 +2195,34 @@ const DetailView = ({ dateStr, data, onBack, onUpdateData, assetNames, isPrivacy
     };
 
     const handleDeleteIncome = (idx) => setLocalIncomes(prev => prev.filter((_, i) => i !== idx));
+    const handleDebtChange = (idx, field, value) => {
+        setLocalDebts(prev => prev.map((item, i) => i === idx ? { ...item, [field]: value } : item));
+    };
+    const handleDeleteDebt = (idx) => setLocalDebts(prev => prev.filter((_, i) => i !== idx));
+    const handleAddDebtEvent = (event) => {
+        onUpdateData('ADD_DEBT_EVENT', { month: monthKey, event });
+        setShowDebtEventModal(false);
+    };
+    const handleDeleteDebtEvent = (id) => {
+        onUpdateData('DELETE_DEBT_EVENT', { month: monthKey, id });
+    };
     const handleDeleteClick = (e, id) => { e.stopPropagation(); e.preventDefault(); setConfirmDeleteId(id); };
     const confirmDeleteAsset = () => { if (confirmDeleteId) { setLocalAssets(prev => prev.filter(item => item.id !== confirmDeleteId)); setConfirmDeleteId(null); } };
-    const handleDeleteDay = () => setConfirmDeleteDate(true);
-    const executeDeleteDay = () => onUpdateData('DELETE_DATE', dateStr);
+    const handleDeleteMonth = () => setConfirmDeleteMonth(true);
+    const executeDeleteMonth = () => onUpdateData('DELETE_MONTH', monthKey);
 
     const handleSave = () => {
         const cleanIncomes = (localIncomes || []).map(({ _tempId, ...rest }) => rest);
+        const cleanDebts = (localDebts || []).map(({ _tempId, ...rest }) => rest);
         onUpdateData('UPDATE_DETAILS', {
-            date: dateStr,
+            month: monthKey,
+            assetDate: assetDate || writeDate,
+            debtDate: debtDate || writeDate,
+            memoDate: memoDate || writeDate,
             assets: localAssets,
             memo: localMemo,
-            incomes: cleanIncomes
+            incomes: cleanIncomes,
+            debts: cleanDebts
         });
         setIsEditing(false);
     };
@@ -1856,21 +2232,22 @@ const DetailView = ({ dateStr, data, onBack, onUpdateData, assetNames, isPrivacy
 
     return (
         <div className="fixed inset-0 bg-[#F9F9F7] z-40 overflow-y-auto animate-[slideIn_0.3s_ease-out]">
+            {showDebtEventModal && <AddDebtEventModal monthKey={monthKey} onClose={() => setShowDebtEventModal(false)} onSave={handleAddDebtEvent} debtNames={debtNames} />}
             {confirmDeleteId && <ConfirmModal title="刪除資產" message="確定要刪除這筆資產紀錄嗎？" onConfirm={confirmDeleteAsset} onCancel={() => setConfirmDeleteId(null)} />}
-            {confirmDeleteDate && <ConfirmModal title="刪除整日紀錄" message={`確定要刪除 ${dateStr} 的所有資產與備忘嗎？\n此動作無法復原。`} onConfirm={executeDeleteDay} onCancel={() => setConfirmDeleteDate(false)} />}
+            {confirmDeleteMonth && <ConfirmModal title="刪除整月紀錄" message={`確定要刪除 ${monthKey} 的資產、負債與備忘嗎？\n收入與花費紀錄會保留。`} onConfirm={executeDeleteMonth} onCancel={() => setConfirmDeleteMonth(false)} />}
 
             <header className="sticky top-0 bg-[#F9F9F7]/95 backdrop-blur-md border-b border-slate-200 px-6 py-4 flex items-center justify-between z-50">
                 <button onClick={onBack} className="p-2 -ml-2 text-slate-500 hover:text-slate-800 transition-colors" aria-label="返回"><ArrowLeft size={24} strokeWidth={1.5} /></button>
                 <div className="flex flex-col items-center">
                     <div className="flex items-center gap-4">
-                        <button disabled={!prevDate} onClick={() => handleNavigate(prevDate)} className={`p-1 ${!prevDate ? 'text-slate-200' : 'text-slate-400 hover:text-slate-800'}`} aria-label="上一日"><ChevronLeft size={20} /></button>
-                        <span className="font-serif-tc font-bold text-xl text-slate-800 tracking-wide">{dateStr}</span>
-                        <button disabled={!nextDate} onClick={() => handleNavigate(nextDate)} className={`p-1 ${!nextDate ? 'text-slate-200' : 'text-slate-400 hover:text-slate-800'}`} aria-label="下一日"><ChevronRight size={20} /></button>
+                        <button disabled={!prevMonth} onClick={() => handleNavigate(prevMonth)} className={`p-1 ${!prevMonth ? 'text-slate-200' : 'text-slate-400 hover:text-slate-800'}`} aria-label="上一月"><ChevronLeft size={20} /></button>
+                        <span className="font-serif-tc font-bold text-xl text-slate-800 tracking-wide">{monthKey}</span>
+                        <button disabled={!nextMonth} onClick={() => handleNavigate(nextMonth)} className={`p-1 ${!nextMonth ? 'text-slate-200' : 'text-slate-400 hover:text-slate-800'}`} aria-label="下一月"><ChevronRight size={20} /></button>
                     </div>
                 </div>
                 <div className="flex items-center gap-2 -mr-2">
-                    <button onClick={handleDeleteDay} className="p-2 rounded-full text-slate-400 hover:text-rose-500 hover:bg-rose-50 transition-colors" title="刪除整日紀錄" aria-label="刪除整日紀錄"><Trash2 size={20} strokeWidth={1.5} /></button>
-                    {(activeTab === 'assets' || activeTab === 'income') && (
+                    <button onClick={handleDeleteMonth} className="p-2 rounded-full text-slate-400 hover:text-rose-500 hover:bg-rose-50 transition-colors" title="刪除整月紀錄" aria-label="刪除整月紀錄"><Trash2 size={20} strokeWidth={1.5} /></button>
+                    {(activeTab === 'assets' || activeTab === 'income' || activeTab === 'debt') && (
                         <button onClick={() => isEditing ? handleSave() : setIsEditing(true)} className={`p-2 rounded-full transition-colors flex items-center gap-1 ${isEditing ? 'bg-teal-600 text-white shadow-lg px-4' : 'text-slate-500 hover:bg-slate-200'}`} aria-label={isEditing ? "儲存" : "編輯"}>
                             {isEditing ? <><Check size={18} /><span className="text-xs font-bold">儲存</span></> : <Edit2 size={20} strokeWidth={1.5} />}
                         </button>
@@ -1881,14 +2258,26 @@ const DetailView = ({ dateStr, data, onBack, onUpdateData, assetNames, isPrivacy
             <main className="px-6 py-8 pb-32 space-y-8">
                 <section>
                     <div className="flex items-center gap-2 mb-2"><FileText size={16} className="text-teal-500" /><h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">當月備忘</h3></div>
+                    {!isPrivacyMode && (
+                        <div className="mb-3 grid grid-cols-2 gap-2 text-[10px] text-slate-400">
+                            <div className="bg-white border border-slate-100 rounded-lg px-3 py-2">
+                                <span className="block font-bold text-slate-500 mb-0.5">資產快照</span>
+                                <span className="font-inter">{assetDate || '尚未記錄'}</span>
+                            </div>
+                            <div className="bg-white border border-slate-100 rounded-lg px-3 py-2">
+                                <span className="block font-bold text-slate-500 mb-0.5">負債快照</span>
+                                <span className="font-inter">{debtDate || '尚未記錄'}</span>
+                            </div>
+                        </div>
+                    )}
                     {isEditing ? <textarea value={localMemo} onChange={(e) => setLocalMemo(e.target.value)} className="w-full p-3 rounded-xl border border-slate-200 bg-white focus:border-teal-500 outline-none text-sm text-slate-700 font-serif-tc min-h-[80px]" placeholder="輸入本月備忘..." /> : <div className={`p-4 rounded-xl border border-slate-200/60 bg-white text-sm text-slate-700 font-serif-tc min-h-[60px] ${!localMemo ? 'text-slate-300 italic' : ''}`}>{localMemo || "無備忘紀錄"}</div>}
                 </section>
 
                 <section className="space-y-3">
-                    <div className="grid grid-cols-3 gap-3">
+                    <div className="grid grid-cols-4 gap-3">
                         <button onClick={() => { setActiveTab('assets'); setIsEditing(false); }} className={`p-4 rounded-xl border shadow-sm flex flex-col items-center justify-center text-center transition-all ${activeTab === 'assets' ? 'bg-teal-50 border-teal-500 ring-1 ring-teal-500 text-teal-900' : 'bg-white border-slate-100 text-slate-600 hover:bg-slate-50'}`}>
-                            <div className={`text-[10px] uppercase tracking-wider font-inter mb-1 ${activeTab === 'assets' ? 'text-teal-600 font-bold' : 'text-slate-400'}`}>總資產 (Total)</div>
-                            <AmountWithTooltip amount={stats.totalAssets} className={`text-lg font-serif-tc font-bold justify-center ${activeTab === 'assets' ? 'text-teal-800' : 'text-slate-800'}`} align="center" masked={isPrivacyMode} />
+                            <div className={`text-[10px] uppercase tracking-wider font-inter mb-1 ${activeTab === 'assets' ? 'text-teal-600 font-bold' : 'text-slate-400'}`}>淨資產</div>
+                            <AmountWithTooltip amount={stats.netAssets} className={`text-lg font-serif-tc font-bold justify-center ${activeTab === 'assets' ? 'text-teal-800' : 'text-slate-800'}`} align="center" masked={isPrivacyMode} />
                         </button>
                         <button onClick={() => { setActiveTab('income'); setIsEditing(false); }} className={`p-4 rounded-xl border shadow-sm flex flex-col items-center justify-center text-center transition-all ${activeTab === 'income' ? 'bg-emerald-50 border-emerald-500 ring-1 ring-emerald-500 text-emerald-900' : 'bg-white border-slate-100 text-slate-600 hover:bg-slate-50'}`}>
                             <div className={`text-[10px] uppercase tracking-wider font-inter mb-1 ${activeTab === 'income' ? 'text-emerald-600 font-bold' : 'text-slate-400'}`}>本月收入 (Income)</div>
@@ -1897,6 +2286,10 @@ const DetailView = ({ dateStr, data, onBack, onUpdateData, assetNames, isPrivacy
                         <button onClick={() => { setActiveTab('cost'); setIsEditing(false); }} className={`p-4 rounded-xl border shadow-sm flex flex-col items-center justify-center text-center transition-all ${activeTab === 'cost' ? 'bg-rose-50 border-rose-500 ring-1 ring-rose-500 text-rose-900' : 'bg-white border-slate-100 text-slate-600 hover:bg-slate-50'}`}>
                             <div className={`text-[10px] uppercase tracking-wider font-inter mb-1 ${activeTab === 'cost' ? 'text-rose-600 font-bold' : 'text-slate-400'}`}>本月花費 (Cost)</div>
                             <AmountWithTooltip amount={stats.monthlyCost} className={`text-lg font-serif-tc font-bold justify-center ${activeTab === 'cost' ? 'text-rose-800' : 'text-rose-700'}`} align="center" prefix="-" masked={isPrivacyMode} />
+                        </button>
+                        <button onClick={() => { setActiveTab('debt'); setIsEditing(false); }} className={`p-4 rounded-xl border shadow-sm flex flex-col items-center justify-center text-center transition-all ${activeTab === 'debt' ? 'bg-rose-50 border-rose-500 ring-1 ring-rose-500 text-rose-900' : 'bg-white border-slate-100 text-slate-600 hover:bg-slate-50'}`}>
+                            <div className={`text-[10px] uppercase tracking-wider font-inter mb-1 ${activeTab === 'debt' ? 'text-rose-600 font-bold' : 'text-slate-400'}`}>總負債</div>
+                            <AmountWithTooltip amount={stats.totalDebts} className={`text-lg font-serif-tc font-bold justify-center ${activeTab === 'debt' ? 'text-rose-800' : 'text-rose-700'}`} align="center" prefix="-" masked={isPrivacyMode} />
                         </button>
                     </div>
 
@@ -2000,6 +2393,12 @@ const DetailView = ({ dateStr, data, onBack, onUpdateData, assetNames, isPrivacy
                                     {isEditing ? (
                                         <div className="flex flex-col gap-3 animate-[fadeIn_0.2s] relative bg-slate-50 p-3 rounded-lg border border-slate-200">
                                             <div className="flex gap-2">
+                                                <div className="flex-1">
+                                                    <label className="text-[10px] text-slate-400 font-bold mb-1 block">日期</label>
+                                                    <input type="date" value={item.date || `${monthKey}-01`} onChange={(e) => handleIncomeChange(idx, 'date', e.target.value)} className="w-full p-2 border border-slate-200 rounded-lg focus:border-emerald-500 outline-none bg-white text-xs text-slate-600 h-[38px] font-inter" />
+                                                </div>
+                                            </div>
+                                            <div className="flex gap-2">
                                                 <div className="flex-1"><label className="text-[10px] text-slate-400 font-bold mb-1 block">來源</label><input type="text" value={item.company || ''} onChange={(e) => handleIncomeChange(idx, 'company', e.target.value)} className="w-full p-2 border border-slate-200 rounded-lg focus:border-emerald-500 outline-none bg-white text-sm font-serif-tc" placeholder="公司/來源" /></div>
                                                 <div className="flex-1">
                                                     <label className="text-[10px] text-slate-400 font-bold mb-1 block">銀行</label>
@@ -2035,7 +2434,7 @@ const DetailView = ({ dateStr, data, onBack, onUpdateData, assetNames, isPrivacy
                                                     <span className="font-serif-tc font-bold text-slate-700">{item.company}</span>
                                                     {item.memo && <div className="flex items-center gap-1 px-2 py-0.5 bg-slate-100 rounded text-[10px] text-slate-500 max-w-[120px] truncate"><StickyNote size={10} /><span className="truncate">{item.memo}</span></div>}
                                                 </div>
-                                                <span className="text-xs text-slate-400 font-inter mt-0.5 flex items-center gap-1">{item.bank && <><Wallet size={10} /> {item.bank}</>}</span>
+                                                <span className="text-xs text-slate-400 font-inter mt-0.5 flex items-center gap-1">{item.date || monthKey}{item.bank && <><Wallet size={10} /> {item.bank}</>}</span>
                                             </div>
                                             <div className="flex flex-col items-end">
                                                 <span className="font-inter font-medium text-emerald-600">+{formatMoney(item.amount)}</span>
@@ -2045,6 +2444,110 @@ const DetailView = ({ dateStr, data, onBack, onUpdateData, assetNames, isPrivacy
                                     )}
                                 </div>
                             )) : <div className="p-8 flex flex-col items-center justify-center text-slate-300"><FileText size={32} className="mb-2 opacity-50" /><span className="text-sm">本月尚無收入明細</span></div>}
+                        </div>
+                    </div>
+                )}
+
+                {activeTab === 'debt' && (
+                    <div className="space-y-4 animate-[fadeIn_0.2s]">
+                        <div className="bg-slate-800 text-white rounded-xl p-4 shadow-sm">
+                            <div className="flex items-center justify-between mb-3">
+                                <div>
+                                    <div className="text-[10px] text-slate-400 uppercase tracking-wider">本月負債異動</div>
+                                    <div className="text-lg font-bold font-inter">
+                                        {debtEventStats.principal >= 0 ? '+' : ''}{formatMoney(debtEventStats.principal)}
+                                    </div>
+                                </div>
+                                <button onClick={() => setShowDebtEventModal(true)} className="px-3 py-2 bg-white/10 hover:bg-white/15 rounded-lg text-xs font-bold transition-colors flex items-center gap-1">
+                                    <Plus size={14} /> 新增異動
+                                </button>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2 text-xs">
+                                <div className="bg-white/5 rounded-lg p-2">
+                                    <div className="text-slate-400 mb-0.5">利息</div>
+                                    <div className="font-inter text-rose-300">-{formatMoney(debtEventStats.interest)}</div>
+                                </div>
+                                <div className="bg-white/5 rounded-lg p-2">
+                                    <div className="text-slate-400 mb-0.5">手續費</div>
+                                    <div className="font-inter text-rose-300">-{formatMoney(debtEventStats.fees)}</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
+                            <div className="px-4 py-3 border-b border-slate-100 flex justify-between items-center">
+                                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">負債快照</span>
+                                <span className="text-[10px] text-slate-400">{debtDate || '尚未記錄'}</span>
+                            </div>
+                            {localDebts.length > 0 ? localDebts.map((item, idx) => (
+                                <div key={item._tempId || idx} className={`p-4 ${idx !== localDebts.length - 1 ? 'border-b border-slate-100' : ''}`}>
+                                    {isEditing ? (
+                                        <div className="flex flex-col gap-3 animate-[fadeIn_0.2s] relative bg-slate-50 p-3 rounded-lg border border-slate-200">
+                                            <div className="flex gap-2">
+                                                <div className="flex-1"><label className="text-[10px] text-slate-400 font-bold mb-1 block">名稱</label><input type="text" value={item.name || ''} onChange={(e) => handleDebtChange(idx, 'name', e.target.value)} className="w-full p-2 border border-slate-200 rounded-lg focus:border-rose-500 outline-none bg-white text-sm font-serif-tc" placeholder="負債名稱" /></div>
+                                                <div className="flex-1"><label className="text-[10px] text-slate-400 font-bold mb-1 block">機構</label><input type="text" value={item.lender || ''} onChange={(e) => handleDebtChange(idx, 'lender', e.target.value)} className="w-full p-2 border border-slate-200 rounded-lg focus:border-rose-500 outline-none bg-white text-sm font-serif-tc" placeholder="機構 / 帳戶" /></div>
+                                            </div>
+                                            <div className="flex gap-2">
+                                                <div className="flex-1"><label className="text-[10px] text-slate-400 font-bold mb-1 block">金額</label><input type="number" value={item.amount || ''} onChange={(e) => handleDebtChange(idx, 'amount', Number(e.target.value))} className="w-full p-2 border border-slate-200 rounded-lg focus:border-rose-500 outline-none bg-white text-sm font-inter text-right" placeholder="0" /></div>
+                                            </div>
+                                            <div><label className="text-[10px] text-slate-400 font-bold mb-1 block">備註</label><input type="text" value={item.memo || ''} onChange={(e) => handleDebtChange(idx, 'memo', e.target.value)} className="w-full p-2 border border-slate-200 rounded-lg focus:border-rose-500 outline-none bg-white text-sm font-serif-tc text-slate-600" placeholder="備註..." /></div>
+                                            <button type="button" onClick={() => handleDeleteDebt(idx)} className="absolute top-2 right-2 p-2 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-full transition-colors" title="刪除"><Trash2 size={16} /></button>
+                                        </div>
+                                    ) : (
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex flex-col gap-1">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="font-serif-tc font-bold text-slate-700">{item.name}</span>
+                                                    {item.memo && <div className="flex items-center gap-1 px-2 py-0.5 bg-slate-100 rounded text-[10px] text-slate-500 max-w-[120px] truncate"><StickyNote size={10} /><span className="truncate">{item.memo}</span></div>}
+                                                </div>
+                                                <span className="text-xs text-slate-400 font-inter mt-0.5 flex items-center gap-1">{item.lender && <><Building2 size={10} /> {item.lender}</>}</span>
+                                            </div>
+                                            <span className={`font-inter font-medium text-rose-500 ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>{isPrivacyMode ? '****' : `-${formatMoney(item.amount)}`}</span>
+                                        </div>
+                                    )}
+                                </div>
+                            )) : <div className="p-8 flex flex-col items-center justify-center text-slate-300"><ArrowDownRight size={32} className="mb-2 opacity-50" /><span className="text-sm">本月尚無負債快照</span></div>}
+                        </div>
+
+                        <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
+                            <div className="px-4 py-3 border-b border-slate-100 flex justify-between items-center">
+                                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">本月異動明細</span>
+                                <span className="text-[10px] text-slate-400">{currentDebtEvents.length} 筆</span>
+                            </div>
+                            {currentDebtEvents.length > 0 ? currentDebtEvents.map((item) => {
+                                const impact = getDebtEventImpact(item);
+                                const isCostOnly = item.type === 'interest' || item.type === 'fee';
+                                return (
+                                    <div key={item.id} className="p-4 border-b border-slate-100 last:border-b-0">
+                                        <div className="flex justify-between gap-4">
+                                            <div className="min-w-0">
+                                                <div className="flex items-center gap-2 mb-1">
+                                                    <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${item.type === 'borrow' ? 'bg-emerald-50 text-emerald-600' : item.type === 'repay' ? 'bg-blue-50 text-blue-600' : 'bg-rose-50 text-rose-500'}`}>
+                                                        {getDebtEventLabel(item.type)}
+                                                    </span>
+                                                    <span className="text-xs text-slate-400 font-inter">{item.date}</span>
+                                                </div>
+                                                <div className="font-serif-tc font-bold text-slate-700 truncate">{item.name}</div>
+                                                <div className="text-xs text-slate-400 mt-0.5">{item.lender || '未指定機構'}</div>
+                                                {item.collateral?.length > 0 && (
+                                                    <div className="mt-2 flex flex-wrap gap-1">
+                                                        {item.collateral.map((c, idx) => (
+                                                            <span key={idx} className="text-[10px] px-2 py-0.5 bg-slate-100 text-slate-500 rounded-full">{c.symbol} x {c.shares}</span>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                                {item.memo && <div className="text-[10px] text-slate-400 mt-2">{item.memo}</div>}
+                                            </div>
+                                            <div className="flex flex-col items-end gap-2">
+                                                <span className={`font-inter font-bold ${isCostOnly ? 'text-rose-500' : impact >= 0 ? 'text-emerald-600' : 'text-blue-600'} ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>
+                                                    {isPrivacyMode ? '****' : isCostOnly ? `-${formatMoney(item.amount)}` : `${impact >= 0 ? '+' : ''}${formatMoney(impact)}`}
+                                                </span>
+                                                <button onClick={() => handleDeleteDebtEvent(item.id)} className="p-1.5 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors" title="刪除異動"><Trash2 size={14} /></button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            }) : <div className="p-8 flex flex-col items-center justify-center text-slate-300"><ClipboardCheck size={32} className="mb-2 opacity-50" /><span className="text-sm">本月尚無負債異動</span></div>}
                         </div>
                     </div>
                 )}
@@ -2852,7 +3355,7 @@ const AuthenticatedApp = () => {
                 const cloudData = await loadFromFirestoreChunks();
                 if (cloudData) {
                     console.log("Loaded data from Firestore chunks");
-                    setData(cloudData);
+                    setData({ ...INITIAL_DATA, ...cloudData, debts: cloudData.debts || {}, debtEvents: cloudData.debtEvents || {} });
                 } else {
                     console.log("No chunked data found, using empty state.");
                     // Fallback: check if legacy single-doc exists (optional migration)
@@ -2872,6 +3375,7 @@ const AuthenticatedApp = () => {
     const [showAddModal, setShowAddModal] = useState(false);
     const [showAddAssetModal, setShowAddAssetModal] = useState(false);
     const [showAddIncomeModal, setShowAddIncomeModal] = useState(false);
+    const [showAddDebtModal, setShowAddDebtModal] = useState(false);
     const [showYearSelector, setShowYearSelector] = useState(false);
     const [isSyncing, setIsSyncing] = useState(false);
 
@@ -2911,30 +3415,33 @@ const AuthenticatedApp = () => {
         return Array.from(names).sort();
     }, [data.records]);
 
+    const allDebtNames = useMemo(() => {
+        const names = new Set();
+        Object.values(data.debts || {}).forEach(debts => debts.forEach(debt => names.add(debt.name)));
+        return Array.from(names).sort();
+    }, [data.debts]);
+
     const availableYears = useMemo(() => {
         const years = new Set();
         Object.keys(data.records || {}).forEach(d => years.add(new Date(d).getFullYear()));
         Object.keys(data.incomes || {}).forEach(d => years.add(parseInt(d.split('-')[0])));
         Object.keys(data.memos || {}).forEach(d => years.add(new Date(d).getFullYear()));
         Object.keys(data.expenses || {}).forEach(d => years.add(parseInt(d.split('-')[0])));
+        Object.keys(data.debts || {}).forEach(d => years.add(new Date(d).getFullYear()));
+        Object.keys(data.debtEvents || {}).forEach(d => years.add(parseInt(d.split('-')[0])));
 
         const thisYear = new Date().getFullYear();
         return Array.from(years).filter(y => y <= thisYear).sort((a, b) => b - a);
     }, [data]);
 
     const getYearEndAssets = (year, sourceData) => {
-        let lastDate = null;
-        let totalAssets = 0;
-        Object.entries(sourceData.records || {}).forEach(([dateStr, assets]) => {
-            const date = new Date(dateStr);
-            if (date.getFullYear() === year) {
-                if (!lastDate || date > lastDate) {
-                    lastDate = date;
-                    totalAssets = assets.reduce((sum, item) => sum + (item.amount || 0), 0);
-                }
-            }
-        });
-        return totalAssets;
+        return getLatestSnapshotTotal(sourceData.records, `${year}-12-31`, (assets) =>
+            (assets || []).reduce((sum, item) => sum + (item.amount || 0), 0)
+        );
+    };
+
+    const getYearEndDebt = (year, sourceData) => {
+        return getLatestSnapshotTotal(sourceData.debts, `${year}-12-31`, (debts) => getDebtTotal(debts));
     };
 
 
@@ -2957,7 +3464,7 @@ const AuthenticatedApp = () => {
             const incomeShare = totalAllTimeIncome > 0 ? income / totalAllTimeIncome : 0;
             return {
                 year,
-                assets: getYearEndAssets(year, data),
+                assets: getYearEndAssets(year, data) - getYearEndDebt(year, data),
                 incomeGrowthRate,
                 incomeShare
             };
@@ -2978,8 +3485,9 @@ const AuthenticatedApp = () => {
     }, [data, currentYear]);
 
     const processedData = useMemo(() => {
-        const monthlyStats = Array(12).fill(0).map((_, i) => ({ month: i + 1, assets: 0, income: 0, cost: 0, balance: 0, memo: null, hasRecord: false, latestDate: null, allRecords: [], analysis: { incomeDiff: 0, assetDiff: 0, compositeScore: 0 } }));
+        const monthlyStats = Array(12).fill(0).map((_, i) => ({ month: i + 1, assets: 0, grossAssets: 0, debts: 0, income: 0, cost: 0, balance: 0, memo: null, hasRecord: false, latestDate: null, allRecords: [], analysis: { incomeDiff: 0, assetDiff: 0, compositeScore: 0 } }));
         const monthRecordsMap = new Map();
+        const monthDebtMap = new Map();
 
         Object.entries(data.records || {}).forEach(([dateStr, assets]) => {
             const date = new Date(dateStr);
@@ -2991,19 +3499,43 @@ const AuthenticatedApp = () => {
             }
         });
 
+        Object.entries(data.debts || {}).forEach(([dateStr, debts]) => {
+            const date = new Date(dateStr);
+            if (date.getFullYear() === currentYear) {
+                const monthIdx = date.getMonth();
+                if (!monthDebtMap.has(monthIdx)) monthDebtMap.set(monthIdx, []);
+                monthDebtMap.get(monthIdx).push({ dateStr, debt: getDebtTotal(debts) });
+            }
+        });
+
         monthRecordsMap.forEach((records, monthIdx) => {
             records.sort((a, b) => new Date(a.dateStr) - new Date(b.dateStr));
             const latest = records[records.length - 1];
             monthlyStats[monthIdx].hasRecord = true;
-            monthlyStats[monthIdx].assets = latest.assets;
+            monthlyStats[monthIdx].grossAssets = latest.assets;
             monthlyStats[monthIdx].latestDate = latest.dateStr;
             monthlyStats[monthIdx].allRecords = records;
         });
 
+        monthDebtMap.forEach((records, monthIdx) => {
+            records.sort((a, b) => new Date(a.dateStr) - new Date(b.dateStr));
+            const latest = records[records.length - 1];
+            monthlyStats[monthIdx].debts = latest.debt;
+            if (!monthlyStats[monthIdx].latestDate) monthlyStats[monthIdx].latestDate = latest.dateStr;
+        });
+
         let lastKnownAsset = getYearEndAssets(currentYear - 1, data);
+        let lastKnownDebt = getYearEndDebt(currentYear - 1, data);
         for (let i = 0; i < 12; i++) {
-            if (monthlyStats[i].hasRecord) lastKnownAsset = monthlyStats[i].assets;
-            else monthlyStats[i].assets = lastKnownAsset;
+            if (monthlyStats[i].hasRecord) lastKnownAsset = monthlyStats[i].grossAssets;
+            else monthlyStats[i].grossAssets = lastKnownAsset;
+            if (monthDebtMap.has(i)) lastKnownDebt = monthlyStats[i].debts;
+            else monthlyStats[i].debts = lastKnownDebt;
+            monthlyStats[i].assets = monthlyStats[i].grossAssets - monthlyStats[i].debts;
+            monthlyStats[i].allRecords = monthlyStats[i].allRecords.map((record) => ({
+                ...record,
+                assets: record.assets - getLatestSnapshotTotal(data.debts, record.dateStr, (debts) => getDebtTotal(debts))
+            }));
         }
 
         Object.entries(data.incomes || {}).forEach(([dateStr, incomeData]) => {
@@ -3037,7 +3569,7 @@ const AuthenticatedApp = () => {
         // 取得去年12月的收入作為初始比較基準 (若無則為0)
         const prevYearDecKey = `${currentYear - 1}-12`;
         let prevIncome = (data.incomes || {})[prevYearDecKey]?.totalAmount || 0;
-        let prevAsset = getYearEndAssets(currentYear - 1, data);
+        let prevAsset = getYearEndAssets(currentYear - 1, data) - getYearEndDebt(currentYear - 1, data);
 
         for (let i = 0; i < 12; i++) {
             const currentAsset = monthlyStats[i].assets;
@@ -3107,8 +3639,9 @@ const AuthenticatedApp = () => {
         const incomeGrowthRate = totalAccumulatedIncome > 0 ? (thisYearIncome / totalAccumulatedIncome) : 0;
 
         // Real Asset Stats (Restored for new requirement)
-        const thisYearAssets = getYearEndAssets(currentYear, data);
-        const lastYearAssets = getYearEndAssets(currentYear - 1, data);
+        const thisYearAssets = getYearEndAssets(currentYear, data) - getYearEndDebt(currentYear, data);
+        const lastYearAssets = getYearEndAssets(currentYear - 1, data) - getYearEndDebt(currentYear - 1, data);
+        const thisYearDebt = getYearEndDebt(currentYear, data);
         const realAssetGrowthAmount = thisYearAssets - lastYearAssets;
         const realAssetGrowthPercentage = lastYearAssets > 0 ? (realAssetGrowthAmount / lastYearAssets) : 0;
         const assetGrowthRatio = lastYearAssets > 0 ? (thisYearAssets / lastYearAssets) : 0;
@@ -3122,6 +3655,7 @@ const AuthenticatedApp = () => {
             totalAccumulatedIncome,
             thisYearAssets,
             lastYearAssets,
+            thisYearDebt,
             realAssetGrowthAmount,
             realAssetGrowthPercentage,
             assetGrowthRatio
@@ -3146,7 +3680,7 @@ const AuthenticatedApp = () => {
         let currentAssets = 0;
         const sortedDates = Object.keys(data.records || {}).sort((a, b) => new Date(b) - new Date(a));
         if (sortedDates.length > 0) {
-            currentAssets = data.records[sortedDates[0]].reduce((sum, i) => sum + (i.amount || 0), 0);
+            currentAssets = data.records[sortedDates[0]].reduce((sum, i) => sum + (i.amount || 0), 0) - getLatestSnapshotTotal(data.debts, sortedDates[0], (debts) => getDebtTotal(debts));
         }
 
         return { avgExpense, fireTarget, currentAssets, progress: fireTarget > 0 ? currentAssets / fireTarget : 0, rate };
@@ -3197,8 +3731,9 @@ const AuthenticatedApp = () => {
         setIsImporting(true);
         try {
             if (type === 'json') {
-                if (user) await saveToFirestoreChunks(pendingData);
-                setData(pendingData);
+                const normalizedData = { ...INITIAL_DATA, ...pendingData, debts: pendingData.debts || {}, debtEvents: pendingData.debtEvents || {} };
+                if (user) await saveToFirestoreChunks(normalizedData);
+                setData(normalizedData);
                 setCurrentYear(new Date().getFullYear());
                 handleShowAlert("匯入成功", "資料已同步至雲端");
             } else if (type === 'csv') {
@@ -3376,23 +3911,28 @@ const AuthenticatedApp = () => {
         });
     };
 
-    const handleMonthClick = (monthData) => { if (monthData.latestDate) { setSelectedDate(monthData.latestDate); setView('detail'); } };
+    const handleMonthClick = (monthData) => {
+        if (monthData.latestDate) {
+            setSelectedDate(`${currentYear}-${String(monthData.month).padStart(2, '0')}`);
+            setView('detail');
+        }
+    };
 
     const handleDetailUpdate = (type, payload) => {
-        if (type === 'NAVIGATE_DATE') setSelectedDate(payload);
+        if (type === 'NAVIGATE_MONTH') setSelectedDate(payload);
         else if (type === 'UPDATE_DETAILS') {
-            const { date, assets, memo, incomes } = payload;
-            const yearMonth = date.substring(0, 7);
+            const { month, assetDate, debtDate, memoDate, assets, memo, incomes, debts } = payload;
             const newTotal = incomes.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
-            const existingIncomeMonth = data.incomes[yearMonth] || {};
+            const existingIncomeMonth = data.incomes[month] || {};
 
             const newData = {
                 ...data,
-                records: { ...data.records, [date]: assets },
-                memos: { ...data.memos, [date]: memo },
+                records: { ...data.records, [assetDate]: assets },
+                memos: { ...data.memos, [memoDate]: memo },
+                debts: { ...data.debts, [debtDate]: debts || [] },
                 incomes: {
                     ...data.incomes,
-                    [yearMonth]: { ...existingIncomeMonth, totalAmount: newTotal, sources: incomes }
+                    [month]: { ...existingIncomeMonth, totalAmount: newTotal, sources: incomes }
                 }
             };
             setData(newData);
@@ -3405,6 +3945,11 @@ const AuthenticatedApp = () => {
         } else if (type === 'UPDATE_MEMO') {
             const { date, content } = payload;
             const newData = { ...data, memos: { ...data.memos, [date]: content } };
+            setData(newData);
+            saveToFirestoreChunks(newData);
+        } else if (type === 'UPDATE_DEBTS') {
+            const { date, debts } = payload;
+            const newData = { ...data, debts: { ...data.debts, [date]: debts } };
             setData(newData);
             saveToFirestoreChunks(newData);
         } else if (type === 'UPDATE_INCOME') {
@@ -3420,15 +3965,41 @@ const AuthenticatedApp = () => {
             };
             setData(newData);
             saveToFirestoreChunks(newData);
-        } else if (type === 'DELETE_DATE') {
-            const dateToDelete = payload;
+        } else if (type === 'DELETE_MONTH') {
+            const monthToDelete = payload;
             const newData = { ...data };
-            if (newData.records) delete newData.records[dateToDelete];
-            if (newData.memos) delete newData.memos[dateToDelete];
+            Object.keys(newData.records || {}).forEach((date) => { if (date.startsWith(monthToDelete)) delete newData.records[date]; });
+            Object.keys(newData.memos || {}).forEach((date) => { if (date.startsWith(monthToDelete)) delete newData.memos[date]; });
+            Object.keys(newData.debts || {}).forEach((date) => { if (date.startsWith(monthToDelete)) delete newData.debts[date]; });
+            if (newData.debtEvents) delete newData.debtEvents[monthToDelete];
             setData(newData);
             saveToFirestoreChunks(newData);
             setView('dashboard');
-            handleShowAlert("刪除成功", `已刪除 ${dateToDelete} 的所有紀錄`);
+            handleShowAlert("刪除成功", `已刪除 ${monthToDelete} 的資產、負債與備忘`);
+        } else if (type === 'ADD_DEBT_EVENT') {
+            const { month, event } = payload;
+            const existingEvents = data.debtEvents?.[month] || [];
+            const newData = {
+                ...data,
+                debtEvents: {
+                    ...data.debtEvents,
+                    [month]: [...existingEvents, event]
+                }
+            };
+            setData(newData);
+            saveToFirestoreChunks(newData);
+            handleShowAlert("新增成功", `已新增一筆${getDebtEventLabel(event.type)}異動`);
+        } else if (type === 'DELETE_DEBT_EVENT') {
+            const { month, id } = payload;
+            const newData = {
+                ...data,
+                debtEvents: {
+                    ...data.debtEvents,
+                    [month]: (data.debtEvents?.[month] || []).filter((item) => item.id !== id)
+                }
+            };
+            setData(newData);
+            saveToFirestoreChunks(newData);
         }
     };
 
@@ -3446,17 +4017,31 @@ const AuthenticatedApp = () => {
     };
 
     const handleSaveNewIncome = (newIncomeSource, dateKey) => {
-        const existingMonthData = data.incomes[dateKey] || { totalAmount: 0, sources: [] };
+        const monthKey = dateKey.substring(0, 7);
+        const existingMonthData = data.incomes[monthKey] || { totalAmount: 0, sources: [] };
         const existingSources = existingMonthData.sources || [];
         const newTotal = (existingMonthData.totalAmount || 0) + newIncomeSource.amount;
         const newData = {
             ...data,
-            incomes: { ...data.incomes, [dateKey]: { ...existingMonthData, totalAmount: newTotal, sources: [...existingSources, newIncomeSource] } }
+            incomes: { ...data.incomes, [monthKey]: { ...existingMonthData, totalAmount: newTotal, sources: [...existingSources, newIncomeSource] } }
         };
         setData(newData);
         saveToFirestoreChunks(newData);
-        handleShowAlert("新增成功", `已新增一筆收入至 ${dateKey}`);
+        handleShowAlert("新增成功", `已新增一筆收入至 ${monthKey}`);
         setShowAddIncomeModal(false);
+        setShowAddModal(false);
+    };
+
+    const handleSaveNewDebt = (newDebt, dateKey) => {
+        const existingDebts = data.debts?.[dateKey] || [];
+        const newData = {
+            ...data,
+            debts: { ...data.debts, [dateKey]: [...existingDebts, newDebt] }
+        };
+        setData(newData);
+        saveToFirestoreChunks(newData);
+        handleShowAlert("新增成功", `已新增一筆負債至 ${dateKey}`);
+        setShowAddDebtModal(false);
         setShowAddModal(false);
     };
 
@@ -3478,6 +4063,7 @@ const AuthenticatedApp = () => {
             {showYearSelector && <YearSelectorModal currentYear={currentYear} availableYears={availableYears} yearlyTrendData={yearlyTrendData} onSelect={(year) => { setCurrentYear(year); setShowYearSelector(false); }} onClose={() => setShowYearSelector(false)} />}
             {showAddIncomeModal && <AddIncomeModal onClose={() => setShowAddIncomeModal(false)} onSave={handleSaveNewIncome} assetNames={allAssetNames} exchangeRateCache={exchangeRateCache} />}
             {showAddAssetModal && <AddAssetModal onClose={() => setShowAddAssetModal(false)} onSave={handleSaveNewAsset} historyRecords={data.records} exchangeRateCache={exchangeRateCache} />}
+            {showAddDebtModal && <AddDebtModal onClose={() => setShowAddDebtModal(false)} onSave={handleSaveNewDebt} debtNames={allDebtNames} />}
 
             {showStatementModal && <StatementModal data={data} onClose={() => setShowStatementModal(false)} />}
             {showFIREModal && <FIREModal fireStats={fireStats} yearlyStats={fireYearlyStats} onRateChange={handleFireRateChange} onClose={() => setShowFIREModal(false)} />}
@@ -3502,7 +4088,7 @@ const AuthenticatedApp = () => {
 
             {view === 'detail' && selectedDate && (
                 <div className="w-full max-w-md mx-auto">
-                    <DetailView dateStr={selectedDate} data={data} onBack={() => setView('dashboard')} onUpdateData={handleDetailUpdate} assetNames={allAssetNames} isPrivacyMode={isPrivacyMode} />
+                    <DetailView monthKey={selectedDate} data={data} onBack={() => setView('dashboard')} onUpdateData={handleDetailUpdate} assetNames={allAssetNames} debtNames={allDebtNames} isPrivacyMode={isPrivacyMode} />
                 </div>
             )}
             <div className={`transition-transform duration-300 w-full max-w-md mx-auto ${view === 'detail' ? 'scale-95 opacity-50 pointer-events-none hidden' : ''}`}>
@@ -3743,6 +4329,21 @@ const AuthenticatedApp = () => {
                                     </div>
                                 )}
                             </div>
+                            <div className="bg-white p-3 rounded-xl border border-slate-100 shadow-sm flex flex-col items-center justify-center text-center relative group/tooltip z-10 col-span-2">
+                                <span className="text-[10px] text-slate-400 font-inter mb-1 flex items-center gap-1 cursor-help">
+                                    目前總負債 {!isPrivacyMode && <Info size={10} />}
+                                </span>
+                                <span className={`text-sm font-bold font-inter text-rose-500 ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>
+                                    {isPrivacyMode ? '****' : `-${formatWan(yearStats.thisYearDebt)}`}
+                                </span>
+                                {!isPrivacyMode && (
+                                    <div className="absolute bottom-full mb-2 w-56 bg-slate-800 text-white text-xs p-3 rounded-lg opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none shadow-xl">
+                                        <div className="font-bold border-b border-slate-600 pb-1 mb-1">最新負債快照</div>
+                                        <div className="flex justify-between mb-1"><span className="text-slate-400">截至 {currentYear} 年底:</span><span className="font-inter">-{formatMoney(yearStats.thisYearDebt)}</span></div>
+                                        <div className="text-[10px] text-slate-400 mt-2 pt-2 border-t border-slate-600">此數值會直接影響資產淨值與年度趨勢。</div>
+                                    </div>
+                                )}
+                            </div>
                         </div>
 
 
@@ -3882,11 +4483,14 @@ const AuthenticatedApp = () => {
                         <div className="bg-white w-full sm:max-w-xs rounded-t-2xl sm:rounded-2xl p-8 shadow-2xl relative animate-[slideUp_0.3s_ease-out]">
                             <div className="flex justify-between items-center mb-6"><h3 className="text-lg font-serif-tc font-bold text-slate-800">新增紀錄</h3><button onClick={() => setShowAddModal(false)} className="text-slate-300 hover:text-slate-600"><X size={20} /></button></div>
                             <div className="grid grid-cols-2 gap-4">
-                                <button onClick={() => { setShowAddModal(false); setShowAddAssetModal(true); }} className="flex flex-col items-center justify-center p-4 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-teal-200 hover:text-teal-700 transition-all group">
+                                <button onClick={() => { setShowAddModal(false); setShowAddAssetModal(true); }} className="col-span-2 flex flex-col items-center justify-center p-4 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-teal-200 hover:text-teal-700 transition-all group">
                                     <div className="w-10 h-10 rounded-full bg-teal-50 flex items-center justify-center mb-3 group-hover:bg-teal-100 transition-colors"><Wallet size={20} strokeWidth={1.5} className="text-teal-600" /></div><span className="text-sm font-serif-tc font-bold">新增資產</span>
                                 </button>
                                 <button onClick={() => { setShowAddModal(false); setShowAddIncomeModal(true); }} className="flex flex-col items-center justify-center p-4 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-teal-200 hover:text-teal-700 transition-all group">
                                     <div className="w-10 h-10 rounded-full bg-amber-50 flex items-center justify-center mb-3 group-hover:bg-amber-100 transition-colors"><Coins size={20} strokeWidth={1.5} className="text-amber-600" /></div><span className="text-sm font-serif-tc font-bold">新增收入</span>
+                                </button>
+                                <button onClick={() => { setShowAddModal(false); setShowAddDebtModal(true); }} className="flex flex-col items-center justify-center p-4 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-rose-200 hover:text-rose-700 transition-all group">
+                                    <div className="w-10 h-10 rounded-full bg-rose-50 flex items-center justify-center mb-3 group-hover:bg-rose-100 transition-colors"><ArrowDownRight size={20} strokeWidth={1.5} className="text-rose-600" /></div><span className="text-sm font-serif-tc font-bold">新增負債</span>
                                 </button>
                                 <button onClick={handleExportData} className="flex flex-col items-center justify-center p-4 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-sky-200 hover:text-sky-700 transition-all group">
                                     <div className="w-10 h-10 rounded-full bg-sky-50 flex items-center justify-center mb-3 group-hover:bg-sky-100 transition-colors"><Download size={20} strokeWidth={1.5} className="text-sky-600" /></div><span className="text-sm font-serif-tc font-bold">匯出備份</span>

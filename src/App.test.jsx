@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
 import App from './App';
@@ -201,6 +201,11 @@ describe('App Integration Tests', () => {
         await user.click(screen.getByText('新增收入'));
 
         await waitFor(() => expect(screen.getByPlaceholderText('例如：Google, 永豐銀行...')).toBeInTheDocument());
+        const dateInput = document.querySelector('input[type="date"]');
+        expect(dateInput).toBeInTheDocument();
+        fireEvent.change(dateInput, { target: { value: '2026-03-15' } });
+        expect(dateInput).toHaveValue('2026-03-15');
+
         const companyInput = screen.getByPlaceholderText('例如：Google, 永豐銀行...');
         await user.type(companyInput, 'Test Company');
 
@@ -230,6 +235,15 @@ describe('App Integration Tests', () => {
         // Check contents
         expect(screen.getByText('新增資產')).toBeInTheDocument();
         expect(screen.getByText('新增收入')).toBeInTheDocument();
+        expect(screen.getByText('新增負債')).toBeInTheDocument();
+        expect(screen.getByText('新增資產').closest('button')).toHaveClass('col-span-2');
+
+        const menu = screen.getByText('新增紀錄').closest('.bg-white');
+        const labels = within(menu).getAllByRole('button').map((button) => button.textContent);
+        expect(labels).toEqual(expect.arrayContaining(['新增資產', '新增收入', '新增負債', '匯出備份', '匯入資料']));
+        expect(labels.indexOf('新增資產')).toBeLessThan(labels.indexOf('新增收入'));
+        expect(labels.indexOf('新增收入')).toBeLessThan(labels.indexOf('新增負債'));
+        expect(labels.indexOf('新增負債')).toBeLessThan(labels.indexOf('匯出備份'));
     });
 
     test('Add Asset flow', async () => {
@@ -289,6 +303,31 @@ describe('App Integration Tests', () => {
         await waitFor(() => expect(screen.getByText('新增成功')).toBeInTheDocument());
     });
 
+    test('Add Debt flow', async () => {
+        const user = userEvent.setup();
+        render(<App />);
+        await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
+
+        await user.click(document.querySelector('button.fixed.bottom-8.right-6'));
+        await waitFor(() => expect(screen.getByText('新增紀錄')).toBeInTheDocument());
+        await user.click(screen.getByText('新增負債'));
+
+        await waitFor(() => expect(screen.getByText('新增負債', { selector: 'h3' })).toBeInTheDocument());
+
+        const dateInput = document.querySelector('input[type="date"]');
+        expect(dateInput).toBeInTheDocument();
+        fireEvent.change(dateInput, { target: { value: '2026-04-10' } });
+
+        await user.type(screen.getByPlaceholderText('例如：股票質押借款'), '股票質押借款');
+        await user.type(screen.getByPlaceholderText('例如：國泰證券 / 永豐金'), '國泰證券');
+        await user.type(screen.getByPlaceholderText('0'), '120000');
+
+        await user.click(screen.getByText('確認新增'));
+
+        await waitFor(() => expect(screen.getByText('新增成功')).toBeInTheDocument());
+        expect(screen.getByText('已新增一筆負債至 2026-04-10')).toBeInTheDocument();
+    });
+
     test('Detail View Interaction', async () => {
         const user = userEvent.setup();
         const currentYear = new Date().getFullYear();
@@ -296,8 +335,15 @@ describe('App Integration Tests', () => {
         const dynamicMockData = {
             records: { [dateStr]: [{ id: 1, name: "Test Asset", amount: 100, type: "fixed" }] },
             memos: { [dateStr]: "Test Memo" },
-            incomes: { [`${currentYear}-01`]: { totalAmount: 5000, sources: [{ company: "Test Co", amount: 5000 }] } },
+            incomes: { [`${currentYear}-01`]: { totalAmount: 5000, sources: [{ date: `${currentYear}-01-15`, company: "Test Co", amount: 5000 }] } },
             expenses: { [`${currentYear}-01`]: [{ id: 1, amount: 200, name: "Lunch", date: `${currentYear}-01-05`, account: "Cash" }] },
+            debts: { [`${currentYear}-01-20`]: [{ id: 1, name: "股票質押借款", lender: "國泰證券", amount: 120000, memo: "質押 0050" }] },
+            debtEvents: {
+                [`${currentYear}-01`]: [
+                    { id: 1, date: `${currentYear}-01-10`, type: "borrow", name: "0050 質押", lender: "國泰證券", amount: 80000, collateral: [{ symbol: "0050", shares: 2 }], memo: "首筆質押" },
+                    { id: 2, date: `${currentYear}-01-15`, type: "collateral", name: "0052 擔保品", lender: "國泰證券", amount: 0, collateral: [{ symbol: "0052", shares: 2 }], memo: "追加擔保品" }
+                ]
+            },
             fireSettings: { withdrawalRate: 4 }
         };
 
@@ -320,7 +366,7 @@ describe('App Integration Tests', () => {
         const monthCard = screen.getByText('01');
         await user.click(monthCard);
 
-        await waitFor(() => expect(screen.getByText('總資產 (Total)')).toBeInTheDocument());
+        await waitFor(() => expect(screen.getByText('淨資產')).toBeInTheDocument());
         // Default tab is Assets
         expect(screen.getByText('Test Asset')).toBeInTheDocument();
         // Removed Test Memo check due to duplication in DOM
@@ -329,11 +375,21 @@ describe('App Integration Tests', () => {
         const incomeTab = screen.getByText('本月收入 (Income)');
         await user.click(incomeTab);
         await waitFor(() => expect(screen.getByText('Test Co')).toBeInTheDocument());
+        expect(screen.getByText(`${currentYear}-01-15`)).toBeInTheDocument();
 
         // Switch to Cost Tab
         const costTab = screen.getByText('本月花費 (Cost)');
         await user.click(costTab);
         await waitFor(() => expect(screen.getByText('Lunch')).toBeInTheDocument());
+
+        // Switch to Debt Tab
+        const debtTab = screen.getByText('總負債');
+        await user.click(debtTab);
+        await waitFor(() => expect(screen.getByText('股票質押借款')).toBeInTheDocument());
+        expect(screen.getByText('本月負債異動')).toBeInTheDocument();
+        expect(screen.getByText('0050 質押')).toBeInTheDocument();
+        expect(screen.getByText('0050 x 2')).toBeInTheDocument();
+        expect(screen.getByText('0052 x 2')).toBeInTheDocument();
 
         // Go back to dashboard
         // Click the button with ArrowLeft icon
@@ -532,7 +588,7 @@ describe('App Integration Tests', () => {
 
         // Enter Detail View (Click Month 01)
         await user.click(screen.getByText('01'));
-        await waitFor(() => expect(screen.getByText('總資產 (Total)')).toBeInTheDocument());
+        await waitFor(() => expect(screen.getByText('淨資產')).toBeInTheDocument());
 
         // It selects the latest date by default (Asset2)
         await waitFor(() => expect(screen.getByText('Asset2')).toBeInTheDocument());
