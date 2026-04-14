@@ -337,6 +337,149 @@ const YearSelectorModal = ({ currentYear, availableYears, yearlyTrendData, onSel
 
 const ImportConfirmationModal = ({ type, summary, onConfirm, onCancel, currentData, pendingData }) => {
     const [expandedMonth, setExpandedMonth] = useState(null);
+    const [expandedJsonSection, setExpandedJsonSection] = useState(null);
+    const [expandedJsonExpenseMonth, setExpandedJsonExpenseMonth] = useState(null);
+
+    const changedMonths = summary?.changedMonths || [];
+    const jsonSections = summary?.sections || {};
+
+    const renderDiffBadge = (changed) => (
+        <span className={`text-[10px] px-1.5 py-0.5 rounded ${changed ? 'bg-amber-50 text-amber-600' : 'bg-slate-50 text-slate-400'}`}>
+            {changed ? '內容變更' : '無變更'}
+        </span>
+    );
+
+    const renderExpenseRow = (item, tone = 'default') => {
+        const toneClasses = {
+            added: 'bg-emerald-50/70',
+            removed: 'bg-rose-50/70',
+            modified: 'bg-amber-50/70',
+            default: ''
+        };
+
+        return (
+            <tr key={item.id} className={toneClasses[tone] || ''}>
+                <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{item.date.split('-')[2]}日</td>
+                <td className="px-2 py-2">
+                    <div className="text-slate-700 font-bold truncate max-w-[100px]">{item.name || item.subCategory}</div>
+                    <div className="text-slate-400 scale-90 origin-left">{item.category}-{item.subCategory}</div>
+                </td>
+                <td className={`px-3 py-2 text-right font-mono font-bold ${item.amount < 0 ? 'text-emerald-500' : 'text-slate-600'}`}>
+                    {item.amount < 0 ? '+' : ''}{formatMoney(Math.abs(item.amount))}
+                </td>
+            </tr>
+        );
+    };
+
+    const renderRecordRow = (item, tone = 'default') => {
+        const toneClasses = {
+            added: 'bg-emerald-50/70',
+            removed: 'bg-rose-50/70',
+            default: ''
+        };
+
+        return (
+            <tr key={`${item.date}-${item.name}-${item.currency}-${item.amount}-${tone}`} className={toneClasses[tone] || ''}>
+                <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{item.date}</td>
+                <td className="px-2 py-2">
+                    <div className="text-slate-700 font-bold truncate max-w-[100px]">{item.name}</div>
+                    <div className="text-slate-400 scale-90 origin-left">{item.type === 'floating' ? '浮動資產' : '固定資產'} / {item.currency || 'TWD'}</div>
+                </td>
+                <td className="px-3 py-2 text-right font-mono font-bold text-slate-600">{formatMoney(item.amount || 0)}</td>
+            </tr>
+        );
+    };
+
+    const renderIncomeRow = (item, tone = 'default') => {
+        const toneClasses = {
+            added: 'bg-emerald-50/70',
+            removed: 'bg-rose-50/70',
+            default: ''
+        };
+
+        return (
+            <tr key={`${item.month}-${item.company}-${item.bank}-${item.amount}-${tone}`} className={toneClasses[tone] || ''}>
+                <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{item.month}</td>
+                <td className="px-2 py-2">
+                    <div className="text-slate-700 font-bold truncate max-w-[100px]">{item.company}</div>
+                    <div className="text-slate-400 scale-90 origin-left">{item.bank || '未指定帳戶'} / {item.currency || 'TWD'}</div>
+                </td>
+                <td className="px-3 py-2 text-right font-mono font-bold text-slate-600">{formatMoney(item.amount || 0)}</td>
+            </tr>
+        );
+    };
+
+    const renderMemoRow = (item, tone = 'default') => {
+        const toneClasses = {
+            added: 'bg-emerald-50/70',
+            removed: 'bg-rose-50/70',
+            default: ''
+        };
+
+        return (
+            <tr key={`${item.date}-${tone}`} className={toneClasses[tone] || ''}>
+                <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{item.date}</td>
+                <td className="px-2 py-2 text-slate-700 break-words">{item.content || '空白備忘'}</td>
+            </tr>
+        );
+    };
+
+    const renderGenericDiffBlock = (title, diff, renderRow, columns) => {
+        if (!diff?.hasChanges) return null;
+
+        return (
+            <div className="space-y-3">
+                {diff.modified.length > 0 && (
+                    <div>
+                        <div className="text-[10px] font-bold text-amber-700 mb-2">修改 ({diff.modified.length})</div>
+                        <div className="space-y-2">
+                            {diff.modified.map(({ before, after }, index) => (
+                                <div key={`${title}-modified-${index}`} className="rounded-lg border border-amber-100 overflow-hidden">
+                                    <table className="w-full text-[10px] text-left">
+                                        <thead className="text-slate-400 font-medium bg-amber-50/60 border-b border-amber-100">
+                                            <tr>{columns}</tr>
+                                        </thead>
+                                        <tbody>
+                                            {renderRow(before, 'removed')}
+                                            {renderRow(after, 'added')}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
+                {diff.added.length > 0 && (
+                    <div>
+                        <div className="text-[10px] font-bold text-emerald-700 mb-2">新增 ({diff.added.length})</div>
+                        <table className="w-full text-[10px] text-left rounded-lg overflow-hidden">
+                            <thead className="text-slate-400 font-medium bg-emerald-50/60 border-b border-emerald-100">
+                                <tr>{columns}</tr>
+                            </thead>
+                            <tbody className="divide-y divide-emerald-100">
+                                {diff.added.map((item) => renderRow(item, 'added'))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+
+                {diff.removed.length > 0 && (
+                    <div>
+                        <div className="text-[10px] font-bold text-rose-700 mb-2">刪除 ({diff.removed.length})</div>
+                        <table className="w-full text-[10px] text-left rounded-lg overflow-hidden">
+                            <thead className="text-slate-400 font-medium bg-rose-50/60 border-b border-rose-100">
+                                <tr>{columns}</tr>
+                            </thead>
+                            <tbody className="divide-y divide-rose-100">
+                                {diff.removed.map((item) => renderRow(item, 'removed'))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+            </div>
+        );
+    };
 
     return (
         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-[fadeIn_0.2s]">
@@ -354,42 +497,153 @@ const ImportConfirmationModal = ({ type, summary, onConfirm, onCancel, currentDa
                             <p className="font-bold text-slate-700 border-b border-slate-200 pb-2 mb-2">
                                 即將覆蓋現有資料庫：
                             </p>
-                            <div className="grid grid-cols-2 gap-x-2 gap-y-3 text-xs">
-                                {/* Assets */}
-                                <div className="col-span-2 flex justify-between items-center bg-white p-2 rounded border border-slate-100">
-                                    <span className="text-slate-500">資產紀錄</span>
-                                    <div className="flex items-center gap-2">
-                                        <span className="line-through text-slate-400">{Object.values(currentData.records || {}).flat().length}</span>
-                                        <ArrowRight size={12} className="text-slate-300" />
-                                        <span className="font-bold text-indigo-600">{summary.records}</span>
+                            <div className="space-y-3 text-xs">
+                                <div className="bg-white rounded-lg border border-slate-100 overflow-hidden">
+                                    <div className="p-3 flex justify-between items-center cursor-pointer hover:bg-slate-50" onClick={() => setExpandedJsonSection(expandedJsonSection === 'json-records' ? null : 'json-records')}>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-slate-500">資產紀錄</span>
+                                            <ChevronDown size={12} className={`transition-transform duration-200 ${expandedJsonSection === 'json-records' ? 'rotate-180' : ''}`} />
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <span className="line-through text-slate-400">{jsonSections.records?.currentCount ?? 0}</span>
+                                            <ArrowRight size={12} className="text-slate-300" />
+                                            <span className="font-bold text-indigo-600">{summary.records}</span>
+                                            {renderDiffBadge(jsonSections.records?.changed)}
+                                        </div>
                                     </div>
+                                    {expandedJsonSection === 'json-records' && jsonSections.records?.changed && (
+                                        <div className="bg-slate-50 border-t border-slate-100 p-3">
+                                            {renderGenericDiffBlock(
+                                                'records',
+                                                jsonSections.records?.diff,
+                                                renderRecordRow,
+                                                <>
+                                                    <th className="px-3 py-1.5 font-normal">日期</th>
+                                                    <th className="px-2 py-1.5 font-normal">資產</th>
+                                                    <th className="px-3 py-1.5 font-normal text-right">金額</th>
+                                                </>
+                                            )}
+                                        </div>
+                                    )}
                                 </div>
-                                {/* Incomes */}
-                                <div className="col-span-2 flex justify-between items-center bg-white p-2 rounded border border-slate-100">
-                                    <span className="text-slate-500">收入紀錄</span>
-                                    <div className="flex items-center gap-2">
-                                        <span className="line-through text-slate-400">{Object.values(currentData.incomes || {}).reduce((acc, curr) => acc + (curr.sources?.length || 0), 0)}</span>
-                                        <ArrowRight size={12} className="text-slate-300" />
-                                        <span className="font-bold text-indigo-600">{summary.incomes}</span>
+
+                                <div className="bg-white rounded-lg border border-slate-100 overflow-hidden">
+                                    <div className="p-3 flex justify-between items-center cursor-pointer hover:bg-slate-50" onClick={() => setExpandedJsonSection(expandedJsonSection === 'json-incomes' ? null : 'json-incomes')}>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-slate-500">收入紀錄</span>
+                                            <ChevronDown size={12} className={`transition-transform duration-200 ${expandedJsonSection === 'json-incomes' ? 'rotate-180' : ''}`} />
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <span className="line-through text-slate-400">{jsonSections.incomes?.currentCount ?? 0}</span>
+                                            <ArrowRight size={12} className="text-slate-300" />
+                                            <span className="font-bold text-indigo-600">{summary.incomes}</span>
+                                            {renderDiffBadge(jsonSections.incomes?.changed)}
+                                        </div>
                                     </div>
+                                    {expandedJsonSection === 'json-incomes' && jsonSections.incomes?.changed && (
+                                        <div className="bg-slate-50 border-t border-slate-100 p-3">
+                                            {renderGenericDiffBlock(
+                                                'incomes',
+                                                jsonSections.incomes?.diff,
+                                                renderIncomeRow,
+                                                <>
+                                                    <th className="px-3 py-1.5 font-normal">月份</th>
+                                                    <th className="px-2 py-1.5 font-normal">收入來源</th>
+                                                    <th className="px-3 py-1.5 font-normal text-right">金額</th>
+                                                </>
+                                            )}
+                                        </div>
+                                    )}
                                 </div>
-                                {/* Expenses */}
-                                <div className="col-span-2 flex justify-between items-center bg-white p-2 rounded border border-slate-100">
-                                    <span className="text-slate-500">花費紀錄(月)</span>
-                                    <div className="flex items-center gap-2">
-                                        <span className="line-through text-slate-400">{Object.keys(currentData.expenses || {}).length}</span>
-                                        <ArrowRight size={12} className="text-slate-300" />
-                                        <span className="font-bold text-indigo-600">{summary.expenses}</span>
+
+                                <div className="bg-white rounded-lg border border-slate-100 overflow-hidden">
+                                    <div className="p-3 flex justify-between items-center cursor-pointer hover:bg-slate-50" onClick={() => setExpandedJsonSection(expandedJsonSection === 'json-expenses' ? null : 'json-expenses')}>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-slate-500">花費紀錄(月)</span>
+                                            <ChevronDown size={12} className={`transition-transform duration-200 ${expandedJsonSection === 'json-expenses' ? 'rotate-180' : ''}`} />
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <span className="line-through text-slate-400">{jsonSections.expenses?.currentCount ?? 0}</span>
+                                            <ArrowRight size={12} className="text-slate-300" />
+                                            <span className="font-bold text-indigo-600">{summary.expenses}</span>
+                                            {renderDiffBadge(jsonSections.expenses?.changed)}
+                                        </div>
                                     </div>
+                                    {expandedJsonSection === 'json-expenses' && jsonSections.expenses?.changed && (
+                                        <div className="bg-slate-50 border-t border-slate-100 p-3 space-y-3">
+                                            {jsonSections.expenses?.diff?.changedMonths?.map(({ month, oldItems, newItems, diff }) => {
+                                                const oldTotal = oldItems.reduce((sum, i) => sum + i.amount, 0);
+                                                const newTotal = newItems.reduce((sum, i) => sum + i.amount, 0);
+                                                const isExpanded = expandedJsonExpenseMonth === month;
+
+                                                return (
+                                                    <div key={month} className="bg-white rounded-lg border border-slate-100 overflow-hidden">
+                                                        <div className="p-3 flex flex-col gap-2 cursor-pointer hover:bg-slate-50 transition-colors" onClick={() => setExpandedJsonExpenseMonth(isExpanded ? null : month)}>
+                                                            <div className="flex justify-between items-center font-bold text-slate-700 text-xs">
+                                                                <span className="bg-slate-100 px-2 py-0.5 rounded flex items-center gap-1">
+                                                                    {month}
+                                                                    <ChevronDown size={12} className={`transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
+                                                                </span>
+                                                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-600">有差異</span>
+                                                            </div>
+                                                            <div className="grid grid-cols-2 gap-2 text-center text-xs">
+                                                                <div className="border-r border-slate-100 pr-2">
+                                                                    <div className="text-[10px] text-slate-400 mb-1">原有的 ({oldItems.length}筆)</div>
+                                                                    <div className="font-mono text-slate-500 line-through">{formatMoney(oldTotal)}</div>
+                                                                </div>
+                                                                <div className="pl-2">
+                                                                    <div className="text-[10px] text-indigo-500 mb-1">新的 ({newItems.length}筆)</div>
+                                                                    <div className="font-mono font-bold text-indigo-600">{formatMoney(newTotal)}</div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                        {isExpanded && (
+                                                            <div className="bg-slate-50 border-t border-slate-100 p-3">
+                                                                {renderGenericDiffBlock(
+                                                                    `expenses-${month}`,
+                                                                    diff,
+                                                                    renderExpenseRow,
+                                                                    <>
+                                                                        <th className="px-3 py-1.5 font-normal">日期</th>
+                                                                        <th className="px-2 py-1.5 font-normal">類別/名稱</th>
+                                                                        <th className="px-3 py-1.5 font-normal text-right">金額</th>
+                                                                    </>
+                                                                )}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
                                 </div>
-                                {/* Memos */}
-                                <div className="col-span-2 flex justify-between items-center bg-white p-2 rounded border border-slate-100">
-                                    <span className="text-slate-500">備忘錄</span>
-                                    <div className="flex items-center gap-2">
-                                        <span className="line-through text-slate-400">{Object.keys(currentData.memos || {}).length}</span>
-                                        <ArrowRight size={12} className="text-slate-300" />
-                                        <span className="font-bold text-indigo-600">{summary.memos}</span>
+
+                                <div className="bg-white rounded-lg border border-slate-100 overflow-hidden">
+                                    <div className="p-3 flex justify-between items-center cursor-pointer hover:bg-slate-50" onClick={() => setExpandedJsonSection(expandedJsonSection === 'json-memos' ? null : 'json-memos')}>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-slate-500">備忘錄</span>
+                                            <ChevronDown size={12} className={`transition-transform duration-200 ${expandedJsonSection === 'json-memos' ? 'rotate-180' : ''}`} />
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <span className="line-through text-slate-400">{jsonSections.memos?.currentCount ?? 0}</span>
+                                            <ArrowRight size={12} className="text-slate-300" />
+                                            <span className="font-bold text-indigo-600">{summary.memos}</span>
+                                            {renderDiffBadge(jsonSections.memos?.changed)}
+                                        </div>
                                     </div>
+                                    {expandedJsonSection === 'json-memos' && jsonSections.memos?.changed && (
+                                        <div className="bg-slate-50 border-t border-slate-100 p-3">
+                                            {renderGenericDiffBlock(
+                                                'memos',
+                                                jsonSections.memos?.diff,
+                                                renderMemoRow,
+                                                <>
+                                                    <th className="px-3 py-1.5 font-normal">日期</th>
+                                                    <th className="px-2 py-1.5 font-normal">內容</th>
+                                                </>
+                                            )}
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                             <p className="text-xs text-rose-500 mt-2 font-bold flex items-center gap-1">
@@ -401,10 +655,13 @@ const ImportConfirmationModal = ({ type, summary, onConfirm, onCancel, currentDa
                             <p className="font-bold text-slate-700 border-b border-slate-200 pb-2 mb-2">
                                 花費匯入分析：
                             </p>
-                            <div className="space-y-3">
-                                {summary.months.map(month => {
-                                    const oldItems = currentData.expenses?.[month] || [];
-                                    const newItems = pendingData[month] || [];
+                            {changedMonths.length === 0 ? (
+                                <div className="bg-white rounded-lg border border-slate-100 p-4 text-center text-xs text-slate-500">
+                                    這次匯入和現有花費資料沒有差異，不需要覆蓋任何月份。
+                                </div>
+                            ) : (
+                                <div className="space-y-3">
+                                {changedMonths.map(({ month, oldItems, newItems, diff }) => {
                                     
                                     const oldTotal = oldItems.reduce((sum, i) => sum + i.amount, 0);
                                     const newTotal = newItems.reduce((sum, i) => sum + i.amount, 0);
@@ -425,8 +682,8 @@ const ImportConfirmationModal = ({ type, summary, onConfirm, onCancel, currentDa
                                                         {month} 
                                                         <ChevronDown size={12} className={`transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
                                                     </span>
-                                                    <span className={`text-[10px] px-1.5 py-0.5 rounded ${newTotal !== oldTotal ? 'bg-amber-50 text-amber-600' : 'bg-slate-50 text-slate-400'}`}>
-                                                        {newTotal !== oldTotal ? '金額變動' : '金額無變化'}
+                                                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-600">
+                                                        有差異
                                                     </span>
                                                 </div>
                                                 <div className="grid grid-cols-2 gap-2 text-center text-xs">
@@ -443,39 +700,80 @@ const ImportConfirmationModal = ({ type, summary, onConfirm, onCancel, currentDa
                                             
                                             {isExpanded && (
                                                 <div className="bg-slate-50 border-t border-slate-100 max-h-[200px] overflow-y-auto">
-                                                    <table className="w-full text-[10px] text-left">
-                                                        <thead className="text-slate-400 font-medium sticky top-0 bg-slate-50 border-b border-slate-200">
-                                                            <tr>
-                                                                <th className="px-3 py-1.5 font-normal">日期</th>
-                                                                <th className="px-2 py-1.5 font-normal">類別/名稱</th>
-                                                                <th className="px-3 py-1.5 font-normal text-right">金額</th>
-                                                            </tr>
-                                                        </thead>
-                                                        <tbody className="divide-y divide-slate-100">
-                                                            {newItems.map((item) => (
-                                                                <tr key={item.id}>
-                                                                    <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{item.date.split('-')[2]}日</td>
-                                                                    <td className="px-2 py-2">
-                                                                        <div className="text-slate-700 font-bold truncate max-w-[100px]">{item.name || item.subCategory}</div>
-                                                                        <div className="text-slate-400 scale-90 origin-left">{item.category}-{item.subCategory}</div>
-                                                                    </td>
-                                                                    <td className={`px-3 py-2 text-right font-mono font-bold ${item.amount < 0 ? 'text-emerald-500' : 'text-slate-600'}`}>
-                                                                        {item.amount < 0 ? '+' : ''}{formatMoney(Math.abs(item.amount))}
-                                                                    </td>
-                                                                </tr>
-                                                            ))}
-                                                        </tbody>
-                                                    </table>
+                                                    <div className="p-3 space-y-3">
+                                                        {diff.modified.length > 0 && (
+                                                            <div>
+                                                                <div className="text-[10px] font-bold text-amber-700 mb-2">修改 ({diff.modified.length})</div>
+                                                                <div className="space-y-2">
+                                                                    {diff.modified.map(({ before, after }, index) => (
+                                                                        <div key={`${month}-modified-${index}`} className="rounded-lg border border-amber-100 overflow-hidden">
+                                                                            <table className="w-full text-[10px] text-left">
+                                                                                <thead className="text-slate-400 font-medium bg-amber-50/60 border-b border-amber-100">
+                                                                                    <tr>
+                                                                                        <th className="px-3 py-1.5 font-normal">日期</th>
+                                                                                        <th className="px-2 py-1.5 font-normal">類別/名稱</th>
+                                                                                        <th className="px-3 py-1.5 font-normal text-right">金額</th>
+                                                                                    </tr>
+                                                                                </thead>
+                                                                                <tbody>
+                                                                                    {renderExpenseRow(before, 'removed')}
+                                                                                    {renderExpenseRow(after, 'added')}
+                                                                                </tbody>
+                                                                            </table>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            </div>
+                                                        )}
+
+                                                        {diff.added.length > 0 && (
+                                                            <div>
+                                                                <div className="text-[10px] font-bold text-emerald-700 mb-2">新增 ({diff.added.length})</div>
+                                                                <table className="w-full text-[10px] text-left rounded-lg overflow-hidden">
+                                                                    <thead className="text-slate-400 font-medium bg-emerald-50/60 border-b border-emerald-100">
+                                                                        <tr>
+                                                                            <th className="px-3 py-1.5 font-normal">日期</th>
+                                                                            <th className="px-2 py-1.5 font-normal">類別/名稱</th>
+                                                                            <th className="px-3 py-1.5 font-normal text-right">金額</th>
+                                                                        </tr>
+                                                                    </thead>
+                                                                    <tbody className="divide-y divide-emerald-100">
+                                                                        {diff.added.map((item) => renderExpenseRow(item, 'added'))}
+                                                                    </tbody>
+                                                                </table>
+                                                            </div>
+                                                        )}
+
+                                                        {diff.removed.length > 0 && (
+                                                            <div>
+                                                                <div className="text-[10px] font-bold text-rose-700 mb-2">刪除 ({diff.removed.length})</div>
+                                                                <table className="w-full text-[10px] text-left rounded-lg overflow-hidden">
+                                                                    <thead className="text-slate-400 font-medium bg-rose-50/60 border-b border-rose-100">
+                                                                        <tr>
+                                                                            <th className="px-3 py-1.5 font-normal">日期</th>
+                                                                            <th className="px-2 py-1.5 font-normal">類別/名稱</th>
+                                                                            <th className="px-3 py-1.5 font-normal text-right">金額</th>
+                                                                        </tr>
+                                                                    </thead>
+                                                                    <tbody className="divide-y divide-rose-100">
+                                                                        {diff.removed.map((item) => renderExpenseRow(item, 'removed'))}
+                                                                    </tbody>
+                                                                </table>
+                                                            </div>
+                                                        )}
+                                                    </div>
                                                 </div>
                                             )}
                                         </div>
                                     );
                                 })}
-                                
+                                </div>
+                            )}
+                            {changedMonths.length > 0 && (
                                 <p className="text-xs text-slate-500 mt-2 bg-amber-50 text-amber-600 p-2 rounded">
                                     注意：上述月份的舊有花費資料將被完全覆蓋。
                                 </p>
-                            </div>
+                            )}
                         </>
                     )}
                 </div>
@@ -484,7 +782,7 @@ const ImportConfirmationModal = ({ type, summary, onConfirm, onCancel, currentDa
                     <button onClick={onCancel} className="flex-1 py-2.5 bg-slate-100 text-slate-500 rounded-xl font-bold text-sm hover:bg-slate-200 transition-colors">
                         取消
                     </button>
-                    <button onClick={onConfirm} className="flex-1 py-2.5 bg-indigo-600 text-white rounded-xl font-bold text-sm hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-200">
+                    <button onClick={onConfirm} disabled={type === 'csv' && changedMonths.length === 0} className="flex-1 py-2.5 bg-indigo-600 text-white rounded-xl font-bold text-sm hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-200 disabled:bg-slate-200 disabled:text-slate-400 disabled:shadow-none disabled:cursor-not-allowed">
                         確認匯入
                     </button>
                 </div>
@@ -577,6 +875,302 @@ const handleProcessExpenseCSV = (file, onSuccess, onError) => {
     const reader = new FileReader();
     reader.onload = (e) => processExpenseCSVText(e.target.result, onSuccess, onError);
     reader.readAsText(file);
+};
+
+const getExpenseIdentityKey = (item) => [
+    item.date || '',
+    item.account || '',
+    item.category || '',
+    item.subCategory || '',
+    item.name || '',
+    item.currency || 'TWD'
+].join('|');
+
+const getExpenseFullKey = (item) => [
+    getExpenseIdentityKey(item),
+    Number(item.amount) || 0
+].join('|');
+
+const buildExpenseDiff = (oldItems = [], newItems = []) => {
+    const oldFullCount = new Map();
+    const newFullCount = new Map();
+    const oldIdentityMap = new Map();
+    const newIdentityMap = new Map();
+
+    oldItems.forEach((item) => {
+        const fullKey = getExpenseFullKey(item);
+        oldFullCount.set(fullKey, (oldFullCount.get(fullKey) || 0) + 1);
+
+        const identityKey = getExpenseIdentityKey(item);
+        if (!oldIdentityMap.has(identityKey)) oldIdentityMap.set(identityKey, []);
+        oldIdentityMap.get(identityKey).push(item);
+    });
+
+    newItems.forEach((item) => {
+        const fullKey = getExpenseFullKey(item);
+        newFullCount.set(fullKey, (newFullCount.get(fullKey) || 0) + 1);
+
+        const identityKey = getExpenseIdentityKey(item);
+        if (!newIdentityMap.has(identityKey)) newIdentityMap.set(identityKey, []);
+        newIdentityMap.get(identityKey).push(item);
+    });
+
+    const unchangedByFullKey = new Map();
+    const allFullKeys = new Set([...oldFullCount.keys(), ...newFullCount.keys()]);
+    allFullKeys.forEach((key) => {
+        unchangedByFullKey.set(key, Math.min(oldFullCount.get(key) || 0, newFullCount.get(key) || 0));
+    });
+
+    const consumeUnchanged = (items, pool) => {
+        const remaining = [];
+        items.forEach((item) => {
+            const key = getExpenseFullKey(item);
+            const count = pool.get(key) || 0;
+            if (count > 0) {
+                pool.set(key, count - 1);
+            } else {
+                remaining.push(item);
+            }
+        });
+        return remaining;
+    };
+
+    const remainingOld = consumeUnchanged(oldItems, new Map(unchangedByFullKey));
+    const remainingNew = consumeUnchanged(newItems, new Map(unchangedByFullKey));
+
+    const removedByIdentity = new Map();
+    const addedByIdentity = new Map();
+
+    remainingOld.forEach((item) => {
+        const key = getExpenseIdentityKey(item);
+        if (!removedByIdentity.has(key)) removedByIdentity.set(key, []);
+        removedByIdentity.get(key).push(item);
+    });
+
+    remainingNew.forEach((item) => {
+        const key = getExpenseIdentityKey(item);
+        if (!addedByIdentity.has(key)) addedByIdentity.set(key, []);
+        addedByIdentity.get(key).push(item);
+    });
+
+    const modified = [];
+    const added = [];
+    const removed = [];
+
+    const allIdentityKeys = new Set([...removedByIdentity.keys(), ...addedByIdentity.keys()]);
+    allIdentityKeys.forEach((key) => {
+        const oldGroup = removedByIdentity.get(key) || [];
+        const newGroup = addedByIdentity.get(key) || [];
+        const pairCount = Math.min(oldGroup.length, newGroup.length);
+
+        for (let i = 0; i < pairCount; i++) {
+            modified.push({ before: oldGroup[i], after: newGroup[i] });
+        }
+
+        oldGroup.slice(pairCount).forEach((item) => removed.push(item));
+        newGroup.slice(pairCount).forEach((item) => added.push(item));
+    });
+
+    return {
+        hasChanges: modified.length > 0 || added.length > 0 || removed.length > 0,
+        added,
+        removed,
+        modified
+    };
+};
+
+const getExpenseImportSummary = (currentExpenses = {}, pendingExpenses = {}) => {
+    const months = Object.keys(pendingExpenses).sort();
+    const changedMonths = months
+        .map((month) => {
+            const oldItems = currentExpenses?.[month] || [];
+            const newItems = pendingExpenses?.[month] || [];
+            const diff = buildExpenseDiff(oldItems, newItems);
+
+            return diff.hasChanges ? {
+                month,
+                oldItems,
+                newItems,
+                diff
+            } : null;
+        })
+        .filter(Boolean);
+
+    return {
+        monthsCount: changedMonths.length,
+        totalRecords: Object.values(pendingExpenses).flat().length,
+        months: changedMonths.map((entry) => entry.month),
+        changedMonths
+    };
+};
+
+const getSortedValue = (value) => {
+    if (Array.isArray(value)) {
+        return value.map(getSortedValue);
+    }
+
+    if (value && typeof value === 'object') {
+        return Object.keys(value)
+            .sort()
+            .reduce((result, key) => {
+                result[key] = getSortedValue(value[key]);
+                return result;
+            }, {});
+    }
+
+    return value;
+};
+
+const areDataStructuresEqual = (a, b) => JSON.stringify(getSortedValue(a)) === JSON.stringify(getSortedValue(b));
+
+const buildCollectionDiff = (oldItems = [], newItems = [], getIdentityKey, getFullKey) => {
+    const oldFullCount = new Map();
+    const newFullCount = new Map();
+
+    oldItems.forEach((item) => {
+        const key = getFullKey(item);
+        oldFullCount.set(key, (oldFullCount.get(key) || 0) + 1);
+    });
+
+    newItems.forEach((item) => {
+        const key = getFullKey(item);
+        newFullCount.set(key, (newFullCount.get(key) || 0) + 1);
+    });
+
+    const unchangedByFullKey = new Map();
+    const allFullKeys = new Set([...oldFullCount.keys(), ...newFullCount.keys()]);
+    allFullKeys.forEach((key) => {
+        unchangedByFullKey.set(key, Math.min(oldFullCount.get(key) || 0, newFullCount.get(key) || 0));
+    });
+
+    const consumeUnchanged = (items, pool) => {
+        const remaining = [];
+        items.forEach((item) => {
+            const key = getFullKey(item);
+            const count = pool.get(key) || 0;
+            if (count > 0) {
+                pool.set(key, count - 1);
+            } else {
+                remaining.push(item);
+            }
+        });
+        return remaining;
+    };
+
+    const remainingOld = consumeUnchanged(oldItems, new Map(unchangedByFullKey));
+    const remainingNew = consumeUnchanged(newItems, new Map(unchangedByFullKey));
+
+    const oldByIdentity = new Map();
+    const newByIdentity = new Map();
+
+    remainingOld.forEach((item) => {
+        const key = getIdentityKey(item);
+        if (!oldByIdentity.has(key)) oldByIdentity.set(key, []);
+        oldByIdentity.get(key).push(item);
+    });
+
+    remainingNew.forEach((item) => {
+        const key = getIdentityKey(item);
+        if (!newByIdentity.has(key)) newByIdentity.set(key, []);
+        newByIdentity.get(key).push(item);
+    });
+
+    const modified = [];
+    const added = [];
+    const removed = [];
+
+    const allIdentityKeys = new Set([...oldByIdentity.keys(), ...newByIdentity.keys()]);
+    allIdentityKeys.forEach((key) => {
+        const oldGroup = oldByIdentity.get(key) || [];
+        const newGroup = newByIdentity.get(key) || [];
+        const pairCount = Math.min(oldGroup.length, newGroup.length);
+
+        for (let i = 0; i < pairCount; i++) {
+            modified.push({ before: oldGroup[i], after: newGroup[i] });
+        }
+
+        oldGroup.slice(pairCount).forEach((item) => removed.push(item));
+        newGroup.slice(pairCount).forEach((item) => added.push(item));
+    });
+
+    return {
+        hasChanges: modified.length > 0 || added.length > 0 || removed.length > 0,
+        added,
+        removed,
+        modified
+    };
+};
+
+const flattenRecords = (records = {}) => Object.entries(records).flatMap(([date, items]) =>
+    (items || []).map((item) => ({ ...item, date }))
+);
+
+const flattenIncomeSources = (incomes = {}) => Object.entries(incomes).flatMap(([month, value]) =>
+    (value?.sources || []).map((source) => ({ ...source, month }))
+);
+
+const flattenMemos = (memos = {}) => Object.entries(memos).map(([date, content]) => ({ date, content: content || '' }));
+
+const getRecordIdentityKey = (item) => [item.date || '', item.type || '', item.name || '', item.currency || 'TWD'].join('|');
+const getRecordFullKey = (item) => [getRecordIdentityKey(item), Number(item.amount) || 0, Number(item.originalAmount) || 0, Number(item.exchangeRate) || 0].join('|');
+
+const getIncomeIdentityKey = (item) => [item.month || '', item.company || '', item.bank || '', item.currency || 'TWD', item.memo || ''].join('|');
+const getIncomeFullKey = (item) => [getIncomeIdentityKey(item), Number(item.amount) || 0, Number(item.originalAmount) || 0, Number(item.exchangeRate) || 0].join('|');
+
+const getMemoIdentityKey = (item) => item.date || '';
+const getMemoFullKey = (item) => [item.date || '', item.content || ''].join('|');
+
+const getJsonImportSummary = (currentData = {}, parsedData = {}) => {
+    const currentRecords = currentData.records || {};
+    const currentIncomes = currentData.incomes || {};
+    const currentExpenses = currentData.expenses || {};
+    const currentMemos = currentData.memos || {};
+
+    const nextRecords = parsedData.records || {};
+    const nextIncomes = parsedData.incomes || {};
+    const nextExpenses = parsedData.expenses || {};
+    const nextMemos = parsedData.memos || {};
+
+    const recordDiff = buildCollectionDiff(flattenRecords(currentRecords), flattenRecords(nextRecords), getRecordIdentityKey, getRecordFullKey);
+    const incomeDiff = buildCollectionDiff(flattenIncomeSources(currentIncomes), flattenIncomeSources(nextIncomes), getIncomeIdentityKey, getIncomeFullKey);
+    const memoDiff = buildCollectionDiff(flattenMemos(currentMemos), flattenMemos(nextMemos), getMemoIdentityKey, getMemoFullKey);
+    const expenseSummary = getExpenseImportSummary(currentExpenses, nextExpenses);
+
+    const sections = {
+        records: {
+            currentCount: Object.values(currentRecords).flat().length,
+            nextCount: Object.values(nextRecords).flat().length,
+            changed: recordDiff.hasChanges,
+            diff: recordDiff
+        },
+        incomes: {
+            currentCount: Object.values(currentIncomes).reduce((acc, curr) => acc + (curr.sources?.length || 0), 0),
+            nextCount: Object.values(nextIncomes).reduce((acc, curr) => acc + (curr.sources?.length || 0), 0),
+            changed: incomeDiff.hasChanges,
+            diff: incomeDiff
+        },
+        expenses: {
+            currentCount: Object.keys(currentExpenses).length,
+            nextCount: Object.keys(nextExpenses).length,
+            changed: expenseSummary.monthsCount > 0,
+            diff: expenseSummary
+        },
+        memos: {
+            currentCount: Object.keys(currentMemos).length,
+            nextCount: Object.keys(nextMemos).length,
+            changed: memoDiff.hasChanges,
+            diff: memoDiff
+        }
+    };
+
+    return {
+        records: sections.records.nextCount,
+        incomes: sections.incomes.nextCount,
+        expenses: sections.expenses.nextCount,
+        memos: sections.memos.nextCount,
+        sections,
+        hasChanges: Object.values(sections).some((section) => section.changed)
+    };
 };
 
 // --- WebAuthn Security Logic ---
@@ -2680,14 +3274,18 @@ const AuthenticatedApp = () => {
                     const text = await response.text();
 
                     processExpenseCSVText(text, (expensesByMonth) => {
-                        const monthsCount = Object.keys(expensesByMonth).length;
-                        const totalRecords = Object.values(expensesByMonth).flat().length;
-                        const months = Object.keys(expensesByMonth).sort();
+                        const summary = getExpenseImportSummary(data.expenses, expensesByMonth);
+
+                        if (summary.monthsCount === 0) {
+                            setShowImportModal(false);
+                            handleShowAlert("無需匯入", "花費資料沒有任何差異");
+                            return;
+                        }
 
                         setImportConfirmation({
                             show: true,
                             type: 'csv',
-                            summary: { monthsCount, totalRecords, months },
+                            summary,
                             pendingData: expensesByMonth
                         });
                         setShowImportModal(false);
@@ -2721,12 +3319,14 @@ const AuthenticatedApp = () => {
                 const parsed = JSON.parse(e.target.result);
                 if (!parsed.records) throw new Error("缺少 records 欄位");
 
-                const summary = {
-                    records: Object.values(parsed.records || {}).flat().length,
-                    incomes: Object.values(parsed.incomes || {}).reduce((acc, curr) => acc + (curr.sources?.length || 0), 0),
-                    expenses: Object.keys(parsed.expenses || {}).length,
-                    memos: Object.keys(parsed.memos || {}).length
-                };
+                const summary = getJsonImportSummary(data, parsed);
+
+                if (!summary.hasChanges) {
+                    setShowImportModal(false);
+                    handleShowAlert("無需匯入", "備份內容和目前資料完全一致");
+                    if (fileInputRef.current) fileInputRef.current.value = "";
+                    return;
+                }
 
                 setImportConfirmation({
                     show: true,
@@ -2751,14 +3351,20 @@ const AuthenticatedApp = () => {
         const file = event.target.files[0];
         if (!file) return;
         handleProcessExpenseCSV(file, (expensesByMonth) => {
-            const monthsCount = Object.keys(expensesByMonth).length;
-            const totalRecords = Object.values(expensesByMonth).flat().length;
-            const months = Object.keys(expensesByMonth).sort();
+            const summary = getExpenseImportSummary(data.expenses, expensesByMonth);
+
+            if (summary.monthsCount === 0) {
+                setShowAddModal(false);
+                setShowImportModal(false);
+                handleShowAlert("無需匯入", "花費資料沒有任何差異");
+                if (expenseFileInputRef.current) expenseFileInputRef.current.value = "";
+                return;
+            }
 
             setImportConfirmation({
                 show: true,
                 type: 'csv',
-                summary: { monthsCount, totalRecords, months },
+                summary,
                 pendingData: expensesByMonth
             });
             setShowAddModal(false);
