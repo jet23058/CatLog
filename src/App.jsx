@@ -65,6 +65,11 @@ const INITIAL_DATA = {
 
 // --- 工具函數 ---
 const formatMoney = (val) => new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 0 }).format(val);
+const formatMoneyByMarket = (val, market = 'TW') => new Intl.NumberFormat('zh-TW', {
+    minimumFractionDigits: market === 'US' ? 2 : 0,
+    maximumFractionDigits: market === 'US' ? 2 : 0
+}).format(val);
+const formatExchangeRate = (val) => new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 3 }).format(val);
 const formatWan = (val) => {
     if (Math.abs(val) < 10000) return formatMoney(val);
     const wan = val / 10000;
@@ -153,6 +158,14 @@ const normalizeDate = (value) => {
     return `${year.padStart(4, '0')}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
 };
 
+const normalizeUSDate = (value) => {
+    if (!value) return '';
+    const parts = String(value).trim().replace(/\//g, '-').split('-');
+    if (parts.length !== 3) return String(value).trim();
+    const [month, day, year] = parts;
+    return `${year.padStart(4, '0')}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+};
+
 const getStockSymbolFromItem = (item = '') => {
     const normalized = item.trim();
     if (!normalized) return '';
@@ -169,11 +182,101 @@ const getStockTradeLabel = (type) => ({
     fee: '費用'
 }[type] || '其他');
 
+const STOCK_MARKETS = [
+    { value: 'TW', label: '台股' },
+    { value: 'US', label: '美股' }
+];
+
+const getStockMarketLabel = (market) => STOCK_MARKETS.find((item) => item.value === market)?.label || market || '其他';
+
+const processUSStockCSVRows = (rows, headers) => {
+    const idxSymbol = headers.indexOf('代號');
+    const idxName = headers.indexOf('詳細資訊');
+    const idxQuantity = headers.indexOf('數量');
+    const idxOpenDate = headers.indexOf('開倉日期');
+    const idxCloseDate = headers.indexOf('平倉日期');
+    const idxProceeds = headers.indexOf('賣出收入');
+    const idxCost = headers.indexOf('調整後成本');
+    const idxWashSaleLoss = headers.indexOf('WS Loss Disallowed');
+
+    if ([idxSymbol, idxOpenDate, idxCloseDate, idxProceeds, idxCost].some((idx) => idx === -1)) {
+        throw new Error("美股 CSV 格式不符，找不到代號、開倉/平倉日期、賣出收入或調整後成本欄位");
+    }
+
+    const transactions = [];
+    const skippedRows = [];
+
+    rows.slice(1).forEach((row, index) => {
+        const symbol = row[idxSymbol]?.trim() || '';
+        const name = idxName >= 0 ? row[idxName]?.trim() || symbol : symbol;
+        const quantity = idxQuantity >= 0 ? parseAmount(row[idxQuantity]) : 0;
+        const openDate = normalizeUSDate(row[idxOpenDate]);
+        const closeDate = normalizeUSDate(row[idxCloseDate]);
+        const proceeds = parseAmount(row[idxProceeds]);
+        const cost = parseAmount(row[idxCost]);
+        const washSaleLoss = idxWashSaleLoss >= 0 ? parseAmount(row[idxWashSaleLoss]) : 0;
+        const sellAmount = proceeds + washSaleLoss;
+        const csvRow = index + 2;
+
+        if (!symbol || !openDate || !closeDate) {
+            skippedRows.push({ row: csvRow, type: '美股', item: symbol || name || '空白', reason: '缺少代號或日期' });
+            return;
+        }
+
+        if (cost <= 0 && sellAmount <= 0) {
+            skippedRows.push({ row: csvRow, type: '美股', item: symbol, reason: '成本與賣出收入皆為 0' });
+            return;
+        }
+
+        if (cost > 0) {
+            transactions.push({
+                id: `stock-us-buy-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 8)}`,
+                source: 'csv-us-realized',
+                market: 'US',
+                currency: 'USD',
+                date: openDate,
+                type: 'buy',
+                symbol,
+                name,
+                rawItem: symbol,
+                amount: cost,
+                shares: quantity,
+                balance: 0,
+                memo: '美股平倉損益匯入：調整後成本'
+            });
+        }
+
+        if (sellAmount > 0) {
+            transactions.push({
+                id: `stock-us-sell-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 8)}`,
+                source: 'csv-us-realized',
+                market: 'US',
+                currency: 'USD',
+                date: closeDate,
+                type: 'sell',
+                symbol,
+                name,
+                rawItem: symbol,
+                amount: sellAmount,
+                shares: quantity,
+                balance: 0,
+                memo: washSaleLoss ? '美股平倉損益匯入：賣出收入 + WS Loss Disallowed' : '美股平倉損益匯入：賣出收入'
+            });
+        }
+    });
+
+    return { market: 'US', transactions, skippedRows };
+};
+
 const processStockCSVText = (csvText) => {
     const rows = parseCSV(csvText);
     if (rows.length === 0) throw new Error("CSV 檔案是空的");
 
     const headers = rows[0].map((header) => header.trim());
+    if (headers.includes('代號') && headers.includes('調整後成本') && headers.includes('賣出收入')) {
+        return processUSStockCSVRows(rows, headers);
+    }
+
     const idxType = headers.indexOf('類型');
     const idxDate = headers.indexOf('日期');
     const idxItem = headers.indexOf('項目');
@@ -248,7 +351,7 @@ const processStockCSVText = (csvText) => {
         });
     });
 
-    return { transactions, skippedRows };
+    return { market: 'TW', transactions, skippedRows };
 };
 
 const getHeaderIndex = (headers, candidates) => candidates.map((name) => headers.indexOf(name)).find((idx) => idx >= 0) ?? -1;
@@ -3377,7 +3480,7 @@ const FIREModal = ({ fireStats, yearlyStats = [], onRateChange, onClose }) => {
 
 const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransactions, onImportHoldingSnapshot, onDeleteHoldingSnapshot, isPrivacyMode }) => {
     const [inputText, setInputText] = useState('');
-    const [holdingRows, setHoldingRows] = useState([{ id: 'holding-row-1', name: '', price: '', shares: '' }]);
+    const [holdingRows, setHoldingRows] = useState([{ id: 'holding-row-1', market: 'TW', name: '', price: '', shares: '' }]);
     const [holdingMonth, setHoldingMonth] = useState(() => {
         const today = new Date();
         return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
@@ -3391,6 +3494,9 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
     const [showHoldingImportModal, setShowHoldingImportModal] = useState(false);
     const [confirmDeleteSnapshot, setConfirmDeleteSnapshot] = useState(null);
     const [stockSearch, setStockSearch] = useState('');
+    const [marketFilter, setMarketFilter] = useState('TW');
+    const [usdToTwdRate, setUsdToTwdRate] = useState(DEFAULT_EXCHANGE_RATES.USD);
+    const [usPnlCurrency, setUsPnlCurrency] = useState('USD');
 
     const holdingSnapshots = useMemo(() => Object.entries(data.stockHoldingSnapshots || {}).flatMap(([month, versions]) =>
         (versions || []).map((snapshot) => ({ ...snapshot, month }))
@@ -3398,38 +3504,73 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
 
     const [selectedSnapshotId, setSelectedSnapshotId] = useState('');
 
+    const visibleHoldingSnapshots = useMemo(() => (
+        holdingSnapshots.filter((snapshot) => (snapshot.holdings || []).some((holding) => (holding.market || 'TW') === marketFilter))
+    ), [holdingSnapshots, marketFilter]);
+
     const selectedSnapshot = useMemo(() => {
-        if (holdingSnapshots.length === 0) return null;
-        return holdingSnapshots.find((snapshot) => snapshot.id === selectedSnapshotId) || holdingSnapshots[0];
-    }, [holdingSnapshots, selectedSnapshotId]);
+        if (visibleHoldingSnapshots.length === 0) return null;
+        return visibleHoldingSnapshots.find((snapshot) => snapshot.id === selectedSnapshotId) || visibleHoldingSnapshots[0];
+    }, [visibleHoldingSnapshots, selectedSnapshotId]);
+
+    const selectedSnapshotHoldings = useMemo(() => {
+        if (!selectedSnapshot) return [];
+        return (selectedSnapshot.holdings || []).filter((holding) => (holding.market || 'TW') === marketFilter);
+    }, [selectedSnapshot, marketFilter]);
+
+    const stockMarketCounts = useMemo(() => {
+        const sets = { TW: new Set(), US: new Set() };
+        const addKey = (market, symbol) => {
+            if (!symbol) return;
+            const normalizedMarket = market || 'TW';
+            const key = `${normalizedMarket}:${symbol}`;
+            if (!sets[normalizedMarket]) sets[normalizedMarket] = new Set();
+            sets[normalizedMarket].add(key);
+        };
+
+        (data.stockTransactions || []).forEach((trade) => {
+            if (!trade.symbol || trade.type === 'deposit' || trade.unassigned) return;
+            addKey(trade.market || 'TW', trade.symbol);
+        });
+        holdingSnapshots.forEach((snapshot) => {
+            (snapshot.holdings || []).forEach((holding) => addKey(holding.market || 'TW', holding.symbol || holding.name));
+        });
+
+        return Object.fromEntries(Object.entries(sets).map(([market, values]) => [market, values.size]));
+    }, [data.stockTransactions, holdingSnapshots]);
 
     const holdingMap = useMemo(() => {
         const map = {};
-        (selectedSnapshot?.holdings || []).forEach((holding) => {
+        selectedSnapshotHoldings.forEach((holding) => {
             const keys = [holding.symbol, holding.name].filter(Boolean);
             keys.forEach((key) => {
-                map[key] = {
-                    value: (map[key]?.value || 0) + (Number(holding.marketValue) || 0),
-                    costAmount: (map[key]?.costAmount || 0) + (Number(holding.costAmount) || 0),
-                    shares: (map[key]?.shares || 0) + (Number(holding.shares) || 0),
+                const market = holding.market || 'TW';
+                const mapKey = `${market}:${key}`;
+                map[mapKey] = {
+                    value: (map[mapKey]?.value || 0) + (Number(holding.marketValue) || 0),
+                    costAmount: (map[mapKey]?.costAmount || 0) + (Number(holding.costAmount) || 0),
+                    shares: (map[mapKey]?.shares || 0) + (Number(holding.shares) || 0),
                     date: selectedSnapshot.month,
                     holding
                 };
             });
         });
         return map;
-    }, [selectedSnapshot]);
+    }, [selectedSnapshot, selectedSnapshotHoldings]);
 
     const stockRows = useMemo(() => {
         const bySymbol = {};
         (data.stockTransactions || []).forEach((trade) => {
             if (!trade.symbol || trade.type === 'deposit' || trade.unassigned) return;
             const symbol = trade.symbol;
-            if (!bySymbol[symbol]) {
-                bySymbol[symbol] = { symbol, name: trade.name || symbol, market: trade.market || 'TW', buyAmount: 0, sellAmount: 0, dividends: 0, fees: 0, tradeCount: 0, latestTradeDate: trade.date };
+            const market = trade.market || 'TW';
+            const rowKey = `${market}:${symbol}`;
+            if (!bySymbol[rowKey]) {
+                bySymbol[rowKey] = { key: rowKey, symbol, name: trade.name || symbol, market, currency: trade.currency || (market === 'US' ? 'USD' : 'TWD'), buyAmount: 0, sellAmount: 0, dividends: 0, fees: 0, tradeCount: 0, latestTradeDate: trade.date, realizedOnly: false };
             }
-            const row = bySymbol[symbol];
+            const row = bySymbol[rowKey];
             row.tradeCount += 1;
+            if (trade.source === 'csv-us-realized') row.realizedOnly = true;
             if (!row.latestTradeDate || new Date(trade.date) > new Date(row.latestTradeDate)) row.latestTradeDate = trade.date;
             if (trade.type === 'buy') row.buyAmount += Number(trade.amount) || 0;
             if (trade.type === 'sell') row.sellAmount += Number(trade.amount) || 0;
@@ -3440,30 +3581,65 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
         Object.values(holdingMap).forEach((snapshot) => {
             const holding = snapshot.holding;
             const symbol = holding.symbol || holding.name;
-            if (!symbol || bySymbol[symbol]) return;
-            bySymbol[symbol] = { symbol, name: holding.name || symbol, market: holding.market || 'TW', buyAmount: 0, sellAmount: 0, dividends: 0, fees: 0, tradeCount: 0, latestTradeDate: selectedSnapshot?.month || '' };
+            const market = holding.market || 'TW';
+            const rowKey = `${market}:${symbol}`;
+            if (!symbol || bySymbol[rowKey]) return;
+            bySymbol[rowKey] = { key: rowKey, symbol, name: holding.name || symbol, market, currency: market === 'US' ? 'USD' : 'TWD', buyAmount: 0, sellAmount: 0, dividends: 0, fees: 0, tradeCount: 0, latestTradeDate: selectedSnapshot?.month || '', realizedOnly: false };
         });
 
         return Object.values(bySymbol).map((row) => {
-            const snapshot = holdingMap[row.symbol] || holdingMap[row.name];
+            const snapshot = holdingMap[`${row.market}:${row.symbol}`] || holdingMap[`${row.market}:${row.name}`];
             const marketValue = snapshot?.value || 0;
-            const totalPnl = marketValue + row.sellAmount + row.dividends - row.buyAmount - row.fees;
+            const pnlMarketValue = row.realizedOnly ? 0 : marketValue;
+            const totalPnl = pnlMarketValue + row.sellAmount + row.dividends - row.buyAmount - row.fees;
             return { ...row, marketValue, snapshotDate: snapshot?.date || null, totalPnl, roi: row.buyAmount > 0 ? totalPnl / row.buyAmount : 0, hasSnapshot: Boolean(snapshot) };
         }).sort((a, b) => b.totalPnl - a.totalPnl);
     }, [data.stockTransactions, holdingMap, selectedSnapshot]);
 
+    const marketFilteredStockRows = useMemo(() => (
+        stockRows.filter((item) => item.market === marketFilter)
+    ), [stockRows, marketFilter]);
+
+    const marketFilteredTransactions = useMemo(() => (
+        (data.stockTransactions || []).filter((trade) => (trade.market || 'TW') === marketFilter)
+    ), [data.stockTransactions, marketFilter]);
+
     const stockStats = useMemo(() => ({
-        totalBuy: stockRows.reduce((sum, item) => sum + item.buyAmount, 0),
-        totalMarketValue: stockRows.reduce((sum, item) => sum + item.marketValue, 0),
-        totalDividends: (data.stockTransactions || []).filter((trade) => trade.type === 'dividend').reduce((sum, item) => sum + (Number(item.amount) || 0), 0),
-        totalPnl: stockRows.reduce((sum, item) => sum + item.totalPnl, 0) + (data.stockTransactions || []).filter((trade) => trade.type === 'dividend' && trade.unassigned).reduce((sum, item) => sum + (Number(item.amount) || 0), 0)
-    }), [stockRows, data.stockTransactions]);
+        totalBuy: marketFilteredStockRows.reduce((sum, item) => sum + item.buyAmount, 0),
+        totalMarketValue: marketFilteredStockRows.reduce((sum, item) => sum + item.marketValue, 0),
+        totalDividends: marketFilteredTransactions.filter((trade) => trade.type === 'dividend').reduce((sum, item) => sum + (Number(item.amount) || 0), 0),
+        totalPnl: marketFilteredStockRows.reduce((sum, item) => sum + item.totalPnl, 0) + marketFilteredTransactions.filter((trade) => trade.type === 'dividend' && trade.unassigned).reduce((sum, item) => sum + (Number(item.amount) || 0), 0)
+    }), [marketFilteredStockRows, marketFilteredTransactions]);
+
+    useEffect(() => {
+        if (marketFilter !== 'US' || typeof fetch === 'undefined') return;
+        let isCancelled = false;
+        fetch('https://api.exchangerate-api.com/v4/latest/USD')
+            .then((response) => response.json())
+            .then((rateData) => {
+                const rate = Number(rateData?.rates?.TWD);
+                if (!isCancelled && rate > 0) setUsdToTwdRate(rate);
+            })
+            .catch(() => {
+                if (!isCancelled) setUsdToTwdRate(DEFAULT_EXCHANGE_RATES.USD);
+            });
+        return () => { isCancelled = true; };
+    }, [marketFilter]);
+
+    const totalPnlLabel = useMemo(() => {
+        if (isPrivacyMode) return '****';
+        const sign = stockStats.totalPnl >= 0 ? '+' : '';
+        if (marketFilter !== 'US') return `${sign}${formatMoney(stockStats.totalPnl)}`;
+        const twdAmount = stockStats.totalPnl * usdToTwdRate;
+        if (usPnlCurrency === 'TWD') return `NT$${sign}${formatMoney(twdAmount)}`;
+        return `(USD) ${sign}${formatMoneyByMarket(stockStats.totalPnl, 'US')}`;
+    }, [isPrivacyMode, marketFilter, stockStats.totalPnl, usdToTwdRate, usPnlCurrency]);
 
     const filteredStockRows = useMemo(() => {
         const keyword = stockSearch.trim().toLowerCase();
-        if (!keyword) return stockRows;
-        return stockRows.filter((item) => `${item.symbol} ${item.name}`.toLowerCase().includes(keyword));
-    }, [stockRows, stockSearch]);
+        if (!keyword) return marketFilteredStockRows;
+        return marketFilteredStockRows.filter((item) => `${item.symbol} ${item.name}`.toLowerCase().includes(keyword));
+    }, [marketFilteredStockRows, stockSearch]);
 
     const stockChartRows = useMemo(() => {
         const rows = [...filteredStockRows]
@@ -3514,7 +3690,7 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
             return [{
                 id: `holding-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 8)}`,
                 month: holdingMonth,
-                market: 'TW',
+                market: row.market || 'TW',
                 symbol: '',
                 name,
                 shares,
@@ -3544,18 +3720,19 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
     const confirmHoldingImport = () => {
         onImportHoldingSnapshot(holdingPreview);
         setHoldingPreview(null);
-        setHoldingRows([{ id: `holding-row-${Date.now()}`, name: '', price: '', shares: '' }]);
+        setHoldingRows([{ id: `holding-row-${Date.now()}`, market: 'TW', name: '', price: '', shares: '' }]);
         setHoldingNote('');
         setShowHoldingImportModal(false);
     };
 
-    const money = (amount, prefix = '') => isPrivacyMode ? '****' : `${prefix}${formatMoney(amount)}`;
+    const stockMoney = (amount, market = marketFilter, prefix = '') => isPrivacyMode ? '****' : `${prefix}${formatMoneyByMarket(amount, market)}`;
     const updateHoldingRow = (id, field, value) => setHoldingRows((rows) => rows.map((row) => row.id === id ? { ...row, [field]: value } : row));
-    const addHoldingRow = () => setHoldingRows((rows) => [...rows, { id: `holding-row-${Date.now()}-${rows.length}`, name: '', price: '', shares: '' }]);
+    const addHoldingRow = () => setHoldingRows((rows) => [...rows, { id: `holding-row-${Date.now()}-${rows.length}`, market: rows.at(-1)?.market || 'TW', name: '', price: '', shares: '' }]);
     const removeHoldingRow = (id) => setHoldingRows((rows) => rows.length > 1 ? rows.filter((row) => row.id !== id) : rows);
-    const topWinners = stockRows.filter((item) => item.totalPnl > 0).slice(0, 5);
-    const topLosers = [...stockRows].filter((item) => item.totalPnl < 0).sort((a, b) => a.totalPnl - b.totalPnl).slice(0, 5);
-    const latestTrades = [...(data.stockTransactions || [])].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 8);
+    const getSnapshotMarketHoldings = (snapshot) => (snapshot.holdings || []).filter((holding) => (holding.market || 'TW') === marketFilter);
+    const topWinners = marketFilteredStockRows.filter((item) => item.totalPnl > 0).slice(0, 5);
+    const topLosers = [...marketFilteredStockRows].filter((item) => item.totalPnl < 0).sort((a, b) => a.totalPnl - b.totalPnl).slice(0, 5);
+    const latestTrades = [...marketFilteredTransactions].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 8);
 
     return (
         <div className="min-h-screen bg-[#F9F9F7] text-slate-800 font-sans animate-[fadeIn_0.2s]">
@@ -3572,16 +3749,36 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
             <main className="px-6 py-6 pb-24 space-y-6">
                 <section className="bg-slate-900 text-white rounded-2xl p-5 shadow-xl shadow-slate-900/10 relative overflow-hidden">
                     <div className="absolute -right-8 -top-8 w-32 h-32 bg-blue-500/20 rounded-full blur-2xl"></div>
+                    {marketFilter === 'US' && (
+                        <button onClick={() => setUsPnlCurrency((currency) => currency === 'USD' ? 'TWD' : 'USD')} className="absolute right-4 top-4 z-20 px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/20 border border-white/10 text-[10px] font-bold text-slate-200 transition-colors">
+                            {usPnlCurrency === 'USD' ? '轉台幣' : '轉美金'}
+                        </button>
+                    )}
                     <div className="relative z-10">
                         <div className="text-xs text-slate-400 mb-1">目前總損益</div>
-                        <div className={`text-3xl font-inter font-bold ${stockStats.totalPnl >= 0 ? 'text-emerald-300' : 'text-rose-300'} ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>{isPrivacyMode ? '****' : `${stockStats.totalPnl >= 0 ? '+' : ''}${formatMoney(stockStats.totalPnl)}`}</div>
+                        <div className={`text-3xl font-inter font-bold ${stockStats.totalPnl >= 0 ? 'text-emerald-300' : 'text-rose-300'} ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>{totalPnlLabel}</div>
+                        {marketFilter === 'US' && !isPrivacyMode && (
+                            <div className="text-[10px] text-slate-500 mt-1">匯率 USD/TWD {formatExchangeRate(usdToTwdRate)}</div>
+                        )}
                         <div className="grid grid-cols-3 gap-2 mt-5 text-xs">
-                            <div className="bg-white/5 rounded-xl p-3"><div className="text-slate-400 mb-1">累計買入</div><div className="font-inter font-bold">{money(stockStats.totalBuy)}</div></div>
-                            <div className="bg-white/5 rounded-xl p-3"><div className="text-slate-400 mb-1">快照市值</div><div className="font-inter font-bold">{money(stockStats.totalMarketValue)}</div></div>
-                            <div className="bg-white/5 rounded-xl p-3"><div className="text-slate-400 mb-1">累計股息</div><div className="font-inter font-bold text-amber-200">{money(stockStats.totalDividends, '+')}</div></div>
+                            <div className="bg-white/5 rounded-xl p-3"><div className="text-slate-400 mb-1">累計買入</div><div className="font-inter font-bold">{stockMoney(stockStats.totalBuy)}</div></div>
+                            <div className="bg-white/5 rounded-xl p-3"><div className="text-slate-400 mb-1">快照市值</div><div className="font-inter font-bold">{stockMoney(stockStats.totalMarketValue)}</div></div>
+                            <div className="bg-white/5 rounded-xl p-3"><div className="text-slate-400 mb-1">累計股息</div><div className="font-inter font-bold text-amber-200">{stockMoney(stockStats.totalDividends, marketFilter, '+')}</div></div>
                         </div>
                         <p className="text-[10px] text-slate-500 mt-3">目前市值會以選定的持倉快照版本計算。</p>
                     </div>
+                </section>
+
+                <section className="bg-white rounded-2xl border border-slate-100 shadow-sm p-2 grid grid-cols-2 gap-2">
+                    {STOCK_MARKETS.map((market) => {
+                        const count = stockMarketCounts[market.value] || 0;
+                        return (
+                            <button key={market.value} onClick={() => setMarketFilter(market.value)} className={`py-2.5 rounded-xl text-sm font-bold transition-colors ${marketFilter === market.value ? 'bg-slate-900 text-white shadow-lg shadow-slate-200' : 'text-slate-500 hover:bg-slate-50'}`}>
+                                {market.label}
+                                <span className={`ml-1 text-[10px] ${marketFilter === market.value ? 'text-slate-300' : 'text-slate-300'}`}>{count}</span>
+                            </button>
+                        );
+                    })}
                 </section>
 
                 <section className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
@@ -3610,21 +3807,24 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
                 <section className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
                     <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
                         <h3 className="text-sm font-serif-tc font-bold text-slate-700">持倉快照版本</h3>
-                        <span className="text-[10px] text-slate-400">{holdingSnapshots.length} 版</span>
+                        <span className="text-[10px] text-slate-400">{getStockMarketLabel(marketFilter)} · {visibleHoldingSnapshots.length} 版</span>
                     </div>
-                    {holdingSnapshots.length > 0 ? (
+                    {visibleHoldingSnapshots.length > 0 ? (
                         <>
-                            {holdingSnapshots.slice(0, 8).map((snapshot) => (
+                            {visibleHoldingSnapshots.slice(0, 8).map((snapshot) => {
+                                const snapshotMarketHoldings = getSnapshotMarketHoldings(snapshot);
+                                return (
                                 <div key={snapshot.id} className={`px-4 py-3 border-b border-slate-50 ${selectedSnapshot?.id === snapshot.id ? 'bg-teal-50/60' : ''}`}>
                                     <div className="flex justify-between gap-3">
                                         <button onClick={() => setSelectedSnapshotId(snapshot.id)} className="text-left flex-1">
                                             <div className="font-bold text-sm text-slate-700">{snapshot.month} v{snapshot.version} {selectedSnapshot?.id === snapshot.id && <span className="text-[10px] text-teal-600 ml-1">使用中</span>}</div>
-                                            <div className="text-xs text-slate-400">{snapshot.holdings?.length || 0} 檔 · {snapshot.note || '無備註'} · {snapshot.importedAt?.slice(0, 10)}</div>
+                                            <div className="text-xs text-slate-400">{snapshotMarketHoldings.length} 檔 · {getStockMarketLabel(marketFilter)} · {snapshot.note || '無備註'} · {snapshot.importedAt?.slice(0, 10)}</div>
                                         </button>
                                         <button onClick={() => setConfirmDeleteSnapshot(snapshot)} className="p-2 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors" title="刪除版本"><Trash2 size={14} /></button>
                                     </div>
                                 </div>
-                            ))}
+                                );
+                            })}
                             {selectedSnapshot && (
                                 <div className="bg-slate-50/70 border-t border-slate-100 p-4">
                                     <div className="flex justify-between items-center mb-3">
@@ -3632,11 +3832,11 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
                                         <span className="text-[10px] text-slate-400">{selectedSnapshot.month} v{selectedSnapshot.version}</span>
                                     </div>
                                     <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-                                        {(selectedSnapshot.holdings || []).map((holding) => (
+                                        {selectedSnapshotHoldings.map((holding) => (
                                             <div key={holding.id} className="bg-white rounded-xl border border-slate-100 p-3 flex justify-between gap-3">
                                                 <div className="min-w-0">
                                                     <div className="font-bold text-sm text-slate-700 truncate">{holding.name || holding.symbol}</div>
-                                                    <div className="text-[10px] text-slate-400 font-inter">{formatMoney(holding.marketPrice || 0)} x {formatMoney(holding.shares || 0)} 股</div>
+                                                    <div className="text-[10px] text-slate-400 font-inter">{getStockMarketLabel(holding.market || 'TW')} · {formatMoney(holding.marketPrice || 0)} x {formatMoney(holding.shares || 0)} 股</div>
                                                 </div>
                                                 <div className="text-right">
                                                     <div className="font-inter font-bold text-teal-600">{formatMoney(holding.marketValue || 0)}</div>
@@ -3648,33 +3848,33 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
                                 </div>
                             )}
                         </>
-                    ) : <div className="p-6 text-center text-slate-300 text-sm">尚無持倉快照，總損益會缺少目前市值。</div>}
+                    ) : <div className="p-6 text-center text-slate-300 text-sm">尚無{getStockMarketLabel(marketFilter)}持倉快照，總損益會缺少目前市值。</div>}
                 </section>
 
                 <section className="bg-white rounded-2xl border border-rose-100 shadow-sm p-5">
                     <div className="flex items-start justify-between gap-4">
                         <div>
                             <h3 className="text-base font-serif-tc font-bold text-slate-800 flex items-center gap-2"><Trash2 size={16} /> 股票交易資料</h3>
-                            <p className="text-xs text-slate-400 mt-1">目前已有 {(data.stockTransactions || []).length} 筆。若剛剛重複匯入或想重新整理，可以先清空再匯入。</p>
+                            <p className="text-xs text-slate-400 mt-1">目前{getStockMarketLabel(marketFilter)}已有 {marketFilteredTransactions.length} 筆。若剛剛重複匯入或想重新整理，可以只清空目前市場再匯入。</p>
                         </div>
-                        <button onClick={() => setConfirmClear(true)} disabled={(data.stockTransactions || []).length === 0} className="px-3 py-2 rounded-xl bg-rose-50 text-rose-500 text-xs font-bold hover:bg-rose-100 disabled:bg-slate-50 disabled:text-slate-300 transition-colors">全部刪除</button>
+                        <button onClick={() => setConfirmClear(true)} disabled={marketFilteredTransactions.length === 0} className="px-3 py-2 rounded-xl bg-rose-50 text-rose-500 text-xs font-bold hover:bg-rose-100 disabled:bg-slate-50 disabled:text-slate-300 transition-colors">刪除{getStockMarketLabel(marketFilter)}</button>
                     </div>
                 </section>
 
                 <section className="grid grid-cols-2 gap-3">
                     <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4">
                         <h3 className="text-xs font-bold text-emerald-600 mb-3 flex items-center gap-1"><TrendingUp size={14} /> 賺最多</h3>
-                        {topWinners.length > 0 ? topWinners.map((item) => <div key={item.symbol} className="py-2 border-b border-slate-50 last:border-0"><div className="font-bold text-slate-700 text-sm">{item.symbol}</div><div className={`text-xs font-inter text-emerald-600 ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>{isPrivacyMode ? '****' : `+${formatMoney(item.totalPnl)}`}</div></div>) : <div className="text-xs text-slate-300 py-4">尚無獲利資料</div>}
+                        {topWinners.length > 0 ? topWinners.map((item) => <div key={item.key} className="py-2 border-b border-slate-50 last:border-0"><div className="font-bold text-slate-700 text-sm">{item.symbol}</div><div className={`text-xs font-inter text-emerald-600 ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>{stockMoney(item.totalPnl, item.market, '+')}</div></div>) : <div className="text-xs text-slate-300 py-4">尚無獲利資料</div>}
                     </div>
                     <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4">
                         <h3 className="text-xs font-bold text-rose-500 mb-3 flex items-center gap-1"><TrendingDown size={14} /> 虧最多</h3>
-                        {topLosers.length > 0 ? topLosers.map((item) => <div key={item.symbol} className="py-2 border-b border-slate-50 last:border-0"><div className="font-bold text-slate-700 text-sm">{item.symbol}</div><div className={`text-xs font-inter text-rose-500 ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>{isPrivacyMode ? '****' : formatMoney(item.totalPnl)}</div></div>) : <div className="text-xs text-slate-300 py-4">尚無虧損資料</div>}
+                        {topLosers.length > 0 ? topLosers.map((item) => <div key={item.key} className="py-2 border-b border-slate-50 last:border-0"><div className="font-bold text-slate-700 text-sm">{item.symbol}</div><div className={`text-xs font-inter text-rose-500 ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>{stockMoney(item.totalPnl, item.market)}</div></div>) : <div className="text-xs text-slate-300 py-4">尚無虧損資料</div>}
                     </div>
                 </section>
 
                 <section className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
                     <div className="px-4 py-3 border-b border-slate-100 space-y-3">
-                        <div className="flex items-center justify-between"><h3 className="text-sm font-serif-tc font-bold text-slate-700">個股損益表</h3><span className="text-[10px] text-slate-400">{filteredStockRows.length} / {stockRows.length} 檔</span></div>
+                        <div className="flex items-center justify-between"><h3 className="text-sm font-serif-tc font-bold text-slate-700">個股損益表</h3><span className="text-[10px] text-slate-400">{getStockMarketLabel(marketFilter)} · {filteredStockRows.length} / {marketFilteredStockRows.length} 檔</span></div>
                         <div className="relative">
                             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" />
                             <input value={stockSearch} onChange={(e) => setStockSearch(e.target.value)} className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 outline-none text-sm" placeholder="搜尋股票名稱或代號" />
@@ -3689,42 +3889,42 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
                             {stockChartRows.length > 0 ? (
                                 <div className="space-y-2">
                                     {stockChartRows.map((item) => (
-                                        <div key={item.symbol} className="grid grid-cols-[76px_1fr_72px] gap-2 items-center text-xs">
+                                        <div key={item.key} className="grid grid-cols-[76px_1fr_72px] gap-2 items-center text-xs">
                                             <div className="font-bold text-slate-600 truncate">{item.symbol}</div>
                                             <div className="h-3 bg-white rounded-full overflow-hidden border border-slate-100">
                                                 <div className={`h-full rounded-full ${item.totalPnl >= 0 ? 'bg-emerald-400' : 'bg-rose-400'}`} style={{ width: `${item.barWidth}%` }}></div>
                                             </div>
-                                            <div className={`text-right font-inter font-bold ${item.totalPnl >= 0 ? 'text-emerald-600' : 'text-rose-500'} ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>{isPrivacyMode ? '****' : `${item.totalPnl >= 0 ? '+' : ''}${formatMoney(item.totalPnl)}`}</div>
+                                            <div className={`text-right font-inter font-bold ${item.totalPnl >= 0 ? 'text-emerald-600' : 'text-rose-500'} ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>{stockMoney(item.totalPnl, item.market, item.totalPnl >= 0 ? '+' : '')}</div>
                                         </div>
                                     ))}
                                 </div>
                             ) : <div className="text-center text-slate-300 text-sm py-4">搜尋結果沒有可顯示的圖表資料</div>}
                         </div>
                     )}
-                    {stockRows.length > 0 ? (filteredStockRows.length > 0 ? <div className="divide-y divide-slate-100">{filteredStockRows.map((item) => (
-                        <div key={item.symbol} className="p-4">
+                    {marketFilteredStockRows.length > 0 ? (filteredStockRows.length > 0 ? <div className="divide-y divide-slate-100">{filteredStockRows.map((item) => (
+                        <div key={item.key} className="p-4">
                             <div className="flex justify-between gap-4">
                                 <div className="min-w-0">
-                                    <div className="flex items-center gap-2"><span className="font-serif-tc font-bold text-slate-800">{item.symbol}</span><span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">{item.market}</span>{!item.hasSnapshot && <span className="text-[10px] bg-amber-50 text-amber-600 px-1.5 py-0.5 rounded">未對應資產快照</span>}</div>
+                                    <div className="flex items-center gap-2"><span className="font-serif-tc font-bold text-slate-800">{item.symbol}</span><span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">{getStockMarketLabel(item.market)}</span>{item.realizedOnly && <span className="text-[10px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded">已實現</span>}{!item.hasSnapshot && !item.realizedOnly && <span className="text-[10px] bg-amber-50 text-amber-600 px-1.5 py-0.5 rounded">未對應資產快照</span>}</div>
                                     <div className="text-xs text-slate-400 mt-1">{item.tradeCount} 筆交易，最近 {item.latestTradeDate}</div>
                                 </div>
                                 <div className="text-right">
-                                    <div className={`font-inter font-bold ${item.totalPnl >= 0 ? 'text-emerald-600' : 'text-rose-500'} ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>{isPrivacyMode ? '****' : `${item.totalPnl >= 0 ? '+' : ''}${formatMoney(item.totalPnl)}`}</div>
+                                    <div className={`font-inter font-bold ${item.totalPnl >= 0 ? 'text-emerald-600' : 'text-rose-500'} ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>{stockMoney(item.totalPnl, item.market, item.totalPnl >= 0 ? '+' : '')}</div>
                                     <div className="text-[10px] text-slate-400 font-inter">{formatRate(item.roi)}</div>
                                 </div>
                             </div>
                             <div className="grid grid-cols-3 gap-2 mt-3 text-[10px]">
-                                <div className="bg-slate-50 rounded-lg p-2"><div className="text-slate-400">買入</div><div className="font-inter text-slate-700">{money(item.buyAmount)}</div></div>
-                                <div className="bg-slate-50 rounded-lg p-2"><div className="text-slate-400">市值</div><div className="font-inter text-slate-700">{money(item.marketValue)}</div></div>
-                                <div className="bg-slate-50 rounded-lg p-2"><div className="text-slate-400">股息</div><div className="font-inter text-amber-600">{money(item.dividends, '+')}</div></div>
+                                <div className="bg-slate-50 rounded-lg p-2"><div className="text-slate-400">買入</div><div className="font-inter text-slate-700">{stockMoney(item.buyAmount, item.market)}</div></div>
+                                <div className="bg-slate-50 rounded-lg p-2"><div className="text-slate-400">市值</div><div className="font-inter text-slate-700">{stockMoney(item.marketValue, item.market)}</div></div>
+                                <div className="bg-slate-50 rounded-lg p-2"><div className="text-slate-400">股息</div><div className="font-inter text-amber-600">{stockMoney(item.dividends, item.market, '+')}</div></div>
                             </div>
                         </div>
-                    ))}</div> : <div className="p-8 text-center text-slate-300 text-sm">找不到符合搜尋的股票</div>) : <div className="p-8 text-center text-slate-300 text-sm">尚無股票交易資料</div>}
+                    ))}</div> : <div className="p-8 text-center text-slate-300 text-sm">找不到符合搜尋的股票</div>) : <div className="p-8 text-center text-slate-300 text-sm">尚無{getStockMarketLabel(marketFilter)}股票交易資料</div>}
                 </section>
 
                 <section className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
                     <div className="px-4 py-3 border-b border-slate-100"><h3 className="text-sm font-serif-tc font-bold text-slate-700">最近匯入交易</h3></div>
-                    {latestTrades.length > 0 ? latestTrades.map((trade) => <div key={trade.id} className="px-4 py-3 border-b border-slate-50 last:border-0 flex justify-between items-center"><div><div className="font-bold text-sm text-slate-700">{trade.symbol || trade.rawItem || trade.name}</div><div className="text-xs text-slate-400">{trade.date} · {getStockTradeLabel(trade.type)}</div></div><div className={`font-inter text-sm font-bold ${trade.type === 'buy' ? 'text-slate-600' : 'text-emerald-600'} ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>{isPrivacyMode ? '****' : `${trade.type === 'buy' ? '-' : '+'}${formatMoney(trade.amount)}`}</div></div>) : <div className="p-8 text-center text-slate-300 text-sm">尚無交易明細</div>}
+                    {latestTrades.length > 0 ? latestTrades.map((trade) => <div key={trade.id} className="px-4 py-3 border-b border-slate-50 last:border-0 flex justify-between items-center"><div><div className="font-bold text-sm text-slate-700">{trade.symbol || trade.rawItem || trade.name}</div><div className="text-xs text-slate-400">{trade.date} · {getStockMarketLabel(trade.market || 'TW')} · {getStockTradeLabel(trade.type)}</div></div><div className={`font-inter text-sm font-bold ${trade.type === 'buy' ? 'text-slate-600' : 'text-emerald-600'} ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>{stockMoney(trade.amount, trade.market || 'TW', trade.type === 'buy' ? '-' : '+')}</div></div>) : <div className="p-8 text-center text-slate-300 text-sm">尚無交易明細</div>}
                 </section>
             </main>
 
@@ -3774,7 +3974,14 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
                             <label className="text-xs text-slate-400 font-bold mb-1 block">手動輸入持倉</label>
                             <div className="space-y-2">
                                 {holdingRows.map((row, index) => (
-                                    <div key={row.id} className="grid grid-cols-[1fr_72px_72px_64px] gap-2 items-end">
+                                    <div key={row.id} className="grid grid-cols-[76px_1fr_72px_72px_64px] gap-2 items-end">
+                                        <div>
+                                            {index === 0 && <label className="text-[10px] text-slate-400 font-bold mb-1 block">市場</label>}
+                                            <select value={row.market || 'TW'} onChange={(e) => updateHoldingRow(row.id, 'market', e.target.value)} className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:border-teal-500 outline-none text-sm">
+                                                <option value="TW">台股</option>
+                                                <option value="US">美股</option>
+                                            </select>
+                                        </div>
                                         <div>
                                             {index === 0 && <label className="text-[10px] text-slate-400 font-bold mb-1 block">股票名稱</label>}
                                             <input type="text" value={row.name} onChange={(e) => updateHoldingRow(row.id, 'name', e.target.value)} className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:border-teal-500 outline-none text-sm" placeholder="台積電" />
@@ -3813,7 +4020,7 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
                             <div className="bg-slate-50 rounded-xl p-3"><div className="text-slate-400">入金</div><div className="font-bold text-blue-600">{preview.transactions.filter(t => t.type === 'deposit').length}</div></div>
                         </div>
                         <div className="flex-1 overflow-y-auto border border-slate-100 rounded-xl divide-y divide-slate-50">
-                            {preview.transactions.slice(0, 30).map((trade) => <div key={trade.id} className="p-3 flex justify-between items-center text-sm"><div><div className="font-bold text-slate-700">{trade.symbol || trade.rawItem || trade.name}</div><div className="text-xs text-slate-400">{trade.date} · {getStockTradeLabel(trade.type)}</div></div><div className="font-inter font-bold text-slate-700">{formatMoney(trade.amount)}</div></div>)}
+                            {preview.transactions.slice(0, 30).map((trade) => <div key={trade.id} className="p-3 flex justify-between items-center text-sm"><div><div className="font-bold text-slate-700">{trade.symbol || trade.rawItem || trade.name}</div><div className="text-xs text-slate-400">{trade.date} · {getStockTradeLabel(trade.type)}</div></div><div className="font-inter font-bold text-slate-700">{formatMoneyByMarket(trade.amount, trade.market || 'TW')}</div></div>)}
                             {preview.transactions.length > 30 && <div className="p-3 text-center text-xs text-slate-400">還有 {preview.transactions.length - 30} 筆未顯示</div>}
                         </div>
                         {preview.skippedRows.length > 0 && (
@@ -3879,10 +4086,10 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
 
             {confirmClear && (
                 <ConfirmModal
-                    title="清空股票交易"
-                    message="確定要刪除所有股票交易資料嗎？這只會清空個股績效的匯入交易，不會刪除資產、收入、花費或負債資料。"
+                    title={`清空${getStockMarketLabel(marketFilter)}股票交易`}
+                    message={`確定要刪除${getStockMarketLabel(marketFilter)}股票交易資料嗎？這只會清空目前市場的個股績效匯入交易，不會刪除其他市場、資產、收入、花費或負債資料。`}
                     onConfirm={() => {
-                        onClearTransactions();
+                        onClearTransactions(marketFilter);
                         setConfirmClear(false);
                     }}
                     onCancel={() => setConfirmClear(false)}
@@ -4756,14 +4963,15 @@ const AuthenticatedApp = () => {
         handleShowAlert("匯入成功", `已新增 ${transactions.length} 筆股票交易`);
     };
 
-    const handleClearStockTransactions = () => {
+    const handleClearStockTransactions = (market) => {
+        const targetMarket = market || 'TW';
         const newData = {
             ...data,
-            stockTransactions: []
+            stockTransactions: (data.stockTransactions || []).filter((trade) => (trade.market || 'TW') !== targetMarket)
         };
         setData(newData);
         saveToFirestoreChunks(newData);
-        handleShowAlert("已清空", "股票交易資料已全部刪除");
+        handleShowAlert("已清空", `${getStockMarketLabel(targetMarket)}股票交易資料已刪除`);
     };
 
     const handleImportHoldingSnapshot = (snapshotPreview) => {
