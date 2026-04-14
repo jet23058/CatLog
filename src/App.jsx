@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, PieChart, Pie, Cell } from 'recharts';
-import { Cat, ChevronLeft, ChevronRight, Plus, Upload, Wallet, TrendingUp, DollarSign, Calendar, X, Save, FileJson, ArrowUpRight, ArrowDownRight, ArrowLeft, ArrowRight, Edit2, Trash2, Info, Check, TrendingDown, RefreshCw, FileText, Mountain, ArrowDown, AlertCircle, Building2, Lock, PieChart as PieChartIcon, Download, StickyNote, ShoppingBag, Filter, ChevronDown, PiggyBank, Activity, Sparkles, LogOut, Coins, ClipboardCheck, LayoutGrid, Package, Box, Footprints, Eye, EyeOff, ScanFace, ShieldCheck, ShieldAlert } from 'lucide-react';
+import { Cat, ChevronLeft, ChevronRight, Plus, Upload, Wallet, TrendingUp, DollarSign, Calendar, X, Save, FileJson, ArrowUpRight, ArrowDownRight, ArrowLeft, ArrowRight, Edit2, Trash2, Info, Check, TrendingDown, RefreshCw, FileText, Mountain, ArrowDown, AlertCircle, Building2, Lock, PieChart as PieChartIcon, Download, StickyNote, ShoppingBag, Filter, ChevronDown, PiggyBank, Activity, Sparkles, LogOut, Coins, ClipboardCheck, LayoutGrid, Package, Box, Footprints, Eye, EyeOff, ScanFace, ShieldCheck, ShieldAlert, Search } from 'lucide-react';
 
 // --- CSS 樣式與 Tailwind 設定模擬 ---
 // 原本 index.css 的內容與 tailwind.config.js 的動畫設定整合於此
@@ -58,6 +58,8 @@ const INITIAL_DATA = {
     "expenses": {},
     "debts": {},
     "debtEvents": {},
+    "stockTransactions": [],
+    "stockHoldingSnapshots": {},
     "fireSettings": { "withdrawalRate": 4.0 }
 };
 
@@ -104,7 +106,7 @@ const parseCSV = (text) => {
     let currentRow = [];
     let currentCell = '';
     let insideQuote = false;
-    const normalizedText = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    const normalizedText = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/，/g, ',');
 
     for (let i = 0; i < normalizedText.length; i++) {
         const char = normalizedText[i];
@@ -135,6 +137,188 @@ const parseCSV = (text) => {
         rows.push(currentRow);
     }
     return rows;
+};
+
+const parseAmount = (value) => {
+    if (value === undefined || value === null) return 0;
+    const normalized = String(value).replace(/,/g, '').replace(/[^\d.-]/g, '');
+    return Number(normalized) || 0;
+};
+
+const normalizeDate = (value) => {
+    if (!value) return '';
+    const parts = String(value).trim().replace(/\//g, '-').split('-');
+    if (parts.length !== 3) return String(value).trim();
+    const [year, month, day] = parts;
+    return `${year.padStart(4, '0')}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+};
+
+const getStockSymbolFromItem = (item = '') => {
+    const normalized = item.trim();
+    if (!normalized) return '';
+    const dividendMatch = normalized.match(/(?:現金股息|股息)[-－](.+)$/);
+    if (dividendMatch?.[1]) return dividendMatch[1].trim();
+    return normalized;
+};
+
+const getStockTradeLabel = (type) => ({
+    buy: '買入',
+    sell: '賣出',
+    dividend: '股息',
+    deposit: '入金',
+    fee: '費用'
+}[type] || '其他');
+
+const processStockCSVText = (csvText) => {
+    const rows = parseCSV(csvText);
+    if (rows.length === 0) throw new Error("CSV 檔案是空的");
+
+    const headers = rows[0].map((header) => header.trim());
+    const idxType = headers.indexOf('類型');
+    const idxDate = headers.indexOf('日期');
+    const idxItem = headers.indexOf('項目');
+    const idxBuy = headers.indexOf('股票買入');
+    const idxDeposit = headers.indexOf('存入戶頭');
+    const idxBalance = headers.indexOf('帳面餘額');
+
+    if (idxDate === -1 || idxItem === -1) throw new Error("CSV 格式不符，找不到日期或項目欄位");
+
+    const transactions = [];
+    const skippedRows = [];
+
+    rows.slice(1).forEach((row, index) => {
+        const typeText = idxType >= 0 ? row[idxType]?.trim() : '';
+        const date = normalizeDate(row[idxDate]);
+        const item = row[idxItem]?.trim() || '';
+        const buyAmount = idxBuy >= 0 ? parseAmount(row[idxBuy]) : 0;
+        const depositAmount = idxDeposit >= 0 ? parseAmount(row[idxDeposit]) : 0;
+        const balance = idxBalance >= 0 ? parseAmount(row[idxBalance]) : 0;
+
+        if (!date || !item) {
+            skippedRows.push({ row: index + 2, type: typeText || '空白', item: item || '空白', reason: '缺少日期或項目' });
+            return;
+        }
+
+        let tradeType = 'other';
+        let amount = 0;
+        let symbol = getStockSymbolFromItem(item);
+        const isDividendRow = typeText.includes('股息') || /^現金股息/.test(item) || /^股息[-－]/.test(item);
+
+        if (typeText.includes('匯款')) {
+            tradeType = 'deposit';
+            amount = depositAmount || buyAmount;
+            symbol = '';
+        } else if (isDividendRow) {
+            tradeType = 'dividend';
+            amount = depositAmount;
+            symbol = getStockSymbolFromItem(item);
+            if (symbol === '現金股息' || symbol === '股息') symbol = '';
+        } else if (buyAmount > 0) {
+            tradeType = 'buy';
+            amount = buyAmount;
+        } else if (depositAmount > 0) {
+            tradeType = 'sell';
+            amount = depositAmount;
+        }
+
+        if (!amount && tradeType !== 'other') {
+            skippedRows.push({ row: index + 2, type: typeText || '空白', item, reason: '金額為 0' });
+            return;
+        }
+
+        if (tradeType === 'other') {
+            skippedRows.push({ row: index + 2, type: typeText || '空白', item, reason: '尚未支援的交易類型' });
+            return;
+        }
+
+        transactions.push({
+            id: `stock-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 8)}`,
+            source: 'csv',
+            market: 'TW',
+            currency: 'TWD',
+            date,
+            type: tradeType,
+            symbol,
+            name: symbol || item,
+            rawItem: item,
+            amount,
+            balance,
+            unassigned: !symbol && tradeType === 'dividend',
+            memo: !symbol && tradeType === 'dividend' ? '未指定股票的現金股息' : (typeText || '')
+        });
+    });
+
+    return { transactions, skippedRows };
+};
+
+const getHeaderIndex = (headers, candidates) => candidates.map((name) => headers.indexOf(name)).find((idx) => idx >= 0) ?? -1;
+
+const processStockHoldingCSVText = (csvText, fallbackMonth, note = '') => {
+    const rows = parseCSV(csvText);
+    if (rows.length === 0) throw new Error("CSV 檔案是空的");
+
+    const headers = rows[0].map((header) => header.trim());
+    const hasHeader = headers.some((header) => ['股票名稱', '名稱', '項目', '現價', '股數', '目前市值'].includes(header));
+    const dataRows = hasHeader ? rows.slice(1) : rows;
+    const idxMonth = getHeaderIndex(headers, ['月份', '年月', 'month']);
+    const idxMarket = getHeaderIndex(headers, ['市場', 'market']);
+    const idxSymbol = getHeaderIndex(headers, ['股票代號', '代號', 'symbol']);
+    const idxName = hasHeader ? getHeaderIndex(headers, ['股票名稱', '名稱', '項目', 'name']) : 0;
+    const idxShares = hasHeader ? getHeaderIndex(headers, ['股數', '庫存股數', '張數', 'shares']) : 2;
+    const idxAvgCost = getHeaderIndex(headers, ['平均成本', 'avgCost', 'averageCost']);
+    const idxCostAmount = getHeaderIndex(headers, ['成本總額', '持有成本', '成本', 'costAmount']);
+    const idxMarketPrice = hasHeader ? getHeaderIndex(headers, ['現價', '目前股價', '市價', 'marketPrice']) : 1;
+    const idxMarketValue = getHeaderIndex(headers, ['目前市值', '市值', 'marketValue']);
+    const idxAccount = getHeaderIndex(headers, ['帳戶', '券商', 'account']);
+
+    if (idxName === -1 && idxSymbol === -1) throw new Error("CSV 格式不符，找不到股票名稱或股票代號欄位");
+    if (idxMarketPrice === -1 && idxMarketValue === -1) throw new Error("CSV 格式不符，請提供現價或目前市值欄位");
+    if (idxShares === -1 && idxMarketValue === -1) throw new Error("CSV 格式不符，請提供股數欄位，或直接提供目前市值");
+    if (!fallbackMonth && idxMonth === -1) throw new Error("請選擇月份");
+
+    const holdings = [];
+    const skippedRows = [];
+    let snapshotMonth = idxMonth >= 0 && hasHeader ? '' : (fallbackMonth || '');
+
+    dataRows.forEach((row, index) => {
+        const csvRowNumber = index + (hasHeader ? 2 : 1);
+        const rowMonth = idxMonth >= 0 && hasHeader ? normalizeDate(`${row[idxMonth]}-01`).substring(0, 7) : fallbackMonth;
+        const market = idxMarket >= 0 ? row[idxMarket]?.trim() || 'TW' : 'TW';
+        const symbol = idxSymbol >= 0 ? row[idxSymbol]?.trim() || '' : '';
+        const name = idxName >= 0 ? row[idxName]?.trim() || symbol : symbol;
+        const shares = idxShares >= 0 ? parseAmount(row[idxShares]) : 0;
+        const averageCost = idxAvgCost >= 0 ? parseAmount(row[idxAvgCost]) : 0;
+        const costAmount = idxCostAmount >= 0 ? parseAmount(row[idxCostAmount]) : (shares && averageCost ? shares * averageCost : 0);
+        const marketPrice = idxMarketPrice >= 0 ? parseAmount(row[idxMarketPrice]) : 0;
+        const marketValue = idxMarketValue >= 0 ? parseAmount(row[idxMarketValue]) : (shares && marketPrice ? shares * marketPrice : 0);
+        const account = idxAccount >= 0 ? row[idxAccount]?.trim() || '' : '';
+
+        if (!rowMonth || (!name && !symbol)) {
+            skippedRows.push({ row: csvRowNumber, item: name || symbol || '空白', reason: '缺少月份或股票名稱' });
+            return;
+        }
+        if (marketValue <= 0) {
+            skippedRows.push({ row: csvRowNumber, item: name || symbol, reason: '目前市值為 0，請確認現價與股數' });
+            return;
+        }
+
+        snapshotMonth = snapshotMonth || rowMonth;
+        holdings.push({
+            id: `holding-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 8)}`,
+            month: rowMonth,
+            market,
+            symbol,
+            name,
+            shares,
+            averageCost,
+            costAmount,
+            marketPrice,
+            marketValue,
+            account
+        });
+    });
+
+    return { month: snapshotMonth, note: note.trim(), holdings, skippedRows };
 };
 
 // --- 組件 ---
@@ -3191,6 +3375,523 @@ const FIREModal = ({ fireStats, yearlyStats = [], onRateChange, onClose }) => {
     );
 };
 
+const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransactions, onImportHoldingSnapshot, onDeleteHoldingSnapshot, isPrivacyMode }) => {
+    const [inputText, setInputText] = useState('');
+    const [holdingRows, setHoldingRows] = useState([{ id: 'holding-row-1', name: '', price: '', shares: '' }]);
+    const [holdingMonth, setHoldingMonth] = useState(() => {
+        const today = new Date();
+        return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+    });
+    const [holdingNote, setHoldingNote] = useState('');
+    const [preview, setPreview] = useState(null);
+    const [holdingPreview, setHoldingPreview] = useState(null);
+    const [errorMsg, setErrorMsg] = useState('');
+    const [confirmClear, setConfirmClear] = useState(false);
+    const [showTransactionImportModal, setShowTransactionImportModal] = useState(false);
+    const [showHoldingImportModal, setShowHoldingImportModal] = useState(false);
+    const [confirmDeleteSnapshot, setConfirmDeleteSnapshot] = useState(null);
+    const [stockSearch, setStockSearch] = useState('');
+
+    const holdingSnapshots = useMemo(() => Object.entries(data.stockHoldingSnapshots || {}).flatMap(([month, versions]) =>
+        (versions || []).map((snapshot) => ({ ...snapshot, month }))
+    ).sort((a, b) => new Date(b.importedAt || 0) - new Date(a.importedAt || 0)), [data.stockHoldingSnapshots]);
+
+    const [selectedSnapshotId, setSelectedSnapshotId] = useState('');
+
+    const selectedSnapshot = useMemo(() => {
+        if (holdingSnapshots.length === 0) return null;
+        return holdingSnapshots.find((snapshot) => snapshot.id === selectedSnapshotId) || holdingSnapshots[0];
+    }, [holdingSnapshots, selectedSnapshotId]);
+
+    const holdingMap = useMemo(() => {
+        const map = {};
+        (selectedSnapshot?.holdings || []).forEach((holding) => {
+            const keys = [holding.symbol, holding.name].filter(Boolean);
+            keys.forEach((key) => {
+                map[key] = {
+                    value: (map[key]?.value || 0) + (Number(holding.marketValue) || 0),
+                    costAmount: (map[key]?.costAmount || 0) + (Number(holding.costAmount) || 0),
+                    shares: (map[key]?.shares || 0) + (Number(holding.shares) || 0),
+                    date: selectedSnapshot.month,
+                    holding
+                };
+            });
+        });
+        return map;
+    }, [selectedSnapshot]);
+
+    const stockRows = useMemo(() => {
+        const bySymbol = {};
+        (data.stockTransactions || []).forEach((trade) => {
+            if (!trade.symbol || trade.type === 'deposit' || trade.unassigned) return;
+            const symbol = trade.symbol;
+            if (!bySymbol[symbol]) {
+                bySymbol[symbol] = { symbol, name: trade.name || symbol, market: trade.market || 'TW', buyAmount: 0, sellAmount: 0, dividends: 0, fees: 0, tradeCount: 0, latestTradeDate: trade.date };
+            }
+            const row = bySymbol[symbol];
+            row.tradeCount += 1;
+            if (!row.latestTradeDate || new Date(trade.date) > new Date(row.latestTradeDate)) row.latestTradeDate = trade.date;
+            if (trade.type === 'buy') row.buyAmount += Number(trade.amount) || 0;
+            if (trade.type === 'sell') row.sellAmount += Number(trade.amount) || 0;
+            if (trade.type === 'dividend') row.dividends += Number(trade.amount) || 0;
+            if (trade.type === 'fee') row.fees += Number(trade.amount) || 0;
+        });
+
+        Object.values(holdingMap).forEach((snapshot) => {
+            const holding = snapshot.holding;
+            const symbol = holding.symbol || holding.name;
+            if (!symbol || bySymbol[symbol]) return;
+            bySymbol[symbol] = { symbol, name: holding.name || symbol, market: holding.market || 'TW', buyAmount: 0, sellAmount: 0, dividends: 0, fees: 0, tradeCount: 0, latestTradeDate: selectedSnapshot?.month || '' };
+        });
+
+        return Object.values(bySymbol).map((row) => {
+            const snapshot = holdingMap[row.symbol] || holdingMap[row.name];
+            const marketValue = snapshot?.value || 0;
+            const totalPnl = marketValue + row.sellAmount + row.dividends - row.buyAmount - row.fees;
+            return { ...row, marketValue, snapshotDate: snapshot?.date || null, totalPnl, roi: row.buyAmount > 0 ? totalPnl / row.buyAmount : 0, hasSnapshot: Boolean(snapshot) };
+        }).sort((a, b) => b.totalPnl - a.totalPnl);
+    }, [data.stockTransactions, holdingMap, selectedSnapshot]);
+
+    const stockStats = useMemo(() => ({
+        totalBuy: stockRows.reduce((sum, item) => sum + item.buyAmount, 0),
+        totalMarketValue: stockRows.reduce((sum, item) => sum + item.marketValue, 0),
+        totalDividends: (data.stockTransactions || []).filter((trade) => trade.type === 'dividend').reduce((sum, item) => sum + (Number(item.amount) || 0), 0),
+        totalPnl: stockRows.reduce((sum, item) => sum + item.totalPnl, 0) + (data.stockTransactions || []).filter((trade) => trade.type === 'dividend' && trade.unassigned).reduce((sum, item) => sum + (Number(item.amount) || 0), 0)
+    }), [stockRows, data.stockTransactions]);
+
+    const filteredStockRows = useMemo(() => {
+        const keyword = stockSearch.trim().toLowerCase();
+        if (!keyword) return stockRows;
+        return stockRows.filter((item) => `${item.symbol} ${item.name}`.toLowerCase().includes(keyword));
+    }, [stockRows, stockSearch]);
+
+    const stockChartRows = useMemo(() => {
+        const rows = [...filteredStockRows]
+            .sort((a, b) => Math.abs(b.totalPnl) - Math.abs(a.totalPnl))
+            .slice(0, 8);
+        const maxAbs = Math.max(...rows.map((item) => Math.abs(item.totalPnl)), 1);
+        return rows.map((item) => ({ ...item, barWidth: Math.max(6, Math.round((Math.abs(item.totalPnl) / maxAbs) * 100)) }));
+    }, [filteredStockRows]);
+
+    const parseImportText = (text) => {
+        setErrorMsg('');
+        try {
+            const result = processStockCSVText(text);
+            if (result.transactions.length === 0) return setErrorMsg('沒有找到可匯入的股票交易。');
+            setPreview(result);
+        } catch (error) {
+            setErrorMsg(error.message || '無法解析股票交易 CSV');
+        }
+    };
+
+    const handleFileUpload = (event) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (e) => parseImportText(e.target.result);
+        reader.onerror = () => setErrorMsg('讀取檔案失敗');
+        reader.readAsText(file);
+        event.target.value = '';
+    };
+
+    const parseHoldingRows = () => {
+        setErrorMsg('');
+        const activeRows = holdingRows.filter((row) => row.name.trim() || row.price || row.shares);
+        if (activeRows.length === 0) {
+            setErrorMsg('請至少輸入一筆持倉資料。');
+            return;
+        }
+
+        const skippedRows = [];
+        const holdings = activeRows.flatMap((row, index) => {
+            const name = row.name.trim();
+            const marketPrice = parseAmount(row.price);
+            const shares = parseAmount(row.shares);
+            if (!name || marketPrice <= 0 || shares <= 0) {
+                skippedRows.push({ row: index + 1, item: name || '空白', reason: '請確認股票名稱、現價與股數都有填寫' });
+                return [];
+            }
+            return [{
+                id: `holding-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 8)}`,
+                month: holdingMonth,
+                market: 'TW',
+                symbol: '',
+                name,
+                shares,
+                averageCost: 0,
+                costAmount: 0,
+                marketPrice,
+                marketValue: marketPrice * shares,
+                account: ''
+            }];
+        });
+
+        if (holdings.length === 0) {
+            setErrorMsg('沒有找到可匯入的持倉快照。請確認至少一列資料完整。');
+            return;
+        }
+
+        setHoldingPreview({ month: holdingMonth, note: holdingNote.trim(), holdings, skippedRows });
+    };
+
+    const confirmImport = () => {
+        onImportTransactions(preview.transactions);
+        setPreview(null);
+        setInputText('');
+        setShowTransactionImportModal(false);
+    };
+
+    const confirmHoldingImport = () => {
+        onImportHoldingSnapshot(holdingPreview);
+        setHoldingPreview(null);
+        setHoldingRows([{ id: `holding-row-${Date.now()}`, name: '', price: '', shares: '' }]);
+        setHoldingNote('');
+        setShowHoldingImportModal(false);
+    };
+
+    const money = (amount, prefix = '') => isPrivacyMode ? '****' : `${prefix}${formatMoney(amount)}`;
+    const updateHoldingRow = (id, field, value) => setHoldingRows((rows) => rows.map((row) => row.id === id ? { ...row, [field]: value } : row));
+    const addHoldingRow = () => setHoldingRows((rows) => [...rows, { id: `holding-row-${Date.now()}-${rows.length}`, name: '', price: '', shares: '' }]);
+    const removeHoldingRow = (id) => setHoldingRows((rows) => rows.length > 1 ? rows.filter((row) => row.id !== id) : rows);
+    const topWinners = stockRows.filter((item) => item.totalPnl > 0).slice(0, 5);
+    const topLosers = [...stockRows].filter((item) => item.totalPnl < 0).sort((a, b) => a.totalPnl - b.totalPnl).slice(0, 5);
+    const latestTrades = [...(data.stockTransactions || [])].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 8);
+
+    return (
+        <div className="min-h-screen bg-[#F9F9F7] text-slate-800 font-sans animate-[fadeIn_0.2s]">
+            <header className="sticky top-0 z-30 bg-[#F9F9F7]/95 backdrop-blur-md border-b border-slate-200/70 px-6 py-5">
+                <div className="flex items-center justify-between">
+                    <button onClick={onBack} className="p-2 -ml-2 text-slate-400 hover:text-slate-700 rounded-full hover:bg-white transition-colors"><ArrowLeft size={22} /></button>
+                    <div className="text-right">
+                        <div className="text-[10px] uppercase tracking-[0.2em] text-blue-400 font-inter">Stock Lab</div>
+                        <h2 className="text-xl font-serif-tc font-bold text-slate-800">個股績效</h2>
+                    </div>
+                </div>
+            </header>
+
+            <main className="px-6 py-6 pb-24 space-y-6">
+                <section className="bg-slate-900 text-white rounded-2xl p-5 shadow-xl shadow-slate-900/10 relative overflow-hidden">
+                    <div className="absolute -right-8 -top-8 w-32 h-32 bg-blue-500/20 rounded-full blur-2xl"></div>
+                    <div className="relative z-10">
+                        <div className="text-xs text-slate-400 mb-1">目前總損益</div>
+                        <div className={`text-3xl font-inter font-bold ${stockStats.totalPnl >= 0 ? 'text-emerald-300' : 'text-rose-300'} ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>{isPrivacyMode ? '****' : `${stockStats.totalPnl >= 0 ? '+' : ''}${formatMoney(stockStats.totalPnl)}`}</div>
+                        <div className="grid grid-cols-3 gap-2 mt-5 text-xs">
+                            <div className="bg-white/5 rounded-xl p-3"><div className="text-slate-400 mb-1">累計買入</div><div className="font-inter font-bold">{money(stockStats.totalBuy)}</div></div>
+                            <div className="bg-white/5 rounded-xl p-3"><div className="text-slate-400 mb-1">快照市值</div><div className="font-inter font-bold">{money(stockStats.totalMarketValue)}</div></div>
+                            <div className="bg-white/5 rounded-xl p-3"><div className="text-slate-400 mb-1">累計股息</div><div className="font-inter font-bold text-amber-200">{money(stockStats.totalDividends, '+')}</div></div>
+                        </div>
+                        <p className="text-[10px] text-slate-500 mt-3">目前市值會以選定的持倉快照版本計算。</p>
+                    </div>
+                </section>
+
+                <section className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
+                    <div className="flex items-start justify-between gap-4 mb-4">
+                        <div>
+                            <h3 className="text-base font-serif-tc font-bold text-slate-800">資料匯入</h3>
+                            <p className="text-xs text-slate-400 mt-1">股票交易採 append；持倉快照每次寫入都會新增版本。</p>
+                        </div>
+                        <span className="text-[10px] bg-blue-50 text-blue-600 px-2 py-1 rounded-full font-bold">獨立功能</span>
+                    </div>
+                    {errorMsg && <div className="bg-rose-50 text-rose-500 text-xs p-3 rounded-xl flex items-center gap-2 font-bold mb-3"><AlertCircle size={14} />{errorMsg}</div>}
+                    <div className="grid grid-cols-2 gap-3">
+                        <button onClick={() => { setErrorMsg(''); setShowTransactionImportModal(true); }} className="p-4 rounded-2xl bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors text-left">
+                            <Upload size={18} className="mb-2" />
+                            <div className="font-bold text-sm">匯入股票交易</div>
+                            <div className="text-[10px] text-blue-500 mt-1">檔案或貼上 CSV</div>
+                        </button>
+                        <button onClick={() => { setErrorMsg(''); setShowHoldingImportModal(true); }} className="p-4 rounded-2xl bg-teal-50 text-teal-700 hover:bg-teal-100 transition-colors text-left">
+                            <Package size={18} className="mb-2" />
+                            <div className="font-bold text-sm">匯入持倉快照</div>
+                            <div className="text-[10px] text-teal-500 mt-1">手動輸入持倉</div>
+                        </button>
+                    </div>
+                </section>
+
+                <section className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+                    <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
+                        <h3 className="text-sm font-serif-tc font-bold text-slate-700">持倉快照版本</h3>
+                        <span className="text-[10px] text-slate-400">{holdingSnapshots.length} 版</span>
+                    </div>
+                    {holdingSnapshots.length > 0 ? (
+                        <>
+                            {holdingSnapshots.slice(0, 8).map((snapshot) => (
+                                <div key={snapshot.id} className={`px-4 py-3 border-b border-slate-50 ${selectedSnapshot?.id === snapshot.id ? 'bg-teal-50/60' : ''}`}>
+                                    <div className="flex justify-between gap-3">
+                                        <button onClick={() => setSelectedSnapshotId(snapshot.id)} className="text-left flex-1">
+                                            <div className="font-bold text-sm text-slate-700">{snapshot.month} v{snapshot.version} {selectedSnapshot?.id === snapshot.id && <span className="text-[10px] text-teal-600 ml-1">使用中</span>}</div>
+                                            <div className="text-xs text-slate-400">{snapshot.holdings?.length || 0} 檔 · {snapshot.note || '無備註'} · {snapshot.importedAt?.slice(0, 10)}</div>
+                                        </button>
+                                        <button onClick={() => setConfirmDeleteSnapshot(snapshot)} className="p-2 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors" title="刪除版本"><Trash2 size={14} /></button>
+                                    </div>
+                                </div>
+                            ))}
+                            {selectedSnapshot && (
+                                <div className="bg-slate-50/70 border-t border-slate-100 p-4">
+                                    <div className="flex justify-between items-center mb-3">
+                                        <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">版本內容</h4>
+                                        <span className="text-[10px] text-slate-400">{selectedSnapshot.month} v{selectedSnapshot.version}</span>
+                                    </div>
+                                    <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                                        {(selectedSnapshot.holdings || []).map((holding) => (
+                                            <div key={holding.id} className="bg-white rounded-xl border border-slate-100 p-3 flex justify-between gap-3">
+                                                <div className="min-w-0">
+                                                    <div className="font-bold text-sm text-slate-700 truncate">{holding.name || holding.symbol}</div>
+                                                    <div className="text-[10px] text-slate-400 font-inter">{formatMoney(holding.marketPrice || 0)} x {formatMoney(holding.shares || 0)} 股</div>
+                                                </div>
+                                                <div className="text-right">
+                                                    <div className="font-inter font-bold text-teal-600">{formatMoney(holding.marketValue || 0)}</div>
+                                                    <div className="text-[10px] text-slate-400">目前市值</div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </>
+                    ) : <div className="p-6 text-center text-slate-300 text-sm">尚無持倉快照，總損益會缺少目前市值。</div>}
+                </section>
+
+                <section className="bg-white rounded-2xl border border-rose-100 shadow-sm p-5">
+                    <div className="flex items-start justify-between gap-4">
+                        <div>
+                            <h3 className="text-base font-serif-tc font-bold text-slate-800 flex items-center gap-2"><Trash2 size={16} /> 股票交易資料</h3>
+                            <p className="text-xs text-slate-400 mt-1">目前已有 {(data.stockTransactions || []).length} 筆。若剛剛重複匯入或想重新整理，可以先清空再匯入。</p>
+                        </div>
+                        <button onClick={() => setConfirmClear(true)} disabled={(data.stockTransactions || []).length === 0} className="px-3 py-2 rounded-xl bg-rose-50 text-rose-500 text-xs font-bold hover:bg-rose-100 disabled:bg-slate-50 disabled:text-slate-300 transition-colors">全部刪除</button>
+                    </div>
+                </section>
+
+                <section className="grid grid-cols-2 gap-3">
+                    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4">
+                        <h3 className="text-xs font-bold text-emerald-600 mb-3 flex items-center gap-1"><TrendingUp size={14} /> 賺最多</h3>
+                        {topWinners.length > 0 ? topWinners.map((item) => <div key={item.symbol} className="py-2 border-b border-slate-50 last:border-0"><div className="font-bold text-slate-700 text-sm">{item.symbol}</div><div className={`text-xs font-inter text-emerald-600 ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>{isPrivacyMode ? '****' : `+${formatMoney(item.totalPnl)}`}</div></div>) : <div className="text-xs text-slate-300 py-4">尚無獲利資料</div>}
+                    </div>
+                    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4">
+                        <h3 className="text-xs font-bold text-rose-500 mb-3 flex items-center gap-1"><TrendingDown size={14} /> 虧最多</h3>
+                        {topLosers.length > 0 ? topLosers.map((item) => <div key={item.symbol} className="py-2 border-b border-slate-50 last:border-0"><div className="font-bold text-slate-700 text-sm">{item.symbol}</div><div className={`text-xs font-inter text-rose-500 ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>{isPrivacyMode ? '****' : formatMoney(item.totalPnl)}</div></div>) : <div className="text-xs text-slate-300 py-4">尚無虧損資料</div>}
+                    </div>
+                </section>
+
+                <section className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+                    <div className="px-4 py-3 border-b border-slate-100 space-y-3">
+                        <div className="flex items-center justify-between"><h3 className="text-sm font-serif-tc font-bold text-slate-700">個股損益表</h3><span className="text-[10px] text-slate-400">{filteredStockRows.length} / {stockRows.length} 檔</span></div>
+                        <div className="relative">
+                            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" />
+                            <input value={stockSearch} onChange={(e) => setStockSearch(e.target.value)} className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 outline-none text-sm" placeholder="搜尋股票名稱或代號" />
+                        </div>
+                    </div>
+                    {stockRows.length > 0 && (
+                        <div className="p-4 border-b border-slate-100 bg-slate-50/60">
+                            <div className="flex items-center justify-between mb-3">
+                                <h4 className="text-xs font-bold text-slate-500 flex items-center gap-1"><Activity size={13} /> 個股損益圖表</h4>
+                                <span className="text-[10px] text-slate-400">依損益絕對值排序</span>
+                            </div>
+                            {stockChartRows.length > 0 ? (
+                                <div className="space-y-2">
+                                    {stockChartRows.map((item) => (
+                                        <div key={item.symbol} className="grid grid-cols-[76px_1fr_72px] gap-2 items-center text-xs">
+                                            <div className="font-bold text-slate-600 truncate">{item.symbol}</div>
+                                            <div className="h-3 bg-white rounded-full overflow-hidden border border-slate-100">
+                                                <div className={`h-full rounded-full ${item.totalPnl >= 0 ? 'bg-emerald-400' : 'bg-rose-400'}`} style={{ width: `${item.barWidth}%` }}></div>
+                                            </div>
+                                            <div className={`text-right font-inter font-bold ${item.totalPnl >= 0 ? 'text-emerald-600' : 'text-rose-500'} ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>{isPrivacyMode ? '****' : `${item.totalPnl >= 0 ? '+' : ''}${formatMoney(item.totalPnl)}`}</div>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : <div className="text-center text-slate-300 text-sm py-4">搜尋結果沒有可顯示的圖表資料</div>}
+                        </div>
+                    )}
+                    {stockRows.length > 0 ? (filteredStockRows.length > 0 ? <div className="divide-y divide-slate-100">{filteredStockRows.map((item) => (
+                        <div key={item.symbol} className="p-4">
+                            <div className="flex justify-between gap-4">
+                                <div className="min-w-0">
+                                    <div className="flex items-center gap-2"><span className="font-serif-tc font-bold text-slate-800">{item.symbol}</span><span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">{item.market}</span>{!item.hasSnapshot && <span className="text-[10px] bg-amber-50 text-amber-600 px-1.5 py-0.5 rounded">未對應資產快照</span>}</div>
+                                    <div className="text-xs text-slate-400 mt-1">{item.tradeCount} 筆交易，最近 {item.latestTradeDate}</div>
+                                </div>
+                                <div className="text-right">
+                                    <div className={`font-inter font-bold ${item.totalPnl >= 0 ? 'text-emerald-600' : 'text-rose-500'} ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>{isPrivacyMode ? '****' : `${item.totalPnl >= 0 ? '+' : ''}${formatMoney(item.totalPnl)}`}</div>
+                                    <div className="text-[10px] text-slate-400 font-inter">{formatRate(item.roi)}</div>
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-3 gap-2 mt-3 text-[10px]">
+                                <div className="bg-slate-50 rounded-lg p-2"><div className="text-slate-400">買入</div><div className="font-inter text-slate-700">{money(item.buyAmount)}</div></div>
+                                <div className="bg-slate-50 rounded-lg p-2"><div className="text-slate-400">市值</div><div className="font-inter text-slate-700">{money(item.marketValue)}</div></div>
+                                <div className="bg-slate-50 rounded-lg p-2"><div className="text-slate-400">股息</div><div className="font-inter text-amber-600">{money(item.dividends, '+')}</div></div>
+                            </div>
+                        </div>
+                    ))}</div> : <div className="p-8 text-center text-slate-300 text-sm">找不到符合搜尋的股票</div>) : <div className="p-8 text-center text-slate-300 text-sm">尚無股票交易資料</div>}
+                </section>
+
+                <section className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+                    <div className="px-4 py-3 border-b border-slate-100"><h3 className="text-sm font-serif-tc font-bold text-slate-700">最近匯入交易</h3></div>
+                    {latestTrades.length > 0 ? latestTrades.map((trade) => <div key={trade.id} className="px-4 py-3 border-b border-slate-50 last:border-0 flex justify-between items-center"><div><div className="font-bold text-sm text-slate-700">{trade.symbol || trade.rawItem || trade.name}</div><div className="text-xs text-slate-400">{trade.date} · {getStockTradeLabel(trade.type)}</div></div><div className={`font-inter text-sm font-bold ${trade.type === 'buy' ? 'text-slate-600' : 'text-emerald-600'} ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>{isPrivacyMode ? '****' : `${trade.type === 'buy' ? '-' : '+'}${formatMoney(trade.amount)}`}</div></div>) : <div className="p-8 text-center text-slate-300 text-sm">尚無交易明細</div>}
+                </section>
+            </main>
+
+            {showTransactionImportModal && (
+                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-6">
+                    <div className="bg-white w-full max-w-md rounded-2xl p-6 shadow-2xl max-h-[85vh] overflow-y-auto relative">
+                        <button onClick={() => setShowTransactionImportModal(false)} className="absolute top-4 right-4 text-slate-300 hover:text-slate-600"><X size={18} /></button>
+                        <div className="mb-4 pr-8">
+                            <h3 className="text-xl font-serif-tc font-bold text-slate-800 flex items-center gap-2"><Upload size={18} /> 匯入股票交易</h3>
+                            <p className="text-sm text-slate-400 mt-1">支援檔案或直接貼上 CSV。匯入採 append，不會覆蓋既有資料。</p>
+                        </div>
+                        {errorMsg && <div className="bg-rose-50 text-rose-500 text-xs p-3 rounded-xl flex items-center gap-2 font-bold mb-4"><AlertCircle size={14} />{errorMsg}</div>}
+                        <div className="relative border border-dashed border-slate-300 rounded-xl p-4 text-center hover:border-blue-400 hover:text-blue-600 transition-colors text-slate-400 bg-slate-50">
+                            <input type="file" accept=".csv" onChange={handleFileUpload} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
+                            <Upload size={18} className="mx-auto mb-1" />
+                            <div className="text-xs font-bold">選擇股票交易 CSV</div>
+                        </div>
+                        <div className="mt-4">
+                            <label className="text-xs text-slate-400 font-bold mb-1 block">或貼上 CSV 內容</label>
+                            <textarea value={inputText} onChange={(e) => setInputText(e.target.value)} className="w-full min-h-[160px] p-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 outline-none text-xs font-inter text-slate-700" placeholder={"類型,日期,項目,股票買入,存入戶頭,帳面餘額\n匯款,2016/2/1,ＡＴＭ轉,,30000,32000\n,2016/2/3,國泰金,37081,,24919"} />
+                            <button onClick={() => parseImportText(inputText)} disabled={!inputText.trim()} className="mt-3 w-full py-2.5 rounded-xl bg-blue-600 text-white font-bold text-sm hover:bg-blue-700 disabled:bg-slate-200 disabled:text-slate-400 transition-colors">預覽匯入明細</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {showHoldingImportModal && (
+                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-6">
+                    <div className="bg-white w-full max-w-lg rounded-2xl p-6 shadow-2xl max-h-[85vh] overflow-y-auto relative">
+                        <button onClick={() => setShowHoldingImportModal(false)} className="absolute top-4 right-4 text-slate-300 hover:text-slate-600"><X size={18} /></button>
+                        <div className="mb-4 pr-8">
+                            <h3 className="text-xl font-serif-tc font-bold text-slate-800 flex items-center gap-2"><Package size={18} /> 匯入持倉快照</h3>
+                            <p className="text-sm text-slate-400 mt-1">用來記錄月底持股市值。每次寫入都會新增版本。</p>
+                        </div>
+                        {errorMsg && <div className="bg-rose-50 text-rose-500 text-xs p-3 rounded-xl flex items-center gap-2 font-bold mb-4"><AlertCircle size={14} />{errorMsg}</div>}
+                        <div className="grid grid-cols-2 gap-3">
+                            <div>
+                                <label className="text-xs text-slate-400 font-bold mb-1 block">快照月份</label>
+                                <input type="month" value={holdingMonth} onChange={(e) => setHoldingMonth(e.target.value)} className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 outline-none text-sm font-inter" />
+                            </div>
+                            <div>
+                                <label className="text-xs text-slate-400 font-bold mb-1 block">版本備註</label>
+                                <input type="text" value={holdingNote} onChange={(e) => setHoldingNote(e.target.value)} className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 outline-none text-sm" placeholder="例如：10 月底" />
+                            </div>
+                        </div>
+                        <div className="mt-4">
+                            <label className="text-xs text-slate-400 font-bold mb-1 block">手動輸入持倉</label>
+                            <div className="space-y-2">
+                                {holdingRows.map((row, index) => (
+                                    <div key={row.id} className="grid grid-cols-[1fr_72px_72px_64px] gap-2 items-end">
+                                        <div>
+                                            {index === 0 && <label className="text-[10px] text-slate-400 font-bold mb-1 block">股票名稱</label>}
+                                            <input type="text" value={row.name} onChange={(e) => updateHoldingRow(row.id, 'name', e.target.value)} className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:border-teal-500 outline-none text-sm" placeholder="台積電" />
+                                        </div>
+                                        <div>
+                                            {index === 0 && <label className="text-[10px] text-slate-400 font-bold mb-1 block">現價</label>}
+                                            <input type="number" value={row.price} onChange={(e) => updateHoldingRow(row.id, 'price', e.target.value)} className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:border-teal-500 outline-none text-sm text-right font-inter" placeholder="0" />
+                                        </div>
+                                        <div>
+                                            {index === 0 && <label className="text-[10px] text-slate-400 font-bold mb-1 block">股數</label>}
+                                            <input type="number" value={row.shares} onChange={(e) => updateHoldingRow(row.id, 'shares', e.target.value)} className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:border-teal-500 outline-none text-sm text-right font-inter" placeholder="0" />
+                                        </div>
+                                        <div className="flex gap-1">
+                                            <button type="button" onClick={addHoldingRow} className="flex-1 h-10 rounded-xl bg-teal-50 text-teal-600 hover:bg-teal-100 transition-colors flex items-center justify-center" title="新增一列"><Plus size={14} /></button>
+                                            <button type="button" onClick={() => removeHoldingRow(row.id)} disabled={holdingRows.length === 1} className="flex-1 h-10 rounded-xl bg-rose-50 text-rose-500 hover:bg-rose-100 disabled:bg-slate-50 disabled:text-slate-300 transition-colors flex items-center justify-center" title="刪除此列"><Trash2 size={14} /></button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                            <p className="text-[10px] text-slate-400 mt-2">至少保留一列資料。市值會用「現價 x 股數」計算。</p>
+                            <button onClick={parseHoldingRows} className="mt-3 w-full py-2.5 rounded-xl bg-teal-600 text-white font-bold text-sm hover:bg-teal-700 transition-colors">預覽持倉快照</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {preview && (
+                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-6">
+                    <div className="bg-white w-full max-w-md rounded-2xl p-6 shadow-2xl max-h-[85vh] flex flex-col">
+                        <h3 className="text-xl font-serif-tc font-bold text-slate-800 mb-2">確認匯入股票交易</h3>
+                        <p className="text-sm text-slate-400 mb-4">將 append 新增 {preview.transactions.length} 筆交易，不會覆蓋既有資料。</p>
+                        <div className="grid grid-cols-4 gap-2 mb-4 text-center text-xs">
+                            <div className="bg-slate-50 rounded-xl p-3"><div className="text-slate-400">買入</div><div className="font-bold text-slate-700">{preview.transactions.filter(t => t.type === 'buy').length}</div></div>
+                            <div className="bg-slate-50 rounded-xl p-3"><div className="text-slate-400">賣出</div><div className="font-bold text-blue-600">{preview.transactions.filter(t => t.type === 'sell').length}</div></div>
+                            <div className="bg-slate-50 rounded-xl p-3"><div className="text-slate-400">股息</div><div className="font-bold text-emerald-600">{preview.transactions.filter(t => t.type === 'dividend').length}</div></div>
+                            <div className="bg-slate-50 rounded-xl p-3"><div className="text-slate-400">入金</div><div className="font-bold text-blue-600">{preview.transactions.filter(t => t.type === 'deposit').length}</div></div>
+                        </div>
+                        <div className="flex-1 overflow-y-auto border border-slate-100 rounded-xl divide-y divide-slate-50">
+                            {preview.transactions.slice(0, 30).map((trade) => <div key={trade.id} className="p-3 flex justify-between items-center text-sm"><div><div className="font-bold text-slate-700">{trade.symbol || trade.rawItem || trade.name}</div><div className="text-xs text-slate-400">{trade.date} · {getStockTradeLabel(trade.type)}</div></div><div className="font-inter font-bold text-slate-700">{formatMoney(trade.amount)}</div></div>)}
+                            {preview.transactions.length > 30 && <div className="p-3 text-center text-xs text-slate-400">還有 {preview.transactions.length - 30} 筆未顯示</div>}
+                        </div>
+                        {preview.skippedRows.length > 0 && (
+                            <div className="mt-3 text-xs text-amber-700 bg-amber-50 p-3 rounded-xl">
+                                <div className="font-bold mb-2">略過 {preview.skippedRows.length} 列無法辨識或不需納入績效的資料：</div>
+                                <div className="space-y-1 max-h-24 overflow-y-auto pr-1">
+                                    {preview.skippedRows.map((row) => (
+                                        <div key={row.row} className="flex gap-2 leading-relaxed">
+                                            <span className="font-inter font-bold shrink-0">第 {row.row} 列</span>
+                                            <span className="text-amber-900 truncate">{row.type} / {row.item}</span>
+                                            <span className="text-amber-600 shrink-0">：{row.reason}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                        <div className="flex gap-3 mt-5"><button onClick={() => setPreview(null)} className="flex-1 py-2.5 rounded-xl bg-slate-100 text-slate-500 font-bold text-sm hover:bg-slate-200">取消</button><button onClick={confirmImport} className="flex-1 py-2.5 rounded-xl bg-blue-600 text-white font-bold text-sm hover:bg-blue-700 shadow-lg shadow-blue-200">確認匯入</button></div>
+                    </div>
+                </div>
+            )}
+
+            {holdingPreview && (
+                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-6">
+                    <div className="bg-white w-full max-w-md rounded-2xl p-6 shadow-2xl max-h-[85vh] flex flex-col">
+                        <h3 className="text-xl font-serif-tc font-bold text-slate-800 mb-2">確認匯入持倉快照</h3>
+                        <p className="text-sm text-slate-400 mb-4">將新增 {holdingPreview.month} 的一個新版本，共 {holdingPreview.holdings.length} 檔持倉。</p>
+                        <div className="grid grid-cols-2 gap-2 mb-4 text-center text-xs">
+                            <div className="bg-slate-50 rounded-xl p-3"><div className="text-slate-400">成本總額</div><div className="font-bold text-slate-700">{formatMoney(holdingPreview.holdings.reduce((sum, item) => sum + (Number(item.costAmount) || 0), 0))}</div></div>
+                            <div className="bg-slate-50 rounded-xl p-3"><div className="text-slate-400">目前市值</div><div className="font-bold text-teal-600">{formatMoney(holdingPreview.holdings.reduce((sum, item) => sum + (Number(item.marketValue) || 0), 0))}</div></div>
+                        </div>
+                        <div className="flex-1 overflow-y-auto border border-slate-100 rounded-xl divide-y divide-slate-50">
+                            {holdingPreview.holdings.slice(0, 30).map((holding) => (
+                                <div key={holding.id} className="p-3 flex justify-between items-center text-sm">
+                                    <div>
+                                        <div className="font-bold text-slate-700">{holding.name || holding.symbol}</div>
+                                        <div className="text-xs text-slate-400">{holding.shares ? `${holding.shares} 股 · ` : ''}{holding.account || holding.market}</div>
+                                    </div>
+                                    <div className="text-right">
+                                        <div className="font-inter font-bold text-teal-600">{formatMoney(holding.marketValue)}</div>
+                                        <div className={`text-[10px] font-inter ${(holding.marketValue - holding.costAmount) >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>{holding.costAmount ? `${(holding.marketValue - holding.costAmount) >= 0 ? '+' : ''}${formatMoney(holding.marketValue - holding.costAmount)}` : '未填成本'}</div>
+                                    </div>
+                                </div>
+                            ))}
+                            {holdingPreview.holdings.length > 30 && <div className="p-3 text-center text-xs text-slate-400">還有 {holdingPreview.holdings.length - 30} 檔未顯示</div>}
+                        </div>
+                        {holdingPreview.skippedRows.length > 0 && <div className="mt-3 text-xs text-amber-600 bg-amber-50 p-3 rounded-xl">略過 {holdingPreview.skippedRows.length} 列持倉資料。</div>}
+                        <div className="flex gap-3 mt-5"><button onClick={() => setHoldingPreview(null)} className="flex-1 py-2.5 rounded-xl bg-slate-100 text-slate-500 font-bold text-sm hover:bg-slate-200">取消</button><button onClick={confirmHoldingImport} className="flex-1 py-2.5 rounded-xl bg-teal-600 text-white font-bold text-sm hover:bg-teal-700 shadow-lg shadow-teal-200">確認匯入</button></div>
+                    </div>
+                </div>
+            )}
+
+            {confirmDeleteSnapshot && (
+                <ConfirmModal
+                    title="刪除持倉快照版本"
+                    message={`確定要刪除 ${confirmDeleteSnapshot.month} v${confirmDeleteSnapshot.version} 嗎？\n這只會刪除這個持倉快照版本，不會刪除股票交易資料。`}
+                    onConfirm={() => {
+                        onDeleteHoldingSnapshot(confirmDeleteSnapshot.month, confirmDeleteSnapshot.id);
+                        setConfirmDeleteSnapshot(null);
+                    }}
+                    onCancel={() => setConfirmDeleteSnapshot(null)}
+                />
+            )}
+
+            {confirmClear && (
+                <ConfirmModal
+                    title="清空股票交易"
+                    message="確定要刪除所有股票交易資料嗎？這只會清空個股績效的匯入交易，不會刪除資產、收入、花費或負債資料。"
+                    onConfirm={() => {
+                        onClearTransactions();
+                        setConfirmClear(false);
+                    }}
+                    onCancel={() => setConfirmClear(false)}
+                />
+            )}
+        </div>
+    );
+};
+
 import { AuthProvider, useAuth } from './AuthContext';
 import LoginPage from './LoginPage';
 import { db } from './firebase';
@@ -3355,7 +4056,7 @@ const AuthenticatedApp = () => {
                 const cloudData = await loadFromFirestoreChunks();
                 if (cloudData) {
                     console.log("Loaded data from Firestore chunks");
-                    setData({ ...INITIAL_DATA, ...cloudData, debts: cloudData.debts || {}, debtEvents: cloudData.debtEvents || {} });
+                    setData({ ...INITIAL_DATA, ...cloudData, debts: cloudData.debts || {}, debtEvents: cloudData.debtEvents || {}, stockTransactions: cloudData.stockTransactions || [], stockHoldingSnapshots: cloudData.stockHoldingSnapshots || {} });
                 } else {
                     console.log("No chunked data found, using empty state.");
                     // Fallback: check if legacy single-doc exists (optional migration)
@@ -3731,7 +4432,7 @@ const AuthenticatedApp = () => {
         setIsImporting(true);
         try {
             if (type === 'json') {
-                const normalizedData = { ...INITIAL_DATA, ...pendingData, debts: pendingData.debts || {}, debtEvents: pendingData.debtEvents || {} };
+                const normalizedData = { ...INITIAL_DATA, ...pendingData, debts: pendingData.debts || {}, debtEvents: pendingData.debtEvents || {}, stockTransactions: pendingData.stockTransactions || [], stockHoldingSnapshots: pendingData.stockHoldingSnapshots || {} };
                 if (user) await saveToFirestoreChunks(normalizedData);
                 setData(normalizedData);
                 setCurrentYear(new Date().getFullYear());
@@ -4045,6 +4746,60 @@ const AuthenticatedApp = () => {
         setShowAddModal(false);
     };
 
+    const handleImportStockTransactions = (transactions) => {
+        const newData = {
+            ...data,
+            stockTransactions: [...(data.stockTransactions || []), ...transactions]
+        };
+        setData(newData);
+        saveToFirestoreChunks(newData);
+        handleShowAlert("匯入成功", `已新增 ${transactions.length} 筆股票交易`);
+    };
+
+    const handleClearStockTransactions = () => {
+        const newData = {
+            ...data,
+            stockTransactions: []
+        };
+        setData(newData);
+        saveToFirestoreChunks(newData);
+        handleShowAlert("已清空", "股票交易資料已全部刪除");
+    };
+
+    const handleImportHoldingSnapshot = (snapshotPreview) => {
+        const month = snapshotPreview.month;
+        const existingVersions = data.stockHoldingSnapshots?.[month] || [];
+        const nextVersion = existingVersions.reduce((max, item) => Math.max(max, Number(item.version) || 0), 0) + 1;
+        const snapshot = {
+            id: `holding-snapshot-${month}-v${nextVersion}-${Date.now()}`,
+            version: nextVersion,
+            importedAt: new Date().toISOString(),
+            note: snapshotPreview.note || '',
+            holdings: snapshotPreview.holdings
+        };
+        const newData = {
+            ...data,
+            stockHoldingSnapshots: {
+                ...(data.stockHoldingSnapshots || {}),
+                [month]: [...existingVersions, snapshot]
+            }
+        };
+        setData(newData);
+        saveToFirestoreChunks(newData);
+        handleShowAlert("匯入成功", `已新增 ${month} 持倉快照 v${nextVersion}`);
+    };
+
+    const handleDeleteHoldingSnapshot = (month, snapshotId) => {
+        const remaining = (data.stockHoldingSnapshots?.[month] || []).filter((snapshot) => snapshot.id !== snapshotId);
+        const nextSnapshots = { ...(data.stockHoldingSnapshots || {}) };
+        if (remaining.length > 0) nextSnapshots[month] = remaining;
+        else delete nextSnapshots[month];
+        const newData = { ...data, stockHoldingSnapshots: nextSnapshots };
+        setData(newData);
+        saveToFirestoreChunks(newData);
+        handleShowAlert("刪除成功", "已刪除持倉快照版本");
+    };
+
     return (
         <div className="min-h-screen max-w-md mx-auto bg-white text-slate-800 relative font-sans shadow-2xl overflow-hidden">
             <GlobalStyles />
@@ -4091,7 +4846,12 @@ const AuthenticatedApp = () => {
                     <DetailView monthKey={selectedDate} data={data} onBack={() => setView('dashboard')} onUpdateData={handleDetailUpdate} assetNames={allAssetNames} debtNames={allDebtNames} isPrivacyMode={isPrivacyMode} />
                 </div>
             )}
-            <div className={`transition-transform duration-300 w-full max-w-md mx-auto ${view === 'detail' ? 'scale-95 opacity-50 pointer-events-none hidden' : ''}`}>
+            {view === 'stock-analysis' && (
+                <div className="w-full max-w-md mx-auto">
+                    <StockAnalysisView data={data} onBack={() => setView('dashboard')} onImportTransactions={handleImportStockTransactions} onClearTransactions={handleClearStockTransactions} onImportHoldingSnapshot={handleImportHoldingSnapshot} onDeleteHoldingSnapshot={handleDeleteHoldingSnapshot} isPrivacyMode={isPrivacyMode} />
+                </div>
+            )}
+            <div className={`transition-transform duration-300 w-full max-w-md mx-auto ${view !== 'dashboard' ? 'scale-95 opacity-50 pointer-events-none hidden' : ''}`}>
                 <div className="fixed top-0 left-0 w-full h-64 bg-gradient-to-b from-[#EBEAE5] to-transparent -z-10"></div>
                 <header className="sticky top-0 z-20 px-6 py-5 bg-[#F9F9F7]/90 backdrop-blur-md border-b border-slate-200/50">
                     <div className="flex justify-between items-end mb-4">

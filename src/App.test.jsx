@@ -536,6 +536,256 @@ describe('App Integration Tests', () => {
         await waitFor(() => expect(screen.queryByText('達成進度')).not.toBeInTheDocument());
     });
 
+    test('Stock Analysis: imports transactions from textarea with preview', async () => {
+        const user = userEvent.setup();
+        render(<App />);
+        await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
+
+        const advancedBtn = document.querySelector('.lucide-layout-grid').closest('button');
+        await user.click(advancedBtn);
+        await waitFor(() => expect(screen.getByText('Advanced')).toBeInTheDocument());
+        await user.click(screen.getByText('個股績效'));
+
+        await waitFor(() => expect(screen.getByText('匯入股票交易')).toBeInTheDocument());
+        expect(screen.getByText('獨立功能')).toBeInTheDocument();
+        await user.click(screen.getByRole('button', { name: /匯入股票交易/ }));
+
+        const stockCsv = [
+            '類型,日期,項目,股票買入,存入戶頭,帳面餘額',
+            ',2016/2/3,國泰金,"37,081",,"24,919"',
+            '股息,2016/7/25,現金股息-國泰金,,"1,990","21,028"',
+            '匯款,2016/2/1,ＡＴＭ轉,,"30,000","32,000"'
+        ].join('\n');
+
+        await user.type(screen.getByPlaceholderText(/類型,日期,項目/), stockCsv);
+        await user.click(screen.getByText('預覽匯入明細'));
+
+        await waitFor(() => expect(screen.getByText('確認匯入股票交易')).toBeInTheDocument());
+        expect(screen.getByText('將 append 新增 3 筆交易，不會覆蓋既有資料。')).toBeInTheDocument();
+        expect(screen.getAllByText('國泰金').length).toBeGreaterThan(0);
+        expect(screen.getByText('ＡＴＭ轉')).toBeInTheDocument();
+
+        await user.click(screen.getByText('確認匯入'));
+
+        await waitFor(() => expect(screen.getByText('匯入成功')).toBeInTheDocument());
+        expect(screen.getByText('已新增 3 筆股票交易')).toBeInTheDocument();
+        await user.click(screen.getByText('知道了'));
+        await waitFor(() => expect(screen.getByText('個股損益表')).toBeInTheDocument());
+        expect(screen.getAllByText('國泰金').length).toBeGreaterThan(0);
+        expect(screen.getByText(/2 筆交易/)).toBeInTheDocument();
+    });
+
+    test('Stock Analysis: imports unassigned cash dividends', async () => {
+        const user = userEvent.setup();
+        render(<App />);
+        await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
+
+        const advancedBtn = document.querySelector('.lucide-layout-grid').closest('button');
+        await user.click(advancedBtn);
+        await waitFor(() => expect(screen.getByText('Advanced')).toBeInTheDocument());
+        await user.click(screen.getByText('個股績效'));
+
+        await waitFor(() => expect(screen.getByText('匯入股票交易')).toBeInTheDocument());
+        await user.click(screen.getByRole('button', { name: /匯入股票交易/ }));
+
+        const stockCsv = [
+            '類型,日期,項目,股票買入,存入戶頭,帳面餘額',
+            ',2016/2/3,國泰金,"37,081",,"24,919"',
+            '股息,2025/10/09,現金股息,,"3,000","52,141"',
+            '其他,2016/6/22,未支援事件,,,17048'
+        ].join('\n');
+
+        await user.type(screen.getByPlaceholderText(/類型,日期,項目/), stockCsv);
+        await user.click(screen.getByText('預覽匯入明細'));
+
+        await waitFor(() => expect(screen.getByText('確認匯入股票交易')).toBeInTheDocument());
+        expect(screen.getByText('將 append 新增 2 筆交易，不會覆蓋既有資料。')).toBeInTheDocument();
+        expect(within(screen.getByText('股息').parentElement).getByText('1')).toBeInTheDocument();
+        expect(screen.getAllByText(/現金股息/).length).toBeGreaterThan(0);
+        expect(screen.getByText('略過 1 列無法辨識或不需納入績效的資料：')).toBeInTheDocument();
+        expect(screen.getByText('第 4 列')).toBeInTheDocument();
+        expect(screen.getByText(/尚未支援的交易類型/)).toBeInTheDocument();
+    });
+
+    test('Stock Analysis: treats stock deposits as sell transactions', async () => {
+        const user = userEvent.setup();
+        render(<App />);
+        await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
+
+        const advancedBtn = document.querySelector('.lucide-layout-grid').closest('button');
+        await user.click(advancedBtn);
+        await waitFor(() => expect(screen.getByText('Advanced')).toBeInTheDocument());
+        await user.click(screen.getByText('個股績效'));
+
+        await waitFor(() => expect(screen.getByText('匯入股票交易')).toBeInTheDocument());
+        await user.click(screen.getByRole('button', { name: /匯入股票交易/ }));
+
+        const stockCsv = [
+            '類型,日期,項目,股票買入,存入戶頭,帳面餘額',
+            ',2025/10/13,台積電,"25,001",,"27,140"',
+            ',2025/10/13,台積電,,949,"28,089"',
+            ',2025/10/15,元大台灣50,,"179,816","205,412"',
+            '匯款,2025/10/17,行動轉出,"16,000",,"67,409"'
+        ].join('\n');
+
+        await user.type(screen.getByPlaceholderText(/類型,日期,項目/), stockCsv);
+        await user.click(screen.getByText('預覽匯入明細'));
+
+        await waitFor(() => expect(screen.getByText('確認匯入股票交易')).toBeInTheDocument());
+        expect(screen.getByText('將 append 新增 4 筆交易，不會覆蓋既有資料。')).toBeInTheDocument();
+        expect(within(screen.getByText('賣出').parentElement).getByText('2')).toBeInTheDocument();
+        expect(screen.queryByText(/台積電.*尚未支援/)).not.toBeInTheDocument();
+    });
+
+    test('Stock Analysis: does not treat high dividend stock names as dividends', async () => {
+        const user = userEvent.setup();
+        render(<App />);
+        await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
+
+        const advancedBtn = document.querySelector('.lucide-layout-grid').closest('button');
+        await user.click(advancedBtn);
+        await waitFor(() => expect(screen.getByText('Advanced')).toBeInTheDocument());
+        await user.click(screen.getByText('個股績效'));
+
+        await waitFor(() => expect(screen.getByText('匯入股票交易')).toBeInTheDocument());
+        await user.click(screen.getByRole('button', { name: /匯入股票交易/ }));
+
+        const stockCsv = [
+            '類型,日期,項目,股票買入,存入戶頭,帳面餘額',
+            ',2020/7/24,國泰永續高股息,"151,129",,"614,958"',
+            ',2023/9/12,國泰永續高股息,"209,679",,"486,516"',
+            '股息,2025/05/14,基金配息,,"13,900","130,834"'
+        ].join('\n');
+
+        await user.type(screen.getByPlaceholderText(/類型,日期,項目/), stockCsv);
+        await user.click(screen.getByText('預覽匯入明細'));
+
+        await waitFor(() => expect(screen.getByText('確認匯入股票交易')).toBeInTheDocument());
+        expect(screen.getByText('將 append 新增 3 筆交易，不會覆蓋既有資料。')).toBeInTheDocument();
+        expect(within(screen.getByText('買入').parentElement).getByText('2')).toBeInTheDocument();
+        expect(within(screen.getByText('股息').parentElement).getByText('1')).toBeInTheDocument();
+        expect(screen.queryByText(/金額為 0/)).not.toBeInTheDocument();
+    });
+
+    test('Stock Analysis: imports holding snapshot versions for market value', async () => {
+        const user = userEvent.setup();
+        render(<App />);
+        await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
+
+        const advancedBtn = document.querySelector('.lucide-layout-grid').closest('button');
+        await user.click(advancedBtn);
+        await waitFor(() => expect(screen.getByText('Advanced')).toBeInTheDocument());
+        await user.click(screen.getByText('個股績效'));
+
+        await waitFor(() => expect(screen.getByText('匯入股票交易')).toBeInTheDocument());
+        await user.click(screen.getByRole('button', { name: /匯入股票交易/ }));
+
+        const transactionCsv = [
+            '類型,日期,項目,股票買入,存入戶頭,帳面餘額',
+            ',2025/10/13,台積電,"10,000",,"27,140"'
+        ].join('\n');
+        fireEvent.change(screen.getByPlaceholderText(/類型,日期,項目/), { target: { value: transactionCsv } });
+        await user.click(screen.getByText('預覽匯入明細'));
+        await waitFor(() => expect(screen.getByText('確認匯入股票交易')).toBeInTheDocument());
+        await user.click(screen.getByText('確認匯入'));
+        await waitFor(() => expect(screen.getByText('匯入成功')).toBeInTheDocument());
+        await user.click(screen.getByText('知道了'));
+
+        await user.click(screen.getByRole('button', { name: /匯入持倉快照/ }));
+        fireEvent.change(document.querySelector('input[type="month"]'), { target: { value: '2025-10' } });
+
+        fireEvent.change(screen.getByPlaceholderText('台積電'), { target: { value: '台積電' } });
+        const holdingNumbers = document.querySelectorAll('input[type="number"]');
+        fireEvent.change(holdingNumbers[0], { target: { value: '1200' } });
+        fireEvent.change(holdingNumbers[1], { target: { value: '10' } });
+        await user.click(screen.getByText('預覽持倉快照'));
+
+        await waitFor(() => expect(screen.getByText('確認匯入持倉快照')).toBeInTheDocument());
+        expect(screen.getByText('將新增 2025-10 的一個新版本，共 1 檔持倉。')).toBeInTheDocument();
+        await user.click(screen.getByText('確認匯入'));
+
+        await waitFor(() => expect(screen.getByText('已新增 2025-10 持倉快照 v1')).toBeInTheDocument());
+        await user.click(screen.getByText('知道了'));
+        expect(screen.getAllByText(/2025-10 v1/).length).toBeGreaterThan(0);
+        expect(screen.getAllByText('+2,000').length).toBeGreaterThan(0);
+        expect(screen.getByText('個股損益圖表')).toBeInTheDocument();
+        fireEvent.change(screen.getByPlaceholderText('搜尋股票名稱或代號'), { target: { value: '台積' } });
+        expect(screen.getAllByText('台積電').length).toBeGreaterThan(0);
+        await user.click(document.querySelector('button[title="刪除版本"]'));
+        await waitFor(() => expect(screen.getByText('刪除持倉快照版本')).toBeInTheDocument());
+        await user.click(screen.getByText('取消'));
+    });
+
+    test('Stock Analysis: imports multiple manual holding rows', async () => {
+        const user = userEvent.setup();
+        render(<App />);
+        await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
+
+        const advancedBtn = document.querySelector('.lucide-layout-grid').closest('button');
+        await user.click(advancedBtn);
+        await waitFor(() => expect(screen.getByText('Advanced')).toBeInTheDocument());
+        await user.click(screen.getByText('個股績效'));
+
+        await waitFor(() => expect(screen.getByText('匯入持倉快照')).toBeInTheDocument());
+        await user.click(screen.getByRole('button', { name: /匯入持倉快照/ }));
+        fireEvent.change(document.querySelector('input[type="month"]'), { target: { value: '2025-11' } });
+
+        fireEvent.change(screen.getByPlaceholderText('台積電'), { target: { value: '台積電' } });
+        let holdingNumbers = document.querySelectorAll('input[type="number"]');
+        fireEvent.change(holdingNumbers[0], { target: { value: '1000' } });
+        fireEvent.change(holdingNumbers[1], { target: { value: '10' } });
+
+        await user.click(document.querySelector('button[title="新增一列"]'));
+        const nameInputs = screen.getAllByPlaceholderText('台積電');
+        fireEvent.change(nameInputs[1], { target: { value: '國泰永續高股息' } });
+        holdingNumbers = document.querySelectorAll('input[type="number"]');
+        fireEvent.change(holdingNumbers[2], { target: { value: '21' } });
+        fireEvent.change(holdingNumbers[3], { target: { value: '20000' } });
+
+        await user.click(screen.getByText('預覽持倉快照'));
+
+        await waitFor(() => expect(screen.getByText('確認匯入持倉快照')).toBeInTheDocument());
+        expect(screen.getByText('將新增 2025-11 的一個新版本，共 2 檔持倉。')).toBeInTheDocument();
+        expect(screen.getAllByText('台積電').length).toBeGreaterThan(0);
+        expect(screen.getAllByText('國泰永續高股息').length).toBeGreaterThan(0);
+    });
+
+    test('Stock Analysis: clears appended transactions', async () => {
+        const user = userEvent.setup();
+        const mockData = {
+            records: {},
+            memos: {},
+            incomes: {},
+            expenses: {},
+            debts: {},
+            debtEvents: {},
+            stockTransactions: [
+                { id: 's1', source: 'csv', market: 'TW', currency: 'TWD', date: '2016-02-03', type: 'buy', symbol: '國泰金', name: '國泰金', rawItem: '國泰金', amount: 37081, balance: 24919 },
+                { id: 's2', source: 'csv', market: 'TW', currency: 'TWD', date: '2016-07-25', type: 'dividend', symbol: '國泰金', name: '國泰金', rawItem: '現金股息-國泰金', amount: 1990, balance: 21028 }
+            ],
+            fireSettings: { withdrawalRate: 4 }
+        };
+
+        getDocs.mockResolvedValue(createMockSnapshot(mockData));
+
+        render(<App />);
+        await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
+
+        const advancedBtn = document.querySelector('.lucide-layout-grid').closest('button');
+        await user.click(advancedBtn);
+        await waitFor(() => expect(screen.getByText('Advanced')).toBeInTheDocument());
+        await user.click(screen.getByText('個股績效'));
+
+        await waitFor(() => expect(screen.getByText('目前已有 2 筆。若剛剛重複匯入或想重新整理，可以先清空再匯入。')).toBeInTheDocument());
+        await user.click(screen.getByText('全部刪除'));
+
+        await waitFor(() => expect(screen.getByText('清空股票交易')).toBeInTheDocument());
+        await user.click(screen.getByRole('button', { name: '刪除' }));
+
+        await waitFor(() => expect(screen.getByText('已清空')).toBeInTheDocument());
+        expect(screen.getByText('股票交易資料已全部刪除')).toBeInTheDocument();
+    });
+
     test('Opens Range Statistics Modal', async () => {
         const user = userEvent.setup();
         render(<App />);
