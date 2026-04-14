@@ -366,7 +366,19 @@ describe('App Integration Tests', () => {
         await waitFor(() => expect(screen.getByText('請上傳您的 JSON 備份檔案')).toBeInTheDocument());
 
         const jsonContent = JSON.stringify({
-            records: { "2025-01-01": [] },
+            records: {
+                "2025-01-01": [
+                    {
+                        id: 1,
+                        type: "fixed",
+                        name: "Imported Asset",
+                        amount: 1000,
+                        currency: "TWD",
+                        originalAmount: 1000,
+                        exchangeRate: 1
+                    }
+                ]
+            },
             incomes: {},
             expenses: {},
             memos: {},
