@@ -4711,6 +4711,11 @@ const AuthenticatedApp = () => {
         return { max, min };
     }, [processedData]);
 
+    const assetChartData = useMemo(() => processedData.map((monthData) => ({
+        ...monthData,
+        assets: monthData.hasRecord ? monthData.assets : null
+    })), [processedData]);
+
     const yearStats = useMemo(() => {
         // Income Stats
         const thisYearIncome = getYearTotalIncome(currentYear, data);
@@ -5358,7 +5363,7 @@ const AuthenticatedApp = () => {
                         <div className="flex items-center justify-between mb-4"><h3 className="text-sm font-serif-tc text-slate-500 font-medium">年度資產淨值</h3><span className="text-xs text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full font-inter">TWD</span></div>
                         <div className="h-28 w-full -ml-2">
                             <ResponsiveContainer width="100%" height="100%">
-                                <AreaChart data={processedData}>
+                                <AreaChart data={assetChartData}>
                                     <defs><linearGradient id="colorAssets" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#FBBF24" stopOpacity={0.2} /><stop offset="95%" stopColor="#FBBF24" stopOpacity={0} /></linearGradient></defs>
                                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
                                     <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: '#94A3B8', fontSize: 10, fontFamily: 'Inter' }} dy={10} />

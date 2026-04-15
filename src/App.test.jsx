@@ -59,7 +59,7 @@ vi.mock('recharts', () => {
     return {
         ...OriginalModule,
         ResponsiveContainer: ({ children }) => <div data-testid="responsive-container">{children}</div>,
-        AreaChart: () => <div data-testid="area-chart">AreaChart</div>,
+        AreaChart: ({ data = [] }) => <div data-testid="area-chart" data-months={data.map((item) => item.month).join(',')} data-assets={data.map((item) => item.assets ?? 'null').join(',')}>AreaChart</div>,
         Area: () => null,
         XAxis: () => null,
         YAxis: () => null,
@@ -428,6 +428,8 @@ describe('App Integration Tests', () => {
         expect(screen.getByText(/年度最高 \(3月\)/)).toBeInTheDocument();
         expect(screen.getByText(/年度最低 \(1月\)/)).toBeInTheDocument();
         expect(screen.getByText(/📈 130\.0%/)).toBeInTheDocument();
+        expect(screen.getByTestId('area-chart')).toHaveAttribute('data-months', '1,2,3,4,5,6,7,8,9,10,11,12');
+        expect(screen.getByTestId('area-chart')).toHaveAttribute('data-assets', '100000,null,130000,null,null,null,null,null,null,null,null,null');
     });
 
     test('Dashboard asset growth ratio shows a down trend when below 100%', async () => {
@@ -453,6 +455,8 @@ describe('App Integration Tests', () => {
         expect(screen.getByText(/年度最高 \(1月\)/)).toBeInTheDocument();
         expect(screen.getByText(/年度最低 \(3月\)/)).toBeInTheDocument();
         expect(screen.getByText(/📉 80\.0%/)).toBeInTheDocument();
+        expect(screen.getByTestId('area-chart')).toHaveAttribute('data-months', '1,2,3,4,5,6,7,8,9,10,11,12');
+        expect(screen.getByTestId('area-chart')).toHaveAttribute('data-assets', '100000,null,80000,null,null,null,null,null,null,null,null,null');
     });
 
     test('Detail View Interaction', async () => {
