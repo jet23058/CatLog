@@ -425,6 +425,34 @@ describe('App Integration Tests', () => {
         const growthCard = screen.getByText(/年度資產增長金額/).closest('div');
         expect(within(growthCard).getByText('+3 萬')).toBeInTheDocument();
         expect(within(growthCard).queryByText('+13 萬')).not.toBeInTheDocument();
+        expect(screen.getByText(/年度最高 \(3月\)/)).toBeInTheDocument();
+        expect(screen.getByText(/年度最低 \(1月\)/)).toBeInTheDocument();
+        expect(screen.getByText(/📈 130\.0%/)).toBeInTheDocument();
+    });
+
+    test('Dashboard asset growth ratio shows a down trend when below 100%', async () => {
+        const currentYear = new Date().getFullYear();
+        const mockData = {
+            records: {
+                [`${currentYear}-01-31`]: [{ id: 'asset-jan', name: '資產', amount: 100000, type: 'stock' }],
+                [`${currentYear}-02-28`]: [],
+                [`${currentYear}-03-31`]: [{ id: 'asset-mar', name: '資產', amount: 80000, type: 'stock' }]
+            },
+            memos: {},
+            incomes: {},
+            expenses: {},
+            debts: {},
+            debtEvents: {},
+            fireSettings: { withdrawalRate: 4 }
+        };
+
+        getDocs.mockResolvedValue(createMockSnapshot(mockData));
+        render(<App />);
+        await waitFor(() => expect(screen.getByText('年度資產淨值')).toBeInTheDocument());
+
+        expect(screen.getByText(/年度最高 \(1月\)/)).toBeInTheDocument();
+        expect(screen.getByText(/年度最低 \(3月\)/)).toBeInTheDocument();
+        expect(screen.getByText(/📉 80\.0%/)).toBeInTheDocument();
     });
 
     test('Detail View Interaction', async () => {

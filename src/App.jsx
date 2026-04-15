@@ -4575,6 +4575,7 @@ const AuthenticatedApp = () => {
             const date = new Date(dateStr);
             if (date.getFullYear() === currentYear) {
                 const totalAssets = assets.reduce((sum, item) => sum + (item.amount || 0), 0);
+                if (!Array.isArray(assets) || assets.length === 0 || totalAssets <= 0) return;
                 const monthIdx = date.getMonth();
                 if (!monthRecordsMap.has(monthIdx)) monthRecordsMap.set(monthIdx, []);
                 monthRecordsMap.get(monthIdx).push({ dateStr, assets: totalAssets });
@@ -5389,8 +5390,8 @@ const AuthenticatedApp = () => {
                                 <span className="text-xs text-slate-400 font-inter mb-1 block flex items-center justify-center gap-1 cursor-help">
                                     年度資產增長比例 {!isPrivacyMode && <Info size={12} />}
                                 </span>
-                                <span className={`text-2xl font-inter font-bold text-emerald-600 ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>
-                                    {isPrivacyMode ? '****' : formatRate(yearStats.assetGrowthRatio)}
+                                <span className={`text-2xl font-inter font-bold ${yearStats.assetGrowthRatio >= 1 ? 'text-emerald-600' : 'text-rose-500'} ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>
+                                    {isPrivacyMode ? '****' : `${yearStats.assetGrowthRatio >= 1 ? '📈' : '📉'} ${formatRate(yearStats.assetGrowthRatio)}`}
                                 </span>
                                 {!isPrivacyMode && (
                                     <div className="absolute bottom-full right-0 mb-2 w-48 bg-slate-800 text-white text-xs p-3 rounded-lg opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none shadow-xl z-20">
