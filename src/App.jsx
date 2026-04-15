@@ -78,6 +78,17 @@ const formatWan = (val) => {
 const formatRate = (val) => `${(val * 100).toFixed(1)}%`;
 const formatPercent = (value) => !isFinite(value) ? "0.0%" : `${Math.abs(value).toFixed(1)}%`;
 const getDebtTotal = (debts = []) => debts.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+const DEBT_CATEGORIES = [
+    { value: 'stock_pledge', label: '股票質押' },
+    { value: 'personal_loan', label: '信用貸款' },
+    { value: 'mortgage', label: '房貸' },
+    { value: 'car_loan', label: '車貸' },
+    { value: 'credit_card', label: '信用卡' },
+    { value: 'installment', label: '分期付款' },
+    { value: 'family_loan', label: '親友借款' },
+    { value: 'other', label: '其他' }
+];
+const getDebtCategoryLabel = (value) => DEBT_CATEGORIES.find((item) => item.value === value)?.label || value || '未分類';
 const getDebtEventImpact = (event) => {
     if (event.type === 'borrow') return Number(event.amount) || 0;
     if (event.type === 'repay') return -(Number(event.amount) || 0);
@@ -104,6 +115,22 @@ const getLatestSnapshotTotal = (records = {}, targetDateStr, calculator) => {
     });
 
     return total;
+};
+
+const getLatestSnapshotItems = (records = {}, targetDateStr) => {
+    const targetDate = new Date(targetDateStr);
+    let latestDate = null;
+    let latestItems = [];
+
+    Object.entries(records || {}).forEach(([dateStr, items]) => {
+        const date = new Date(dateStr);
+        if (date <= targetDate && (!latestDate || date > latestDate)) {
+            latestDate = date;
+            latestItems = Array.isArray(items) ? items : [];
+        }
+    });
+
+    return latestItems;
 };
 
 const parseCSV = (text) => {
@@ -2155,60 +2182,160 @@ const AddAssetModal = ({ onClose, onSave, historyRecords, exchangeRateCache }) =
     );
 };
 
-const AddDebtModal = ({ onClose, onSave, debtNames = [] }) => {
+const AddDebtModal = ({ onClose, onSave, debtNames = [], accountOptions = [], assetRecords = {}, debts = {} }) => {
     const today = new Date();
     const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
 
     const [date, setDate] = useState(todayStr);
+    const [category, setCategory] = useState('other');
     const [name, setName] = useState('');
     const [lender, setLender] = useState('');
     const [amount, setAmount] = useState('');
     const [memo, setMemo] = useState('');
+    const [pledgeStocks, setPledgeStocks] = useState([{ id: Date.now(), symbol: '', shares: '', rate: '' }]);
     const [errorMsg, setErrorMsg] = useState('');
+
+    useEffect(() => {
+        if (category === 'stock_pledge') setName('股票質押');
+    }, [category]);
+
+    const selectableAccountOptions = useMemo(() => {
+        const options = [];
+        const seen = new Set();
+        const addOption = (value) => {
+            const cleanValue = String(value || '').trim();
+            if (!cleanValue || seen.has(cleanValue)) return;
+            seen.add(cleanValue);
+            options.push(cleanValue);
+        };
+        const addAssetOptions = (assets = []) => {
+            (assets || []).forEach((asset) => {
+                addOption(asset.account);
+                addOption(asset.broker);
+                addOption(asset.bank);
+                addOption(asset.lender);
+                if (!asset.account && !asset.broker && !asset.bank && !asset.lender) addOption(asset.name);
+            });
+        };
+
+        const targetDate = new Date(date);
+        const recordEntries = Object.entries(assetRecords || {})
+            .filter(([dateStr]) => new Date(dateStr) <= targetDate)
+            .sort(([a], [b]) => new Date(b) - new Date(a));
+        const sameMonthEntry = recordEntries.find(([dateStr]) => dateStr.substring(0, 7) === date.substring(0, 7));
+        if (sameMonthEntry) addAssetOptions(sameMonthEntry[1]);
+        if (recordEntries[0] && recordEntries[0] !== sameMonthEntry) addAssetOptions(recordEntries[0][1]);
+
+        Object.values(debts || {}).forEach((items) => {
+            (items || []).forEach((debt) => addOption(debt.lender));
+        });
+        accountOptions.forEach(addOption);
+
+        return options;
+    }, [accountOptions, assetRecords, date, debts]);
+
+    const addPledgeStock = () => {
+        setPledgeStocks((rows) => [...rows, { id: Date.now() + rows.length, symbol: '', shares: '', rate: '' }]);
+    };
+
+    const updatePledgeStock = (id, field, value) => {
+        setPledgeStocks((rows) => rows.map((row) => row.id === id ? { ...row, [field]: value } : row));
+    };
+
+    const removePledgeStock = (id) => {
+        setPledgeStocks((rows) => rows.length > 1 ? rows.filter((row) => row.id !== id) : rows);
+    };
 
     const handleSubmit = () => {
         setErrorMsg('');
         if (!date) return setErrorMsg("請選擇日期");
         if (!name.trim()) return setErrorMsg("請輸入負債名稱");
         if (!amount || Number(amount) <= 0) return setErrorMsg("請輸入有效金額");
+        const cleanPledgeStocks = pledgeStocks
+            .map((row) => ({ symbol: row.symbol.trim(), shares: Number(row.shares) || 0, rate: Number(row.rate) || 0 }))
+            .filter((row) => row.symbol);
+        if (category === 'stock_pledge' && cleanPledgeStocks.length === 0) return setErrorMsg("請至少輸入一筆質押股票");
 
         onSave({
             id: Date.now(),
+            category,
             name: name.trim(),
             lender: lender.trim(),
             amount: Number(amount),
+            pledgeStocks: category === 'stock_pledge' ? cleanPledgeStocks : [],
             memo: memo.trim()
         }, date);
     };
 
     return (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-6 animate-[fadeIn_0.2s]">
-            <div className="bg-white w-full max-w-sm rounded-2xl p-6 shadow-2xl relative">
+            <div className="bg-white w-full max-w-md rounded-2xl p-6 shadow-2xl relative">
                 <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"><X size={20} /></button>
                 <h3 className="text-xl font-serif-tc font-bold text-slate-800 mb-4 flex items-center gap-2">
                     <div className="bg-rose-100 p-2 rounded-lg"><ArrowDownRight size={20} className="text-rose-700" /></div> 新增負債
                 </h3>
-                <div className="space-y-4 max-h-[60vh] overflow-y-auto hide-scrollbar px-1">
+                <div className="space-y-4 max-h-[65vh] overflow-y-auto hide-scrollbar px-1">
                     {errorMsg && <div className="bg-rose-50 text-rose-500 text-xs p-3 rounded-xl flex items-center gap-2 font-bold animate-shake"><AlertCircle size={16} />{errorMsg}</div>}
                     <div>
                         <label className="text-xs text-slate-400 font-bold mb-1 block ml-1">日期</label>
                         <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl focus:border-rose-500 focus:ring-1 focus:ring-rose-500 outline-none bg-slate-50 font-inter text-slate-800" />
                     </div>
                     <div>
+                        <label className="text-xs text-slate-400 font-bold mb-1 block ml-1">類別</label>
+                        <select value={category} onChange={(e) => setCategory(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl focus:border-rose-500 focus:ring-1 focus:ring-rose-500 outline-none bg-slate-50 text-sm text-slate-800">
+                            {DEBT_CATEGORIES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+                        </select>
+                    </div>
+                    <div>
                         <label className="text-xs text-slate-400 font-bold mb-1 block ml-1">負債名稱</label>
-                        <input list="history-debts" type="text" value={name} onChange={(e) => setName(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl focus:border-rose-500 focus:ring-1 focus:ring-rose-500 outline-none bg-slate-50 font-serif-tc text-slate-800 placeholder:text-slate-300" placeholder="例如：股票質押借款" />
+                        <input list="history-debts" type="text" value={name} onChange={(e) => setName(e.target.value)} readOnly={category === 'stock_pledge'} className="w-full p-3 border border-slate-200 rounded-xl focus:border-rose-500 focus:ring-1 focus:ring-rose-500 outline-none bg-slate-50 font-serif-tc text-slate-800 placeholder:text-slate-300 read-only:text-slate-500 read-only:cursor-not-allowed" placeholder="例如：股票質押借款" />
                         <datalist id="history-debts">
                             {debtNames.map((item) => <option key={item} value={item} />)}
                         </datalist>
                     </div>
                     <div>
                         <label className="text-xs text-slate-400 font-bold mb-1 block ml-1">機構 / 帳戶</label>
-                        <input type="text" value={lender} onChange={(e) => setLender(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl focus:border-rose-500 focus:ring-1 focus:ring-rose-500 outline-none bg-slate-50 font-serif-tc text-slate-800 placeholder:text-slate-300" placeholder="例如：國泰證券 / 永豐金" />
+                        <select value="" onChange={(e) => { if (e.target.value) setLender(e.target.value); }} className="w-full p-3 border border-slate-200 rounded-xl focus:border-rose-500 focus:ring-1 focus:ring-rose-500 outline-none bg-slate-50 text-sm text-slate-800 mb-2">
+                            <option value="">{selectableAccountOptions.length > 0 ? '從資產/歷史紀錄選擇' : '目前沒有可選紀錄，請自行輸入'}</option>
+                            {selectableAccountOptions.map((item) => <option key={item} value={item}>{item}</option>)}
+                        </select>
+                        <input type="text" value={lender} onChange={(e) => setLender(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl focus:border-rose-500 focus:ring-1 focus:ring-rose-500 outline-none bg-white font-serif-tc text-slate-800 placeholder:text-slate-300" placeholder="例如：國泰證券 / 永豐金" />
+                        <p className="text-[10px] text-slate-400 mt-1 ml-1">會優先列出負債日期當月或之前最近一次資產紀錄中的帳戶，也可以自行輸入。</p>
                     </div>
                     <div>
                         <label className="text-xs text-slate-400 font-bold mb-1 block ml-1">金額 (TWD)</label>
                         <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl focus:border-rose-500 focus:ring-1 focus:ring-rose-500 outline-none bg-slate-50 text-sm font-inter text-right placeholder:text-slate-300" placeholder="0" />
                     </div>
+                    {category === 'stock_pledge' && (
+                        <div className="bg-rose-50/60 border border-rose-100 rounded-2xl p-3">
+                            <div className="flex items-center justify-between mb-2">
+                                <label className="text-xs text-rose-500 font-bold block ml-1">質押股票與利率</label>
+                                <span className="text-[10px] text-slate-400">利率請輸入 % 數</span>
+                            </div>
+                            <div className="space-y-2">
+                                {pledgeStocks.map((row, index) => (
+                                    <div key={row.id} className="grid grid-cols-[1fr_74px_82px_76px] gap-2 items-end">
+                                        <div>
+                                            {index === 0 && <label className="text-[10px] text-slate-400 font-bold mb-1 block">股票代號 / 名稱</label>}
+                                            <input type="text" value={row.symbol} onChange={(e) => updatePledgeStock(row.id, 'symbol', e.target.value)} className="w-full p-2.5 border border-rose-100 rounded-xl focus:border-rose-500 outline-none bg-white text-sm font-inter text-slate-800 placeholder:text-slate-300" placeholder="0050 / 台積電" />
+                                        </div>
+                                        <div>
+                                            {index === 0 && <label className="text-[10px] text-slate-400 font-bold mb-1 block">股數</label>}
+                                            <input type="number" step="0.001" value={row.shares} onChange={(e) => updatePledgeStock(row.id, 'shares', e.target.value)} className="w-full p-2.5 border border-rose-100 rounded-xl focus:border-rose-500 outline-none bg-white text-sm font-inter text-right placeholder:text-slate-300" placeholder="0" />
+                                        </div>
+                                        <div>
+                                            {index === 0 && <label className="text-[10px] text-slate-400 font-bold mb-1 block">利率 %</label>}
+                                            <input type="number" step="0.01" value={row.rate} onChange={(e) => updatePledgeStock(row.id, 'rate', e.target.value)} className="w-full p-2.5 border border-rose-100 rounded-xl focus:border-rose-500 outline-none bg-white text-sm font-inter text-right placeholder:text-slate-300" placeholder="2.5" />
+                                        </div>
+                                        <div className="flex gap-1">
+                                            <button type="button" onClick={addPledgeStock} className="flex-1 h-10 rounded-xl bg-white text-rose-500 hover:bg-rose-100 border border-rose-100 transition-colors flex items-center justify-center" title="新增股票"><Plus size={14} /></button>
+                                            <button type="button" onClick={() => removePledgeStock(row.id)} disabled={pledgeStocks.length === 1} className="flex-1 h-10 rounded-xl bg-white text-slate-400 hover:text-rose-500 hover:bg-rose-100 border border-rose-100 disabled:text-slate-200 disabled:bg-slate-50 transition-colors flex items-center justify-center" title="刪除此列"><Trash2 size={14} /></button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
                     <div>
                         <label className="text-xs text-slate-400 font-bold mb-1 block ml-1">備註</label>
                         <input type="text" value={memo} onChange={(e) => setMemo(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl focus:border-rose-500 focus:ring-1 focus:ring-rose-500 outline-none bg-slate-50 text-sm font-serif-tc text-slate-800 placeholder:text-slate-300" placeholder="例如：0050 質押、年利率 3.5%" />
@@ -2737,30 +2864,6 @@ const DetailView = ({ monthKey, data, onBack, onUpdateData, assetNames, isPrivac
 
                 {activeTab === 'debt' && (
                     <div className="space-y-4 animate-[fadeIn_0.2s]">
-                        <div className="bg-slate-800 text-white rounded-xl p-4 shadow-sm">
-                            <div className="flex items-center justify-between mb-3">
-                                <div>
-                                    <div className="text-[10px] text-slate-400 uppercase tracking-wider">本月負債異動</div>
-                                    <div className="text-lg font-bold font-inter">
-                                        {debtEventStats.principal >= 0 ? '+' : ''}{formatMoney(debtEventStats.principal)}
-                                    </div>
-                                </div>
-                                <button onClick={() => setShowDebtEventModal(true)} className="px-3 py-2 bg-white/10 hover:bg-white/15 rounded-lg text-xs font-bold transition-colors flex items-center gap-1">
-                                    <Plus size={14} /> 新增異動
-                                </button>
-                            </div>
-                            <div className="grid grid-cols-2 gap-2 text-xs">
-                                <div className="bg-white/5 rounded-lg p-2">
-                                    <div className="text-slate-400 mb-0.5">利息</div>
-                                    <div className="font-inter text-rose-300">-{formatMoney(debtEventStats.interest)}</div>
-                                </div>
-                                <div className="bg-white/5 rounded-lg p-2">
-                                    <div className="text-slate-400 mb-0.5">手續費</div>
-                                    <div className="font-inter text-rose-300">-{formatMoney(debtEventStats.fees)}</div>
-                                </div>
-                            </div>
-                        </div>
-
                         <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
                             <div className="px-4 py-3 border-b border-slate-100 flex justify-between items-center">
                                 <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">負債快照</span>
@@ -2774,6 +2877,7 @@ const DetailView = ({ monthKey, data, onBack, onUpdateData, assetNames, isPrivac
                                                 <div className="flex-1"><label className="text-[10px] text-slate-400 font-bold mb-1 block">名稱</label><input type="text" value={item.name || ''} onChange={(e) => handleDebtChange(idx, 'name', e.target.value)} className="w-full p-2 border border-slate-200 rounded-lg focus:border-rose-500 outline-none bg-white text-sm font-serif-tc" placeholder="負債名稱" /></div>
                                                 <div className="flex-1"><label className="text-[10px] text-slate-400 font-bold mb-1 block">機構</label><input type="text" value={item.lender || ''} onChange={(e) => handleDebtChange(idx, 'lender', e.target.value)} className="w-full p-2 border border-slate-200 rounded-lg focus:border-rose-500 outline-none bg-white text-sm font-serif-tc" placeholder="機構 / 帳戶" /></div>
                                             </div>
+                                            <div><label className="text-[10px] text-slate-400 font-bold mb-1 block">類別</label><select value={item.category || 'other'} onChange={(e) => handleDebtChange(idx, 'category', e.target.value)} className="w-full p-2 border border-slate-200 rounded-lg focus:border-rose-500 outline-none bg-white text-sm"><option value="other">其他</option>{DEBT_CATEGORIES.filter((category) => category.value !== 'other').map((category) => <option key={category.value} value={category.value}>{category.label}</option>)}</select></div>
                                             <div className="flex gap-2">
                                                 <div className="flex-1"><label className="text-[10px] text-slate-400 font-bold mb-1 block">金額</label><input type="number" value={item.amount || ''} onChange={(e) => handleDebtChange(idx, 'amount', Number(e.target.value))} className="w-full p-2 border border-slate-200 rounded-lg focus:border-rose-500 outline-none bg-white text-sm font-inter text-right" placeholder="0" /></div>
                                             </div>
@@ -2785,9 +2889,19 @@ const DetailView = ({ monthKey, data, onBack, onUpdateData, assetNames, isPrivac
                                             <div className="flex flex-col gap-1">
                                                 <div className="flex items-center gap-2">
                                                     <span className="font-serif-tc font-bold text-slate-700">{item.name}</span>
+                                                    {item.category && <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-50 text-rose-500 font-bold">{getDebtCategoryLabel(item.category)}</span>}
                                                     {item.memo && <div className="flex items-center gap-1 px-2 py-0.5 bg-slate-100 rounded text-[10px] text-slate-500 max-w-[120px] truncate"><StickyNote size={10} /><span className="truncate">{item.memo}</span></div>}
                                                 </div>
                                                 <span className="text-xs text-slate-400 font-inter mt-0.5 flex items-center gap-1">{item.lender && <><Building2 size={10} /> {item.lender}</>}</span>
+                                                {item.pledgeStocks?.length > 0 && (
+                                                    <div className="flex flex-wrap gap-1 mt-1">
+                                                        {item.pledgeStocks.map((stock, stockIdx) => (
+                                                            <span key={`${stock.symbol}-${stockIdx}`} className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 font-inter">
+                                                                {stock.symbol}{stock.shares ? ` · ${formatMoneyByMarket(stock.shares, 'US')} 股` : ''}{stock.rate ? ` · ${stock.rate}%` : ''}
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                )}
                                             </div>
                                             <span className={`font-inter font-medium text-rose-500 ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>{isPrivacyMode ? '****' : `-${formatMoney(item.amount)}`}</span>
                                         </div>
@@ -2798,8 +2912,13 @@ const DetailView = ({ monthKey, data, onBack, onUpdateData, assetNames, isPrivac
 
                         <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
                             <div className="px-4 py-3 border-b border-slate-100 flex justify-between items-center">
-                                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">本月異動明細</span>
-                                <span className="text-[10px] text-slate-400">{currentDebtEvents.length} 筆</span>
+                                <div>
+                                    <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">本月異動明細</span>
+                                    <span className="text-[10px] text-slate-400 ml-2">{currentDebtEvents.length} 筆</span>
+                                </div>
+                                <button onClick={() => setShowDebtEventModal(true)} className="px-3 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-bold text-slate-600 transition-colors flex items-center gap-1">
+                                    <Plus size={14} /> 新增異動
+                                </button>
                             </div>
                             {currentDebtEvents.length > 0 ? currentDebtEvents.map((item) => {
                                 const impact = getDebtEventImpact(item);
@@ -3836,10 +3955,10 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
                                             <div key={holding.id} className="bg-white rounded-xl border border-slate-100 p-3 flex justify-between gap-3">
                                                 <div className="min-w-0">
                                                     <div className="font-bold text-sm text-slate-700 truncate">{holding.name || holding.symbol}</div>
-                                                    <div className="text-[10px] text-slate-400 font-inter">{getStockMarketLabel(holding.market || 'TW')} · {formatMoney(holding.marketPrice || 0)} x {formatMoney(holding.shares || 0)} 股</div>
+                                                    <div className="text-[10px] text-slate-400 font-inter">{getStockMarketLabel(holding.market || 'TW')} · {formatMoneyByMarket(holding.marketPrice || 0, holding.market || 'TW')} x {formatMoneyByMarket(holding.shares || 0, holding.market || 'TW')} 股</div>
                                                 </div>
                                                 <div className="text-right">
-                                                    <div className="font-inter font-bold text-teal-600">{formatMoney(holding.marketValue || 0)}</div>
+                                                    <div className="font-inter font-bold text-teal-600">{formatMoneyByMarket(holding.marketValue || 0, holding.market || 'TW')}</div>
                                                     <div className="text-[10px] text-slate-400">目前市值</div>
                                                 </div>
                                             </div>
@@ -4059,8 +4178,8 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
                                         <div className="text-xs text-slate-400">{holding.shares ? `${holding.shares} 股 · ` : ''}{holding.account || holding.market}</div>
                                     </div>
                                     <div className="text-right">
-                                        <div className="font-inter font-bold text-teal-600">{formatMoney(holding.marketValue)}</div>
-                                        <div className={`text-[10px] font-inter ${(holding.marketValue - holding.costAmount) >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>{holding.costAmount ? `${(holding.marketValue - holding.costAmount) >= 0 ? '+' : ''}${formatMoney(holding.marketValue - holding.costAmount)}` : '未填成本'}</div>
+                                        <div className="font-inter font-bold text-teal-600">{formatMoneyByMarket(holding.marketValue, holding.market || 'TW')}</div>
+                                        <div className={`text-[10px] font-inter ${(holding.marketValue - holding.costAmount) >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>{holding.costAmount ? `${(holding.marketValue - holding.costAmount) >= 0 ? '+' : ''}${formatMoneyByMarket(holding.marketValue - holding.costAmount, holding.market || 'TW')}` : '未填成本'}</div>
                                     </div>
                                 </div>
                             ))}
@@ -4323,6 +4442,31 @@ const AuthenticatedApp = () => {
         return Array.from(names).sort();
     }, [data.records]);
 
+    const debtAccountOptions = useMemo(() => {
+        const options = new Set();
+        Object.values(data.records || {}).forEach((assets) => {
+            (assets || []).forEach((asset) => {
+                if (asset.account) options.add(asset.account);
+                if (asset.name) options.add(asset.name);
+            });
+        });
+
+        const recordDates = Object.keys(data.records || {}).sort();
+        const latestRecordDate = recordDates[recordDates.length - 1];
+        (data.records?.[latestRecordDate] || []).forEach((asset) => {
+            if (asset.account) options.add(asset.account);
+            if (asset.name) options.add(asset.name);
+        });
+
+        Object.values(data.debts || {}).forEach((debts) => {
+            (debts || []).forEach((debt) => {
+                if (debt.lender) options.add(debt.lender);
+            });
+        });
+
+        return Array.from(options).sort();
+    }, [data.records, data.debts]);
+
     const allDebtNames = useMemo(() => {
         const names = new Set();
         Object.values(data.debts || {}).forEach(debts => debts.forEach(debt => names.add(debt.name)));
@@ -4350,6 +4494,36 @@ const AuthenticatedApp = () => {
 
     const getYearEndDebt = (year, sourceData) => {
         return getLatestSnapshotTotal(sourceData.debts, `${year}-12-31`, (debts) => getDebtTotal(debts));
+    };
+
+    const getAssetRecordDatesInYear = (year, sourceData) => {
+        return Object.entries(sourceData.records || {})
+            .filter(([dateStr, assets]) => new Date(dateStr).getFullYear() === year && Array.isArray(assets) && assets.length > 0)
+            .map(([dateStr]) => dateStr)
+            .sort();
+    };
+
+    const getNetAssetsAtDate = (dateStr, sourceData) => {
+        const grossAssets = (sourceData.records?.[dateStr] || []).reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+        const debts = getLatestSnapshotTotal(sourceData.debts, dateStr, (items) => getDebtTotal(items));
+        return grossAssets - debts;
+    };
+
+    const getYearAssetGrowthRange = (year, sourceData) => {
+        const dates = getAssetRecordDatesInYear(year, sourceData);
+        if (dates.length === 0) {
+            return { startDate: null, endDate: null, startAssets: 0, endAssets: 0, amount: 0, percentage: 0, ratio: 0 };
+        }
+
+        const startDate = dates[0];
+        const endDate = dates[dates.length - 1];
+        const startAssets = getNetAssetsAtDate(startDate, sourceData);
+        const endAssets = getNetAssetsAtDate(endDate, sourceData);
+        const amount = endAssets - startAssets;
+        const percentage = startAssets > 0 ? amount / startAssets : 0;
+        const ratio = startAssets > 0 ? endAssets / startAssets : 0;
+
+        return { startDate, endDate, startAssets, endAssets, amount, percentage, ratio };
     };
 
 
@@ -4432,13 +4606,17 @@ const AuthenticatedApp = () => {
             if (!monthlyStats[monthIdx].latestDate) monthlyStats[monthIdx].latestDate = latest.dateStr;
         });
 
-        let lastKnownAsset = getYearEndAssets(currentYear - 1, data);
-        let lastKnownDebt = getYearEndDebt(currentYear - 1, data);
         for (let i = 0; i < 12; i++) {
-            if (monthlyStats[i].hasRecord) lastKnownAsset = monthlyStats[i].grossAssets;
-            else monthlyStats[i].grossAssets = lastKnownAsset;
-            if (monthDebtMap.has(i)) lastKnownDebt = monthlyStats[i].debts;
-            else monthlyStats[i].debts = lastKnownDebt;
+            if (!monthlyStats[i].hasRecord) {
+                monthlyStats[i].grossAssets = 0;
+                monthlyStats[i].debts = 0;
+                monthlyStats[i].assets = 0;
+                continue;
+            }
+
+            const monthEndDay = new Date(currentYear, i + 1, 0).getDate();
+            const monthEndKey = `${currentYear}-${String(i + 1).padStart(2, '0')}-${String(monthEndDay).padStart(2, '0')}`;
+            monthlyStats[i].debts = getLatestSnapshotTotal(data.debts, monthEndKey, (debts) => getDebtTotal(debts));
             monthlyStats[i].assets = monthlyStats[i].grossAssets - monthlyStats[i].debts;
             monthlyStats[i].allRecords = monthlyStats[i].allRecords.map((record) => ({
                 ...record,
@@ -4483,17 +4661,18 @@ const AuthenticatedApp = () => {
             const currentAsset = monthlyStats[i].assets;
             const currentIncome = monthlyStats[i].income;
             const cost = monthlyStats[i].cost || 0;
+            const hasAssetRecord = monthlyStats[i].hasRecord;
 
             // 計算餘額 (原本的邏輯)
-            monthlyStats[i].balance = (currentAsset - prevAsset) - cost;
+            monthlyStats[i].balance = hasAssetRecord ? (currentAsset - prevAsset) - cost : -cost;
 
             // 計算分析指標 (新增)
             const incomeDiff = currentIncome - prevIncome;
-            const assetDiff = currentAsset - prevAsset;
+            const assetDiff = hasAssetRecord ? currentAsset - prevAsset : 0;
             const compositeScore = incomeDiff + assetDiff;
             monthlyStats[i].analysis = { incomeDiff, assetDiff, compositeScore };
 
-            prevAsset = currentAsset;
+            if (hasAssetRecord) prevAsset = currentAsset;
             prevIncome = currentIncome; // 更新比較基準為本月收入
         }
 
@@ -4546,13 +4725,14 @@ const AuthenticatedApp = () => {
         const totalAccumulatedIncome = Object.values(data.incomes || {}).reduce((sum, item) => sum + (item.totalAmount || 0), 0);
         const incomeGrowthRate = totalAccumulatedIncome > 0 ? (thisYearIncome / totalAccumulatedIncome) : 0;
 
-        // Real Asset Stats (Restored for new requirement)
-        const thisYearAssets = getYearEndAssets(currentYear, data) - getYearEndDebt(currentYear, data);
-        const lastYearAssets = getYearEndAssets(currentYear - 1, data) - getYearEndDebt(currentYear - 1, data);
+        // Real Asset Stats use only months that actually have asset records.
+        const growthRange = getYearAssetGrowthRange(currentYear, data);
+        const thisYearAssets = growthRange.endAssets;
+        const lastYearAssets = growthRange.startAssets;
         const thisYearDebt = getYearEndDebt(currentYear, data);
-        const realAssetGrowthAmount = thisYearAssets - lastYearAssets;
-        const realAssetGrowthPercentage = lastYearAssets > 0 ? (realAssetGrowthAmount / lastYearAssets) : 0;
-        const assetGrowthRatio = lastYearAssets > 0 ? (thisYearAssets / lastYearAssets) : 0;
+        const realAssetGrowthAmount = growthRange.amount;
+        const realAssetGrowthPercentage = growthRange.percentage;
+        const assetGrowthRatio = growthRange.ratio;
 
         return {
             totalIncome: thisYearIncome,
@@ -4563,6 +4743,8 @@ const AuthenticatedApp = () => {
             totalAccumulatedIncome,
             thisYearAssets,
             lastYearAssets,
+            assetGrowthStartDate: growthRange.startDate,
+            assetGrowthEndDate: growthRange.endDate,
             thisYearDebt,
             realAssetGrowthAmount,
             realAssetGrowthPercentage,
@@ -4941,7 +5123,8 @@ const AuthenticatedApp = () => {
     };
 
     const handleSaveNewDebt = (newDebt, dateKey) => {
-        const existingDebts = data.debts?.[dateKey] || [];
+        const exactDateDebts = data.debts?.[dateKey];
+        const existingDebts = exactDateDebts || getLatestSnapshotItems(data.debts, dateKey);
         const newData = {
             ...data,
             debts: { ...data.debts, [dateKey]: [...existingDebts, newDebt] }
@@ -5026,7 +5209,7 @@ const AuthenticatedApp = () => {
             {showYearSelector && <YearSelectorModal currentYear={currentYear} availableYears={availableYears} yearlyTrendData={yearlyTrendData} onSelect={(year) => { setCurrentYear(year); setShowYearSelector(false); }} onClose={() => setShowYearSelector(false)} />}
             {showAddIncomeModal && <AddIncomeModal onClose={() => setShowAddIncomeModal(false)} onSave={handleSaveNewIncome} assetNames={allAssetNames} exchangeRateCache={exchangeRateCache} />}
             {showAddAssetModal && <AddAssetModal onClose={() => setShowAddAssetModal(false)} onSave={handleSaveNewAsset} historyRecords={data.records} exchangeRateCache={exchangeRateCache} />}
-            {showAddDebtModal && <AddDebtModal onClose={() => setShowAddDebtModal(false)} onSave={handleSaveNewDebt} debtNames={allDebtNames} />}
+            {showAddDebtModal && <AddDebtModal onClose={() => setShowAddDebtModal(false)} onSave={handleSaveNewDebt} debtNames={allDebtNames} accountOptions={debtAccountOptions} assetRecords={data.records} debts={data.debts} />}
 
             {showStatementModal && <StatementModal data={data} onClose={() => setShowStatementModal(false)} />}
             {showFIREModal && <FIREModal fireStats={fireStats} yearlyStats={fireYearlyStats} onRateChange={handleFireRateChange} onClose={() => setShowFIREModal(false)} />}
@@ -5195,9 +5378,9 @@ const AuthenticatedApp = () => {
                                 {!isPrivacyMode && (
                                     <div className="absolute bottom-full left-0 mb-2 w-48 bg-slate-800 text-white text-xs p-3 rounded-lg opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none shadow-xl z-20">
                                         <div className="font-bold border-b border-slate-600 pb-1 mb-1">計算明細</div>
-                                        <div className="flex justify-between mb-1"><span className="text-slate-400">今年資產:</span><span className="font-inter">{formatWan(yearStats.thisYearAssets)}</span></div>
-                                        <div className="flex justify-between mb-1"><span className="text-slate-400">去年資產:</span><span className="font-inter">{formatWan(yearStats.lastYearAssets)}</span></div>
-                                        <div className="text-[10px] text-slate-400 mt-2 pt-2 border-t border-slate-600">公式: 今年度資產 - 去年度資產</div>
+                                        <div className="flex justify-between mb-1"><span className="text-slate-400">期末資產:</span><span className="font-inter">{formatWan(yearStats.thisYearAssets)}</span></div>
+                                        <div className="flex justify-between mb-1"><span className="text-slate-400">期初資產:</span><span className="font-inter">{formatWan(yearStats.lastYearAssets)}</span></div>
+                                        <div className="text-[10px] text-slate-400 mt-2 pt-2 border-t border-slate-600">公式: {yearStats.assetGrowthStartDate || '尚無紀錄'} 至 {yearStats.assetGrowthEndDate || '尚無紀錄'} 的資產淨值差額</div>
                                     </div>
                                 )}
                                 <Footprints className="absolute -bottom-3 -right-2 text-amber-100 opacity-40 rotate-[-15deg]" size={50} />
@@ -5212,9 +5395,9 @@ const AuthenticatedApp = () => {
                                 {!isPrivacyMode && (
                                     <div className="absolute bottom-full right-0 mb-2 w-48 bg-slate-800 text-white text-xs p-3 rounded-lg opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none shadow-xl z-20">
                                         <div className="font-bold border-b border-slate-600 pb-1 mb-1">計算明細</div>
-                                        <div className="flex justify-between mb-1"><span className="text-slate-400">今年資產:</span><span className="font-inter">{formatWan(yearStats.thisYearAssets)}</span></div>
-                                        <div className="flex justify-between mb-1"><span className="text-slate-400">去年資產:</span><span className="font-inter">{formatWan(yearStats.lastYearAssets)}</span></div>
-                                        <div className="text-[10px] text-slate-400 mt-2 pt-2 border-t border-slate-600">公式: 今年度資產 / 去年度資產</div>
+                                        <div className="flex justify-between mb-1"><span className="text-slate-400">期末資產:</span><span className="font-inter">{formatWan(yearStats.thisYearAssets)}</span></div>
+                                        <div className="flex justify-between mb-1"><span className="text-slate-400">期初資產:</span><span className="font-inter">{formatWan(yearStats.lastYearAssets)}</span></div>
+                                        <div className="text-[10px] text-slate-400 mt-2 pt-2 border-t border-slate-600">公式: 期末資產 / 期初資產</div>
                                     </div>
                                 )}
                                 <Cat className="absolute -bottom-2 -left-2 text-amber-100 opacity-40 rotate-[15deg] scale-x-[-1]" size={50} />

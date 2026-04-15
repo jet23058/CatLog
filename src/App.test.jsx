@@ -328,6 +328,105 @@ describe('App Integration Tests', () => {
         expect(screen.getByText('已新增一筆負債至 2026-04-10')).toBeInTheDocument();
     });
 
+    test('Add Debt flow carries latest snapshot into a later debt date', async () => {
+        const user = userEvent.setup();
+        render(<App />);
+        await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
+
+        await user.click(document.querySelector('button.fixed.bottom-8.right-6'));
+        await waitFor(() => expect(screen.getByText('新增紀錄')).toBeInTheDocument());
+        await user.click(screen.getByText('新增負債'));
+        await waitFor(() => expect(screen.getByText('新增負債', { selector: 'h3' })).toBeInTheDocument());
+        fireEvent.change(document.querySelector('input[type="date"]'), { target: { value: '2026-04-09' } });
+        await user.type(screen.getByPlaceholderText('例如：股票質押借款'), '質押借貸');
+        await user.type(screen.getByPlaceholderText('例如：國泰證券 / 永豐金'), '國泰證券');
+        await user.type(screen.getByPlaceholderText('0'), '90000');
+        await user.click(screen.getByText('確認新增'));
+        await waitFor(() => expect(screen.getByText('已新增一筆負債至 2026-04-09')).toBeInTheDocument());
+        await user.click(screen.getByText('知道了'));
+
+        await user.click(document.querySelector('button.fixed.bottom-8.right-6'));
+        await waitFor(() => expect(screen.getByText('新增紀錄')).toBeInTheDocument());
+        await user.click(screen.getByText('新增負債'));
+        await waitFor(() => expect(screen.getByText('新增負債', { selector: 'h3' })).toBeInTheDocument());
+        fireEvent.change(document.querySelector('input[type="date"]'), { target: { value: '2026-04-15' } });
+        await user.type(screen.getByPlaceholderText('例如：股票質押借款'), '質押借貸');
+        await user.type(screen.getByPlaceholderText('例如：國泰證券 / 永豐金'), '國泰證券');
+        await user.type(screen.getByPlaceholderText('0'), '150000');
+        await user.click(screen.getByText('確認新增'));
+
+        await waitFor(() => expect(screen.getByText('已新增一筆負債至 2026-04-15')).toBeInTheDocument());
+        await user.click(screen.getByText('知道了'));
+        await waitFor(() => expect(screen.getByText('-24 萬')).toBeInTheDocument());
+    });
+
+    test('Add Debt flow supports stock pledge category details', async () => {
+        const user = userEvent.setup();
+        const mockData = {
+            records: {
+                '2026-03-31': [{ id: 'asset-account', name: '永豐證券', account: '永豐證券', amount: 300000, type: 'stock' }]
+            },
+            memos: {},
+            incomes: {},
+            expenses: {},
+            debts: {},
+            debtEvents: {},
+            fireSettings: { withdrawalRate: 4 }
+        };
+
+        getDocs.mockResolvedValue(createMockSnapshot(mockData));
+        render(<App />);
+        await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
+
+        await user.click(document.querySelector('button.fixed.bottom-8.right-6'));
+        await waitFor(() => expect(screen.getByText('新增紀錄')).toBeInTheDocument());
+        await user.click(screen.getByText('新增負債'));
+        await waitFor(() => expect(screen.getByText('新增負債', { selector: 'h3' })).toBeInTheDocument());
+
+        await user.selectOptions(screen.getAllByRole('combobox')[0], 'stock_pledge');
+        await waitFor(() => expect(screen.getByPlaceholderText('例如：股票質押借款')).toHaveAttribute('readonly'));
+        expect(screen.getByPlaceholderText('例如：股票質押借款')).toHaveValue('股票質押');
+        fireEvent.change(document.querySelector('input[type="date"]'), { target: { value: '2026-04-15' } });
+        await user.type(screen.getByPlaceholderText('例如：國泰證券 / 永豐金'), '永豐證券');
+        await user.type(screen.getAllByPlaceholderText('0')[0], '90000');
+        await user.type(screen.getByPlaceholderText('0050 / 台積電'), '0050');
+        await user.type(screen.getAllByPlaceholderText('0')[1], '2');
+        await user.type(screen.getByPlaceholderText('2.5'), '2.75');
+        await user.click(screen.getByText('確認新增'));
+
+        await waitFor(() => expect(screen.getByText('已新增一筆負債至 2026-04-15')).toBeInTheDocument());
+        await user.click(screen.getByText('知道了'));
+        await user.click(screen.getByText('04'));
+        await waitFor(() => expect(screen.getByText('淨資產')).toBeInTheDocument());
+        await user.click(screen.getByText('總負債'));
+        expect(screen.getAllByText('股票質押').length).toBeGreaterThan(0);
+        expect(screen.getByText('0050 · 2.00 股 · 2.75%')).toBeInTheDocument();
+    });
+
+    test('Dashboard asset growth uses first and latest recorded asset dates only', async () => {
+        const currentYear = new Date().getFullYear();
+        const mockData = {
+            records: {
+                [`${currentYear}-01-31`]: [{ id: 'asset-jan', name: '資產', amount: 100000, type: 'stock' }],
+                [`${currentYear}-03-31`]: [{ id: 'asset-mar', name: '資產', amount: 150000, type: 'stock' }]
+            },
+            memos: {},
+            incomes: {},
+            expenses: {},
+            debts: { [`${currentYear}-02-15`]: [{ id: 'debt-feb', name: '質押借貸', amount: 20000 }] },
+            debtEvents: {},
+            fireSettings: { withdrawalRate: 4 }
+        };
+
+        getDocs.mockResolvedValue(createMockSnapshot(mockData));
+        render(<App />);
+        await waitFor(() => expect(screen.getByText('年度資產淨值')).toBeInTheDocument());
+
+        const growthCard = screen.getByText(/年度資產增長金額/).closest('div');
+        expect(within(growthCard).getByText('+3 萬')).toBeInTheDocument();
+        expect(within(growthCard).queryByText('+13 萬')).not.toBeInTheDocument();
+    });
+
     test('Detail View Interaction', async () => {
         const user = userEvent.setup();
         const currentYear = new Date().getFullYear();
@@ -386,7 +485,8 @@ describe('App Integration Tests', () => {
         const debtTab = screen.getByText('總負債');
         await user.click(debtTab);
         await waitFor(() => expect(screen.getByText('股票質押借款')).toBeInTheDocument());
-        expect(screen.getByText('本月負債異動')).toBeInTheDocument();
+        expect(screen.getByText('本月異動明細')).toBeInTheDocument();
+        expect(screen.getByText('新增異動')).toBeInTheDocument();
         expect(screen.getByText('0050 質押')).toBeInTheDocument();
         expect(screen.getByText('0050 x 2')).toBeInTheDocument();
         expect(screen.getByText('0052 x 2')).toBeInTheDocument();
@@ -868,7 +968,7 @@ describe('App Integration Tests', () => {
                         version: 2,
                         note: '美股月底',
                         importedAt: '2025-11-30T11:00:00.000Z',
-                        holdings: [{ id: 'us-holding', month: '2025-11', market: 'US', symbol: '', name: 'NVDA', shares: 5, marketPrice: 200, marketValue: 1000 }]
+                        holdings: [{ id: 'us-holding', month: '2025-11', market: 'US', symbol: '', name: 'NVDA', shares: 5.125, marketPrice: 200.25, marketValue: 1026.28 }]
                     }
                 ]
             },
@@ -893,6 +993,8 @@ describe('App Integration Tests', () => {
         await user.click(screen.getAllByRole('button', { name: /美股/ })[0]);
         expect(screen.getByText(/美股 · 1 版/)).toBeInTheDocument();
         expect(screen.getAllByText('NVDA').length).toBeGreaterThan(0);
+        expect(screen.getByText(/200\.25 x 5\.13 股/)).toBeInTheDocument();
+        expect(screen.getAllByText('1,026.28').length).toBeGreaterThan(0);
         expect(screen.queryByText('台積電')).not.toBeInTheDocument();
     });
 
