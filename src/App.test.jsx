@@ -343,6 +343,36 @@ describe('App Integration Tests', () => {
         ]));
     });
 
+    test('Add Asset flow skips empty records when importing previous assets', async () => {
+        const user = userEvent.setup();
+        const mockData = {
+            records: {
+                '2026-03-31': [
+                    { id: 'asset-one', name: '台積電', amount: 100000, type: 'fixed', currency: 'TWD', originalAmount: 100000, exchangeRate: 1 }
+                ],
+                '2026-04-15': []
+            },
+            memos: {},
+            incomes: {},
+            expenses: {},
+            debts: {},
+            debtEvents: {},
+            fireSettings: { withdrawalRate: 4 }
+        };
+
+        getDocs.mockResolvedValue(createMockSnapshot(mockData));
+        render(<App />);
+        await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
+
+        await user.click(document.querySelector('button.fixed.bottom-8.right-6'));
+        await waitFor(() => expect(screen.getByText('新增紀錄')).toBeInTheDocument());
+        await user.click(screen.getByText('新增資產'));
+
+        await waitFor(() => expect(screen.getByText('從上次資產紀錄帶入')).toBeInTheDocument());
+        expect(screen.getByText(/2026-03-31 · 1 筆/)).toBeInTheDocument();
+        expect(screen.queryByText(/2026-04-15 · 0 筆/)).not.toBeInTheDocument();
+    });
+
     test('Add Income flow', async () => {
         const user = userEvent.setup();
         render(<App />);

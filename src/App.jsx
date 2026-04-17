@@ -2042,7 +2042,7 @@ const AddAssetModal = ({ onClose, onSave, historyRecords, exchangeRateCache }) =
         if (!date) return [];
         const currentTimestamp = new Date(date).getTime();
         const dates = Object.keys(historyRecords)
-            .filter(d => new Date(d).getTime() < currentTimestamp) // 找出比選擇日期更早的日期
+            .filter(d => new Date(d).getTime() < currentTimestamp && (historyRecords[d] || []).length > 0) // 找出比選擇日期更早且有資產的日期
             .sort((a, b) => new Date(b) - new Date(a)); // 降序排列，取最近的
 
         if (dates.length === 0) return { date: null, assets: [] };
