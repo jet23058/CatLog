@@ -518,6 +518,43 @@ describe('App Integration Tests', () => {
         expect(savedContent).toContain('150000');
     });
 
+    test('carries a backfilled earlier debt into later snapshots', async () => {
+        const user = userEvent.setup();
+        const cloudData = {
+            records: { '2026-04-30': [{ id: 'asset', name: '資產', amount: 400000, type: 'stock' }] },
+            memos: {},
+            incomes: {},
+            expenses: {},
+            debts: { '2026-04-15': [{ id: 'later-debt', name: '質押借貸', lender: '國泰證券', amount: 150000 }] },
+            debtEvents: {},
+            fireSettings: { withdrawalRate: 4 }
+        };
+        const emptySnapshot = { empty: true, docs: [], forEach: (fn) => [].forEach(fn) };
+
+        getDocs
+            .mockResolvedValueOnce(createMockSnapshot(cloudData))
+            .mockResolvedValueOnce(createMockSnapshot(cloudData))
+            .mockResolvedValue(emptySnapshot);
+
+        render(<App />);
+        await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
+
+        await user.click(document.querySelector('button.fixed.bottom-8.right-6'));
+        await waitFor(() => expect(screen.getByText('新增紀錄')).toBeInTheDocument());
+        await user.click(screen.getByText('新增負債'));
+        await waitFor(() => expect(screen.getByText('新增負債', { selector: 'h3' })).toBeInTheDocument());
+        fireEvent.change(document.querySelector('input[type="date"]'), { target: { value: '2026-04-09' } });
+        await user.type(screen.getByPlaceholderText('例如：股票質押借款'), '質押借貸');
+        await user.type(screen.getByPlaceholderText('例如：國泰證券 / 永豐金'), '國泰證券');
+        await user.type(screen.getByPlaceholderText('0'), '90000');
+        await user.click(screen.getByText('確認新增'));
+
+        await waitFor(() => expect(screen.getByText('已新增一筆負債至 2026-04-09')).toBeInTheDocument());
+        const savedData = JSON.parse(setDoc.mock.calls.at(-1)[1].content);
+        expect(savedData.debts['2026-04-09'].map((item) => item.amount)).toEqual([90000]);
+        expect(savedData.debts['2026-04-15'].map((item) => item.amount)).toEqual([150000, 90000]);
+    });
+
     test('Add Debt flow supports stock pledge category details', async () => {
         const user = userEvent.setup();
         const mockData = {

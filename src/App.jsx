@@ -98,6 +98,30 @@ const mergeDebtMaps = (...debtMaps) => {
     return merged;
 };
 
+const addDebtToSnapshot = (snapshot = [], debt) => {
+    const seen = new Set((Array.isArray(snapshot) ? snapshot : []).map(getDebtIdentity));
+    const identity = getDebtIdentity(debt);
+    if (seen.has(identity)) return Array.isArray(snapshot) ? snapshot : [];
+    return [...(Array.isArray(snapshot) ? snapshot : []), debt];
+};
+
+const addDebtAndCarryForward = (debtMap = {}, dateKey, newDebt) => {
+    const nextDebts = { ...debtMap };
+    const exactDateDebts = nextDebts?.[dateKey];
+    const existingDebts = exactDateDebts || getLatestSnapshotItems(nextDebts, dateKey);
+
+    nextDebts[dateKey] = addDebtToSnapshot(existingDebts, newDebt);
+
+    Object.keys(nextDebts)
+        .filter((date) => date > dateKey)
+        .sort()
+        .forEach((date) => {
+            nextDebts[date] = addDebtToSnapshot(nextDebts[date], newDebt);
+        });
+
+    return nextDebts;
+};
+
 // --- 工具函數 ---
 const formatMoney = (val) => new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 0 }).format(val);
 const formatMoneyByMarket = (val, market = 'TW') => new Intl.NumberFormat('zh-TW', {
@@ -5335,11 +5359,9 @@ const AuthenticatedApp = () => {
             const cloudBase = cloudData ? normalizeAppData(cloudData) : null;
             const mergedDebts = mergeDebtMaps(cloudBase?.debts, data.debts);
             const baseData = cloudBase ? { ...data, ...cloudBase, debts: mergedDebts } : { ...data, debts: mergedDebts };
-            const exactDateDebts = mergedDebts?.[dateKey];
-            const existingDebts = exactDateDebts || getLatestSnapshotItems(mergedDebts, dateKey);
             const newData = {
                 ...baseData,
-                debts: { ...mergedDebts, [dateKey]: [...existingDebts, newDebt] }
+                debts: addDebtAndCarryForward(mergedDebts, dateKey, newDebt)
             };
             setData(newData);
             const didSave = await saveToFirestoreChunks(newData);
