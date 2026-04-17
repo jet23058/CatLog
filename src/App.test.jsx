@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
 import App from './App';
 import * as AuthContext from './AuthContext';
-import { getDocs } from 'firebase/firestore';
+import { getDocs, setDoc } from 'firebase/firestore';
 
 // Mock Firebase
 vi.mock('firebase/auth', () => ({
@@ -142,6 +142,84 @@ describe('App Integration Tests', () => {
     test('renders dashboard when authenticated and loads data', async () => {
         render(<App />);
         await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
+    });
+
+    test('local diagnostics reads Firestore chunks without writing', async () => {
+        const user = userEvent.setup();
+        const mockData = {
+            records: { '2026-04-30': [{ id: 'asset', name: '資產', amount: 100000 }] },
+            memos: {},
+            incomes: { '2026-04': { totalAmount: 5000, sources: [{ company: 'Test', amount: 5000 }] } },
+            expenses: {},
+            debts: { '2026-04-15': [{ id: 'debt', name: '股票質押', amount: 90000 }] },
+            debtEvents: {},
+            stockTransactions: [{ id: 'trade', market: 'TW', amount: 1000 }],
+            stockHoldingSnapshots: {},
+            fireSettings: { withdrawalRate: 4 }
+        };
+        const diagnosticDocs = [{ data: () => ({ content: JSON.stringify(mockData) }) }];
+
+        getDocs
+            .mockResolvedValueOnce({ empty: true, docs: [], forEach: (fn) => [].forEach(fn) })
+            .mockResolvedValueOnce({ empty: false, size: 1, docs: diagnosticDocs, forEach: (fn) => diagnosticDocs.forEach(fn) });
+
+        render(<App />);
+        await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
+        await user.click(screen.getByTitle('本機資料診斷'));
+
+        await waitFor(() => expect(screen.getByText('本機資料診斷')).toBeInTheDocument());
+        expect(screen.getByText('test-uid')).toBeInTheDocument();
+        expect(screen.getByText('資產日期 / 筆數')).toBeInTheDocument();
+        expect(screen.getAllByText('1 / 1').length).toBeGreaterThan(0);
+        expect(setDoc).not.toHaveBeenCalled();
+    });
+
+    test('blocks the app when cloud chunks cannot be parsed', async () => {
+        const invalidDocs = [{ data: () => ({ content: '{"records": [' }) }];
+        getDocs.mockResolvedValue({
+            empty: false,
+            size: 1,
+            docs: invalidDocs,
+            forEach: (fn) => invalidDocs.forEach(fn)
+        });
+
+        render(<App />);
+
+        await waitFor(() => expect(screen.getByText('雲端資料讀取失敗')).toBeInTheDocument());
+        expect(screen.getByText(/已暫停所有新增、匯入與同步寫入/)).toBeInTheDocument();
+        expect(setDoc).not.toHaveBeenCalled();
+    });
+
+    test('repairs corrupted cloud chunks from a JSON backup', async () => {
+        const invalidDocs = [{ data: () => ({ content: '{"records": [' }) }];
+        const backupData = {
+            records: { '2026-04-30': [{ id: 'asset', name: '資產', amount: 100000 }] },
+            incomes: {},
+            expenses: {},
+            memos: {},
+            fireSettings: { withdrawalRate: 4 }
+        };
+        const file = new File([JSON.stringify(backupData)], 'backup.json', { type: 'application/json' });
+        file.mockContent = JSON.stringify(backupData);
+        const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+
+        getDocs.mockResolvedValue({
+            empty: false,
+            size: 1,
+            docs: invalidDocs,
+            forEach: (fn) => invalidDocs.forEach(fn)
+        });
+
+        render(<App />);
+
+        await waitFor(() => expect(screen.getByText('雲端資料讀取失敗')).toBeInTheDocument());
+        fireEvent.change(screen.getByLabelText('選擇修復備份 JSON'), { target: { files: [file] } });
+
+        await waitFor(() => expect(screen.getByText('修復完成')).toBeInTheDocument());
+        expect(setDoc).toHaveBeenCalled();
+        expect(screen.queryByText('雲端資料讀取失敗')).not.toBeInTheDocument();
+
+        confirmSpy.mockRestore();
     });
 
     test('opens and closes Add Modal', async () => {

@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, PieChart, Pie, Cell } from 'recharts';
-import { Cat, ChevronLeft, ChevronRight, Plus, Upload, Wallet, TrendingUp, DollarSign, Calendar, X, Save, FileJson, ArrowUpRight, ArrowDownRight, ArrowLeft, ArrowRight, Edit2, Trash2, Info, Check, TrendingDown, RefreshCw, FileText, Mountain, ArrowDown, AlertCircle, Building2, Lock, PieChart as PieChartIcon, Download, StickyNote, ShoppingBag, Filter, ChevronDown, PiggyBank, Activity, Sparkles, LogOut, Coins, ClipboardCheck, LayoutGrid, Package, Box, Footprints, Eye, EyeOff, ScanFace, ShieldCheck, ShieldAlert, Search } from 'lucide-react';
+import { Cat, ChevronLeft, ChevronRight, Plus, Upload, Wallet, TrendingUp, DollarSign, Calendar, X, Save, FileJson, ArrowUpRight, ArrowDownRight, ArrowLeft, ArrowRight, Edit2, Trash2, Info, Check, TrendingDown, RefreshCw, FileText, Mountain, ArrowDown, AlertCircle, AlertTriangle, Building2, Lock, PieChart as PieChartIcon, Download, StickyNote, ShoppingBag, Filter, ChevronDown, PiggyBank, Activity, Sparkles, LogOut, Coins, ClipboardCheck, LayoutGrid, Package, Box, Footprints, Eye, EyeOff, ScanFace, ShieldCheck, ShieldAlert, Search } from 'lucide-react';
 
 // --- CSS 樣式與 Tailwind 設定模擬 ---
 // 原本 index.css 的內容與 tailwind.config.js 的動畫設定整合於此
@@ -4239,12 +4239,15 @@ const AuthenticatedApp = () => {
     const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
     const [data, setData] = useState(INITIAL_DATA);
     const [isDataLoaded, setIsDataLoaded] = useState(false);
+    const [cloudLoadError, setCloudLoadError] = useState('');
     const [isSaving, setIsSaving] = useState(false);
     const [isImporting, setIsImporting] = useState(false);
     const [uploadProgress, setUploadProgress] = useState(0);
     const [isPrivacyMode, setIsPrivacyMode] = useState(() => {
         return localStorage.getItem('isPrivacyMode') === 'true';
     });
+    const [diagnostics, setDiagnostics] = useState({ show: false, loading: false, error: '', result: null });
+    const isLocalDiagnosticEnabled = import.meta.env.DEV;
 
     // --- Biometric Lock State ---
     const [isAppLocked, setIsAppLocked] = useState(false);
@@ -4297,42 +4300,52 @@ const AuthenticatedApp = () => {
 
     // --- Helper Functions for Chunking ---
     // --- Helper Functions for Chunking ---
+    const writeFirestoreChunks = async (userData) => {
+        const jsonString = JSON.stringify(userData);
+        // Reduced chunk size to avoid 1MB limit with multi-byte chars
+        const CHUNK_SIZE = 250000;
+        const totalChunks = Math.ceil(jsonString.length / CHUNK_SIZE);
+
+        const chunksRef = collection(db, "users", user.uid, "chunks");
+
+        // 1. Write new chunks sequentially for progress updates
+        for (let i = 0; i < totalChunks; i++) {
+            const chunkContent = jsonString.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
+            const docRef = doc(chunksRef, i.toString());
+            // Use setDoc directly instead of batch to update progress in real-time
+            await setDoc(docRef, { index: i, content: chunkContent });
+
+            // Update progress
+            setUploadProgress(Math.round(((i + 1) / totalChunks) * 100));
+        }
+
+        // 2. Delete excess chunks (if previous save had more)
+        const batch = writeBatch(db); // Use batch for deletion as it's fast and doesn't need progress
+        const q = query(chunksRef, where("index", ">=", totalChunks));
+        const snapshot = await getDocs(q);
+        if (!snapshot.empty) {
+            snapshot.forEach(doc => {
+                batch.delete(doc.ref);
+            });
+            await batch.commit();
+        }
+    };
+
     const saveToFirestoreChunks = async (userData) => {
-        if (!user) return;
-        if (isSaving) return; // Prevent concurrent writes
+        if (!user) return false;
+        if (cloudLoadError) {
+            handleShowAlert("儲存已暫停", "雲端資料目前無法解析。為避免覆蓋既有資料，請先修復雲端資料或匯入備份。");
+            return false;
+        }
+        if (isSaving) return false; // Prevent concurrent writes
         setIsSaving(true);
         try {
-            const jsonString = JSON.stringify(userData);
-            // Reduced chunk size to avoid 1MB limit with multi-byte chars
-            const CHUNK_SIZE = 250000;
-            const totalChunks = Math.ceil(jsonString.length / CHUNK_SIZE);
-
-            const chunksRef = collection(db, "users", user.uid, "chunks");
-
-            // 1. Write new chunks sequentially for progress updates
-            for (let i = 0; i < totalChunks; i++) {
-                const chunkContent = jsonString.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
-                const docRef = doc(chunksRef, i.toString());
-                // Use setDoc directly instead of batch to update progress in real-time
-                await setDoc(docRef, { index: i, content: chunkContent });
-
-                // Update progress
-                setUploadProgress(Math.round(((i + 1) / totalChunks) * 100));
-            }
-
-            // 2. Delete excess chunks (if previous save had more)
-            const batch = writeBatch(db); // Use batch for deletion as it's fast and doesn't need progress
-            const q = query(chunksRef, where("index", ">=", totalChunks));
-            const snapshot = await getDocs(q);
-            if (!snapshot.empty) {
-                snapshot.forEach(doc => {
-                    batch.delete(doc.ref);
-                });
-                await batch.commit();
-            }
+            await writeFirestoreChunks(userData);
+            return true;
         } catch (error) {
             console.error("Save failed:", error);
             handleShowAlert("儲存失敗", "無法同步至雲端，請檢查網路連線。");
+            return false;
         } finally {
             setIsSaving(false);
             setUploadProgress(0);
@@ -4383,12 +4396,15 @@ const AuthenticatedApp = () => {
                 if (cloudData) {
                     console.log("Loaded data from Firestore chunks");
                     setData({ ...INITIAL_DATA, ...cloudData, debts: cloudData.debts || {}, debtEvents: cloudData.debtEvents || {}, stockTransactions: cloudData.stockTransactions || [], stockHoldingSnapshots: cloudData.stockHoldingSnapshots || {} });
+                    setCloudLoadError('');
                 } else {
                     console.log("No chunked data found, using empty state.");
+                    setCloudLoadError('');
                     // Fallback: check if legacy single-doc exists (optional migration)
                 }
             } catch (error) {
                 console.error("Error loading chunked data:", error);
+                setCloudLoadError(error.message || "雲端資料解析失敗");
             } finally {
                 setIsDataLoaded(true);
             }
@@ -4413,6 +4429,7 @@ const AuthenticatedApp = () => {
 
     const fileInputRef = useRef(null);
     const expenseFileInputRef = useRef(null);
+    const repairFileInputRef = useRef(null);
 
     const exchangeRateCache = useRef({}); // Cache for foreign currency exchange rates
 
@@ -4688,15 +4705,71 @@ const AuthenticatedApp = () => {
             const cloudData = await loadFromFirestoreChunks();
             if (cloudData) {
                 setData(cloudData);
+                setCloudLoadError('');
                 handleShowAlert("同步成功", "已從雲端更新最新資料");
             } else {
+                setCloudLoadError('');
                 handleShowAlert("同步完成", "雲端無資料");
             }
         } catch (error) {
             console.error(error);
-            handleShowAlert("同步失敗", "無法連接雲端");
+            setCloudLoadError(error.message || "雲端資料解析失敗");
+            handleShowAlert("同步失敗", "雲端資料目前無法解析，已暫停寫入以避免覆蓋資料。");
         } finally {
             setIsSyncing(false);
+        }
+    };
+
+    const handleLoadDiagnostics = async () => {
+        if (!isLocalDiagnosticEnabled || !user) return;
+        setDiagnostics({ show: true, loading: true, error: '', result: null });
+        try {
+            const chunksRef = collection(db, "users", user.uid, "chunks");
+            const q = query(chunksRef, orderBy("index"));
+            const snapshot = await getDocs(q);
+            const chunks = snapshot.docs.map((doc) => doc.data().content || "");
+            const fullString = chunks.join('');
+            let parsed = null;
+            let parseError = '';
+
+            try {
+                parsed = fullString ? JSON.parse(fullString) : null;
+            } catch (error) {
+                parseError = error.message;
+            }
+
+            const countObjectArrayItems = (obj = {}) => Object.values(obj || {}).reduce((sum, items) => sum + ((items || []).length || 0), 0);
+            const countIncomeSources = (obj = {}) => Object.values(obj || {}).reduce((sum, item) => sum + ((item?.sources || []).length), 0);
+            const countSnapshotVersions = (obj = {}) => Object.values(obj || {}).reduce((sum, versions) => sum + ((versions || []).length), 0);
+
+            setDiagnostics({
+                show: true,
+                loading: false,
+                error: parseError,
+                result: {
+                    uid: user.uid,
+                    email: user.email || '',
+                    chunkCount: snapshot.size,
+                    charCount: fullString.length,
+                    hasParsedData: Boolean(parsed),
+                    recordsDates: Object.keys(parsed?.records || {}).length,
+                    recordsItems: countObjectArrayItems(parsed?.records),
+                    debtDates: Object.keys(parsed?.debts || {}).length,
+                    debtItems: countObjectArrayItems(parsed?.debts),
+                    incomeMonths: Object.keys(parsed?.incomes || {}).length,
+                    incomeSources: countIncomeSources(parsed?.incomes),
+                    expenseMonths: Object.keys(parsed?.expenses || {}).length,
+                    expenseItems: countObjectArrayItems(parsed?.expenses),
+                    memoDates: Object.keys(parsed?.memos || {}).length,
+                    debtEventMonths: Object.keys(parsed?.debtEvents || {}).length,
+                    debtEventItems: countObjectArrayItems(parsed?.debtEvents),
+                    stockTransactions: (parsed?.stockTransactions || []).length,
+                    stockSnapshotMonths: Object.keys(parsed?.stockHoldingSnapshots || {}).length,
+                    stockSnapshotVersions: countSnapshotVersions(parsed?.stockHoldingSnapshots)
+                }
+            });
+        } catch (error) {
+            setDiagnostics({ show: true, loading: false, error: error.message, result: null });
         }
     };
 
@@ -4978,6 +5051,52 @@ const AuthenticatedApp = () => {
         reader.readAsText(file);
     };
 
+    const handleRepairBackupUpload = (event) => {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        const shouldRepair = window.confirm("這會用你選擇的 JSON 備份覆蓋目前 Firebase chunks。建議確認這份備份是最近且可用的版本後再繼續。");
+        if (!shouldRepair) {
+            if (repairFileInputRef.current) repairFileInputRef.current.value = "";
+            return;
+        }
+
+        setIsImporting(true);
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            try {
+                const parsed = JSON.parse(e.target.result);
+                if (!parsed.records) throw new Error("缺少 records 欄位");
+
+                const normalizedData = {
+                    ...INITIAL_DATA,
+                    ...parsed,
+                    debts: parsed.debts || {},
+                    debtEvents: parsed.debtEvents || {},
+                    stockTransactions: parsed.stockTransactions || [],
+                    stockHoldingSnapshots: parsed.stockHoldingSnapshots || {}
+                };
+
+                setIsSaving(true);
+                await writeFirestoreChunks(normalizedData);
+                setData(normalizedData);
+                setCloudLoadError('');
+                setDiagnostics({ show: false, loading: false, error: '', result: null });
+                setCurrentYear(new Date().getFullYear());
+                handleShowAlert("修復完成", "已用 JSON 備份重建 Firebase chunks。");
+            } catch (err) {
+                console.error(err);
+                handleShowAlert("修復失敗", err.message || "備份格式錯誤或無法寫入雲端。");
+            } finally {
+                setIsSaving(false);
+                setIsImporting(false);
+                setUploadProgress(0);
+                if (repairFileInputRef.current) repairFileInputRef.current.value = "";
+            }
+        };
+        reader.readAsText(file);
+    };
+
     const handleExpenseUpload = (event) => {
         const file = event.target.files[0];
         if (!file) return;
@@ -5202,6 +5321,76 @@ const AuthenticatedApp = () => {
             <GlobalStyles />
             {isAppLocked && <BiometricLockScreen onUnlock={handleUnlockApp} errorMsg={biometricError} />}
             {alertInfo.show && <AlertModal title={alertInfo.title} message={alertInfo.message} onClose={() => setAlertInfo({ ...alertInfo, show: false })} />}
+            {cloudLoadError && (
+                <div className="fixed inset-0 bg-slate-950/75 backdrop-blur-sm z-[80] flex items-center justify-center p-6">
+                    <div className="bg-white w-full max-w-sm rounded-3xl p-6 shadow-2xl text-center">
+                        <div className="w-12 h-12 rounded-full bg-rose-50 text-rose-500 flex items-center justify-center mx-auto mb-4">
+                            <AlertTriangle size={22} />
+                        </div>
+                        <h3 className="text-xl font-serif-tc font-bold text-slate-800 mb-2">雲端資料讀取失敗</h3>
+                        <p className="text-sm text-slate-500 leading-relaxed mb-3">
+                            Firestore chunks 串接後不是合法 JSON。為了避免把空資料寫回雲端，目前已暫停所有新增、匯入與同步寫入。
+                        </p>
+                        <div className="p-3 rounded-xl bg-rose-50 text-rose-500 text-xs text-left break-words mb-4">
+                            {cloudLoadError}
+                        </div>
+                        {isLocalDiagnosticEnabled && (
+                            <div className="space-y-2">
+                                <button onClick={handleLoadDiagnostics} className="w-full py-2.5 rounded-xl bg-slate-800 text-white font-bold text-sm hover:bg-slate-900 transition-colors">
+                                    開啟本機診斷
+                                </button>
+                                <button onClick={() => repairFileInputRef.current?.click()} className="w-full py-2.5 rounded-xl bg-teal-600 text-white font-bold text-sm hover:bg-teal-700 transition-colors">
+                                    用 JSON 備份修復
+                                </button>
+                                <input
+                                    ref={repairFileInputRef}
+                                    type="file"
+                                    accept=".json"
+                                    aria-label="選擇修復備份 JSON"
+                                    onChange={handleRepairBackupUpload}
+                                    className="hidden"
+                                />
+                                <p className="text-[11px] text-slate-400 leading-relaxed">
+                                    修復會用備份檔重新寫入 Firebase chunks，請只選擇你信任的匯出備份。
+                                </p>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+            {isLocalDiagnosticEnabled && diagnostics.show && (
+                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[90] flex items-center justify-center p-6">
+                    <div className="bg-white w-full max-w-sm rounded-2xl p-6 shadow-2xl relative max-h-[85vh] overflow-y-auto">
+                        <button onClick={() => setDiagnostics(prev => ({ ...prev, show: false }))} className="absolute top-4 right-4 text-slate-300 hover:text-slate-600"><X size={18} /></button>
+                        <h3 className="text-xl font-serif-tc font-bold text-slate-800 mb-2 flex items-center gap-2"><Activity size={18} /> 本機資料診斷</h3>
+                        <p className="text-xs text-slate-400 mb-4">只在 local/dev 環境顯示。此面板只讀取 Firestore chunks，不會寫入資料。</p>
+                        {diagnostics.loading && <div className="p-4 rounded-xl bg-slate-50 text-slate-400 text-sm text-center">讀取 Firebase chunks 中...</div>}
+                        {!diagnostics.loading && diagnostics.error && <div className="p-3 rounded-xl bg-rose-50 text-rose-500 text-xs mb-3 break-words">診斷錯誤：{diagnostics.error}</div>}
+                        {!diagnostics.loading && diagnostics.result && (
+                            <div className="space-y-2 text-xs">
+                                <div className="bg-slate-50 rounded-xl p-3">
+                                    <div className="text-slate-400 mb-1">Firebase 使用者</div>
+                                    <div className="font-inter text-slate-700 break-all">{diagnostics.result.email || '未提供 email'}</div>
+                                    <div className="font-inter text-slate-500 break-all mt-1">{diagnostics.result.uid}</div>
+                                </div>
+                                <div className="grid grid-cols-2 gap-2">
+                                    <div className="bg-slate-50 rounded-xl p-3"><div className="text-slate-400">Chunks</div><div className="font-inter font-bold text-slate-700">{diagnostics.result.chunkCount}</div></div>
+                                    <div className="bg-slate-50 rounded-xl p-3"><div className="text-slate-400">JSON 字元</div><div className="font-inter font-bold text-slate-700">{formatMoney(diagnostics.result.charCount)}</div></div>
+                                    <div className="bg-slate-50 rounded-xl p-3"><div className="text-slate-400">資產日期 / 筆數</div><div className="font-inter font-bold text-slate-700">{diagnostics.result.recordsDates} / {diagnostics.result.recordsItems}</div></div>
+                                    <div className="bg-slate-50 rounded-xl p-3"><div className="text-slate-400">負債日期 / 筆數</div><div className="font-inter font-bold text-slate-700">{diagnostics.result.debtDates} / {diagnostics.result.debtItems}</div></div>
+                                    <div className="bg-slate-50 rounded-xl p-3"><div className="text-slate-400">收入月份 / 來源</div><div className="font-inter font-bold text-slate-700">{diagnostics.result.incomeMonths} / {diagnostics.result.incomeSources}</div></div>
+                                    <div className="bg-slate-50 rounded-xl p-3"><div className="text-slate-400">花費月份 / 筆數</div><div className="font-inter font-bold text-slate-700">{diagnostics.result.expenseMonths} / {diagnostics.result.expenseItems}</div></div>
+                                    <div className="bg-slate-50 rounded-xl p-3"><div className="text-slate-400">備忘日期</div><div className="font-inter font-bold text-slate-700">{diagnostics.result.memoDates}</div></div>
+                                    <div className="bg-slate-50 rounded-xl p-3"><div className="text-slate-400">負債異動</div><div className="font-inter font-bold text-slate-700">{diagnostics.result.debtEventMonths} / {diagnostics.result.debtEventItems}</div></div>
+                                    <div className="bg-slate-50 rounded-xl p-3"><div className="text-slate-400">股票交易</div><div className="font-inter font-bold text-slate-700">{diagnostics.result.stockTransactions}</div></div>
+                                    <div className="bg-slate-50 rounded-xl p-3"><div className="text-slate-400">持倉版本</div><div className="font-inter font-bold text-slate-700">{diagnostics.result.stockSnapshotMonths} / {diagnostics.result.stockSnapshotVersions}</div></div>
+                                </div>
+                            </div>
+                        )}
+                        <button onClick={handleLoadDiagnostics} disabled={diagnostics.loading} className="mt-4 w-full py-2.5 rounded-xl bg-slate-800 text-white font-bold text-sm hover:bg-slate-900 disabled:bg-slate-200 transition-colors">重新讀取診斷</button>
+                    </div>
+                </div>
+            )}
             {importConfirmation.show && (
                 <ImportConfirmationModal 
                     type={importConfirmation.type} 
@@ -5262,6 +5451,15 @@ const AuthenticatedApp = () => {
                                 >
                                     <RefreshCw size={12} />
                                 </button>
+                                {isLocalDiagnosticEnabled && (
+                                    <button
+                                        onClick={handleLoadDiagnostics}
+                                        className="p-1 text-slate-300 hover:text-blue-500 transition-colors"
+                                        title="本機資料診斷"
+                                    >
+                                        <Activity size={12} />
+                                    </button>
+                                )}
                             </div>
                             <h1 className="text-2xl font-serif-tc font-bold text-slate-800 flex items-center gap-2">
                                 <img src="/favicon.png" alt="極簡貓資產 Logo" className="w-[30px] h-[30px] object-contain" />
