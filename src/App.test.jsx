@@ -257,14 +257,84 @@ describe('App Integration Tests', () => {
         // inputs[0] is usually the amount in Asset Modal
         await user.type(inputs[0], '1000');
 
-        const saveBtns = screen.queryAllByText('確認新增');
-        if (saveBtns.length > 0) {
-            await user.click(saveBtns[0]);
-        } else {
-            await user.click(screen.getByText('新增'));
-        }
+        await user.click(screen.getByText('儲存全部'));
 
         await waitFor(() => expect(screen.getByText('新增成功')).toBeInTheDocument());
+    });
+
+    test('Add Asset flow can batch pending assets and save once', async () => {
+        const user = userEvent.setup();
+        render(<App />);
+        await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
+
+        await user.click(document.querySelector('button.fixed.bottom-8.right-6'));
+        await waitFor(() => expect(screen.getByText('新增紀錄')).toBeInTheDocument());
+        await user.click(screen.getByText('新增資產'));
+
+        await waitFor(() => expect(screen.getByPlaceholderText(/輸入.*資產名稱/)).toBeInTheDocument());
+        await user.type(screen.getByPlaceholderText(/輸入.*資產名稱/), 'Asset One');
+        await user.type(screen.getAllByPlaceholderText('0.00')[0], '1000');
+        await user.click(screen.getByText('加入暫存'));
+
+        expect(screen.getByText('本次待新增 1 筆')).toBeInTheDocument();
+        expect(screen.getByText('Asset One')).toBeInTheDocument();
+
+        await user.type(screen.getByPlaceholderText(/輸入.*資產名稱/), 'Asset Two');
+        await user.type(screen.getAllByPlaceholderText('0.00')[0], '2000');
+        await user.click(screen.getByText('加入暫存'));
+
+        expect(screen.getByText('本次待新增 2 筆')).toBeInTheDocument();
+        expect(screen.getByText('Asset Two')).toBeInTheDocument();
+
+        await user.click(screen.getByText('儲存全部 (2)'));
+
+        await waitFor(() => expect(screen.getByText('已新增 2 筆資產到 2026-04-17')).toBeInTheDocument());
+        expect(setDoc).toHaveBeenCalledTimes(1);
+        const savedContent = setDoc.mock.calls.at(-1)[1].content;
+        expect(savedContent).toContain('Asset One');
+        expect(savedContent).toContain('Asset Two');
+    });
+
+    test('Add Asset flow can import previous assets into pending list by choice', async () => {
+        const user = userEvent.setup();
+        const mockData = {
+            records: {
+                '2026-03-31': [
+                    { id: 'asset-one', name: '台積電', amount: 100000, type: 'fixed', currency: 'TWD', originalAmount: 100000, exchangeRate: 1 },
+                    { id: 'asset-two', name: '永豐銀行', amount: 50000, type: 'fixed', currency: 'TWD', originalAmount: 50000, exchangeRate: 1 }
+                ]
+            },
+            memos: {},
+            incomes: {},
+            expenses: {},
+            debts: {},
+            debtEvents: {},
+            fireSettings: { withdrawalRate: 4 }
+        };
+
+        getDocs.mockResolvedValue(createMockSnapshot(mockData));
+        render(<App />);
+        await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
+
+        await user.click(document.querySelector('button.fixed.bottom-8.right-6'));
+        await waitFor(() => expect(screen.getByText('新增紀錄')).toBeInTheDocument());
+        await user.click(screen.getByText('新增資產'));
+
+        await waitFor(() => expect(screen.getByText('從上次資產紀錄帶入')).toBeInTheDocument());
+        expect(screen.queryByText('本次待新增 2 筆')).not.toBeInTheDocument();
+
+        await user.click(screen.getByText('帶入'));
+
+        expect(screen.getByText('本次待新增 2 筆')).toBeInTheDocument();
+        expect(screen.getAllByText('台積電').length).toBeGreaterThan(0);
+        expect(screen.getAllByText('永豐銀行').length).toBeGreaterThan(0);
+
+        await user.click(screen.getByText('儲存全部 (2)'));
+
+        await waitFor(() => expect(screen.getByText('已新增 2 筆資產到 2026-04-17')).toBeInTheDocument());
+        const savedContent = setDoc.mock.calls.at(-1)[1].content;
+        expect(savedContent).toContain('台積電');
+        expect(savedContent).toContain('永豐銀行');
     });
 
     test('Add Income flow', async () => {
@@ -345,12 +415,7 @@ describe('App Integration Tests', () => {
         const inputs = screen.getAllByPlaceholderText('0.00');
         await user.type(inputs[0], '1000');
 
-        const saveBtns = screen.queryAllByText('確認新增');
-        if (saveBtns.length > 0) {
-            await user.click(saveBtns[0]);
-        } else {
-            await user.click(screen.getByText('新增'));
-        }
+        await user.click(screen.getByText('儲存全部'));
 
         await waitFor(() => expect(screen.getByText('新增成功')).toBeInTheDocument());
     });

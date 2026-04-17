@@ -1989,6 +1989,8 @@ const AddAssetModal = ({ onClose, onSave, historyRecords, exchangeRateCache }) =
     const [amount, setAmount] = useState('');
     const [isFetchingRate, setIsFetchingRate] = useState(false);
     const [errorMsg, setErrorMsg] = useState("");
+    const [pendingAssets, setPendingAssets] = useState([]);
+    const [hasImportedPreviousAssets, setHasImportedPreviousAssets] = useState(false);
 
     // Cache Logic
     useEffect(() => {
@@ -2036,19 +2038,23 @@ const AddAssetModal = ({ onClose, onSave, historyRecords, exchangeRateCache }) =
         }
     };
 
-    // --- 新增：取得上筆紀錄的資產建議 ---
-    const prevAssets = useMemo(() => {
+    const previousAssetSnapshot = useMemo(() => {
         if (!date) return [];
         const currentTimestamp = new Date(date).getTime();
         const dates = Object.keys(historyRecords)
             .filter(d => new Date(d).getTime() < currentTimestamp) // 找出比選擇日期更早的日期
             .sort((a, b) => new Date(b) - new Date(a)); // 降序排列，取最近的
 
-        if (dates.length === 0) return [];
-        return historyRecords[dates[0]]; // 回傳該日期的所有資產
+        if (dates.length === 0) return { date: null, assets: [] };
+        return { date: dates[0], assets: historyRecords[dates[0]] || [] };
     }, [date, historyRecords]);
 
+    const prevAssets = previousAssetSnapshot.assets;
     const suggestions = prevAssets.filter(a => a.type === type);
+
+    useEffect(() => {
+        setHasImportedPreviousAssets(false);
+    }, [date]);
 
     const fetchRate = async () => {
         if (currency === 'TWD') return;
@@ -2114,34 +2120,82 @@ const AddAssetModal = ({ onClose, onSave, historyRecords, exchangeRateCache }) =
         setOriginalAmount(val);
     };
 
-    const handleSubmit = () => {
+    const getDraftAsset = () => {
         setErrorMsg("");
         if (!name || !amount) return setErrorMsg("請填寫名稱與金額");
         if (!date) return setErrorMsg("請選擇日期");
 
         const cleanName = name.trim();
         const assetsInDate = historyRecords[date] || [];
+        const pendingInDate = pendingAssets.filter((asset) => asset.date === date);
         
         // Duplicate check logic:
         // Same Name AND Same Currency = Duplicate (Block)
         // Same Name BUT Different Currency = Allowed (e.g. Taishin TWD vs Taishin JPY)
-        const isDuplicate = assetsInDate.some(asset => asset.name === cleanName && asset.currency === currency);
+        const isDuplicate = [...assetsInDate, ...pendingInDate].some(asset => asset.name === cleanName && asset.currency === currency);
 
         if (isDuplicate) {
             setErrorMsg(`「${cleanName} (${currency})」在 ${date} 已存在，請使用編輯功能。`);
-            return;
+            return null;
         }
 
-        const newAsset = {
-            id: Date.now(),
+        return {
+            id: `asset-${Date.now()}-${pendingAssets.length}`,
             type,
             name: cleanName,
             amount: Number(amount),
             currency,
             originalAmount: Number(originalAmount) || Number(amount),
-            exchangeRate: Number(exchangeRate)
+            exchangeRate: Number(exchangeRate),
+            date
         };
-        onSave(newAsset, date);
+    };
+
+    const resetDraftFields = () => {
+        setName('');
+        setOriginalAmount('');
+        setAmount('');
+    };
+
+    const handleAddPending = () => {
+        const draftAsset = getDraftAsset();
+        if (!draftAsset) return;
+        setPendingAssets((items) => [...items, draftAsset]);
+        resetDraftFields();
+        setErrorMsg('');
+    };
+
+    const handleRemovePending = (id) => {
+        setPendingAssets((items) => items.filter((item) => item.id !== id));
+    };
+
+    const handleImportPreviousAssets = () => {
+        if (!previousAssetSnapshot.assets.length) return;
+        const assetsInDate = historyRecords[date] || [];
+        setPendingAssets((items) => {
+            const existingKeys = new Set([...assetsInDate, ...items].map((asset) => `${asset.name}-${asset.currency || 'TWD'}`));
+            const importedAssets = previousAssetSnapshot.assets
+                .filter((asset) => !existingKeys.has(`${asset.name}-${asset.currency || 'TWD'}`))
+                .map((asset, index) => ({
+                    ...asset,
+                    id: `asset-import-${Date.now()}-${index}`,
+                    date,
+                    amount: Number(asset.amount) || 0,
+                    originalAmount: Number(asset.originalAmount) || Number(asset.amount) || 0,
+                    exchangeRate: Number(asset.exchangeRate) || 1
+                }));
+            return [...items, ...importedAssets];
+        });
+        setHasImportedPreviousAssets(true);
+        setErrorMsg('');
+    };
+
+    const handleSaveAll = () => {
+        const draftAsset = name || originalAmount || amount ? getDraftAsset() : null;
+        if ((name || originalAmount || amount) && !draftAsset) return;
+        const assetsToSave = draftAsset ? [...pendingAssets, draftAsset] : pendingAssets;
+        if (assetsToSave.length === 0) return setErrorMsg("請先加入至少一筆資產");
+        onSave(assetsToSave, date);
     };
 
     return (
@@ -2161,6 +2215,26 @@ const AddAssetModal = ({ onClose, onSave, historyRecords, exchangeRateCache }) =
                         <button onClick={() => { setType('fixed'); setName(''); }} className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${type === 'fixed' ? 'bg-white shadow text-teal-700' : 'text-slate-400 hover:text-slate-600'}`}>固定資產</button>
                         <button onClick={() => { setType('floating'); setName(''); }} className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${type === 'floating' ? 'bg-white shadow text-teal-700' : 'text-slate-400 hover:text-slate-600'}`}>浮動資產</button>
                     </div>
+                    {previousAssetSnapshot.assets.length > 0 && (
+                        <div className="p-3 rounded-2xl bg-teal-50/70 border border-teal-100">
+                            <div className="flex items-center justify-between gap-3">
+                                <div>
+                                    <div className="text-xs text-teal-700 font-bold flex items-center gap-1"><Sparkles size={12} /> 從上次資產紀錄帶入</div>
+                                    <div className="text-[10px] text-slate-400 mt-1">
+                                        {previousAssetSnapshot.date} · {previousAssetSnapshot.assets.length} 筆，帶入後可刪改再儲存
+                                    </div>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={handleImportPreviousAssets}
+                                    disabled={hasImportedPreviousAssets}
+                                    className="px-3 py-2 rounded-xl bg-white text-teal-700 text-xs font-bold border border-teal-100 hover:bg-teal-100 disabled:text-slate-300 disabled:bg-slate-50 transition-colors"
+                                >
+                                    {hasImportedPreviousAssets ? '已帶入' : '帶入'}
+                                </button>
+                            </div>
+                        </div>
+                    )}
 
                     {/* --- 新增：快速帶入區域 --- */}
                     {suggestions.length > 0 && (
@@ -2231,10 +2305,37 @@ const AddAssetModal = ({ onClose, onSave, historyRecords, exchangeRateCache }) =
                             <input type="text" value={amount} readOnly className="w-full p-3 border border-slate-200 rounded-xl bg-slate-100 text-slate-500 text-sm font-inter text-right cursor-not-allowed" placeholder="-" />
                         </div>
                     </div>
+                    <button onClick={handleAddPending} className="w-full py-2.5 rounded-xl bg-teal-50 text-teal-700 font-bold text-sm hover:bg-teal-100 border border-teal-100 transition-colors flex items-center justify-center gap-2">
+                        <Plus size={16} /> 加入暫存
+                    </button>
+                    {pendingAssets.length > 0 && (
+                        <div className="bg-slate-50 border border-slate-100 rounded-2xl p-3">
+                            <div className="flex items-center justify-between mb-2">
+                                <span className="text-xs text-slate-500 font-bold">本次待新增 {pendingAssets.length} 筆</span>
+                                <span className="text-[10px] text-slate-400">最後一次儲存全部</span>
+                            </div>
+                            <div className="space-y-2">
+                                {pendingAssets.map((asset) => (
+                                    <div key={asset.id} className="flex items-center justify-between gap-3 bg-white border border-slate-100 rounded-xl px-3 py-2">
+                                        <div className="min-w-0">
+                                            <div className="font-serif-tc font-bold text-sm text-slate-700 truncate">{asset.name}</div>
+                                            <div className="text-[10px] text-slate-400 font-inter">{asset.date} · {asset.currency}</div>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <span className="font-inter text-sm font-bold text-slate-600">{formatMoney(asset.amount)}</span>
+                                            <button type="button" onClick={() => handleRemovePending(asset.id)} className="p-1.5 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors" title="移除暫存"><Trash2 size={14} /></button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
                 </div>
                 <div className="mt-6 flex gap-3">
                     <button onClick={onClose} className="flex-1 py-2.5 rounded-xl text-slate-500 hover:bg-slate-100 font-bold text-sm transition-colors">取消</button>
-                    <button onClick={handleSubmit} className="flex-1 py-2.5 rounded-xl bg-teal-600 text-white font-bold text-sm hover:bg-teal-700 shadow-lg shadow-teal-200 transition-all">新增</button>
+                    <button onClick={handleSaveAll} className="flex-1 py-2.5 rounded-xl bg-teal-600 text-white font-bold text-sm hover:bg-teal-700 shadow-lg shadow-teal-200 transition-all">
+                        儲存全部{pendingAssets.length > 0 ? ` (${pendingAssets.length})` : ''}
+                    </button>
                 </div>
             </div>
         </div>
@@ -5324,15 +5425,17 @@ const AuthenticatedApp = () => {
         }
     };
 
-    const handleSaveNewAsset = (newAsset, dateKey) => {
+    const handleSaveNewAsset = async (newAssets, dateKey) => {
+        const assetsToAdd = (Array.isArray(newAssets) ? newAssets : [newAssets]).map(({ date, ...asset }) => asset);
         const existingDetails = data.records[dateKey] || [];
         const newData = {
             ...data,
-            records: { ...data.records, [dateKey]: [...existingDetails, newAsset] }
+            records: { ...data.records, [dateKey]: [...existingDetails, ...assetsToAdd] }
         };
         setData(newData);
-        saveToFirestoreChunks(newData);
-        handleShowAlert("新增成功", `資產 ${newAsset.name} 已新增到 ${dateKey}`);
+        const didSave = await saveToFirestoreChunks(newData);
+        if (!didSave) return;
+        handleShowAlert("新增成功", assetsToAdd.length === 1 ? `資產 ${assetsToAdd[0].name} 已新增到 ${dateKey}` : `已新增 ${assetsToAdd.length} 筆資產到 ${dateKey}`);
         setShowAddAssetModal(false);
         setShowAddModal(false);
     };
