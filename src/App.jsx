@@ -2473,6 +2473,16 @@ const DetailView = ({ monthKey, data, onBack, onUpdateData, assetNames, isPrivac
     const debtDate = useMemo(() => getLatestDateInMonth(data.debts, monthKey), [data.debts, monthKey]);
     const memoDate = useMemo(() => getLatestDateInMonth(data.memos, monthKey), [data.memos, monthKey]);
     const writeDate = assetDate || debtDate || memoDate || `${monthKey}-01`;
+    const monthlyDebtSnapshots = useMemo(() => {
+        return Object.entries(data.debts || {})
+            .filter(([date]) => date.startsWith(monthKey))
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([date, debts]) => ({
+                date,
+                debts: Array.isArray(debts) ? debts : [],
+                total: getDebtTotal(debts)
+            }));
+    }, [data.debts, monthKey]);
 
     useEffect(() => {
         if (assetDate && data.records[assetDate]) {
@@ -2864,9 +2874,40 @@ const DetailView = ({ monthKey, data, onBack, onUpdateData, assetNames, isPrivac
 
                 {activeTab === 'debt' && (
                     <div className="space-y-4 animate-[fadeIn_0.2s]">
+                        {monthlyDebtSnapshots.length > 0 && (
+                            <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
+                                <div className="px-4 py-3 border-b border-slate-100 flex justify-between items-center">
+                                    <div>
+                                        <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">本月負債快照版本</span>
+                                        <span className="text-[10px] text-slate-400 ml-2">{monthlyDebtSnapshots.length} 個日期</span>
+                                    </div>
+                                    <span className="text-[10px] text-slate-400">最新快照計入總負債</span>
+                                </div>
+                                <div className="divide-y divide-slate-100">
+                                    {monthlyDebtSnapshots.map((snapshot) => (
+                                        <div key={snapshot.date} className={`p-4 ${snapshot.date === debtDate ? 'bg-rose-50/40' : ''}`}>
+                                            <div className="flex items-center justify-between gap-3">
+                                                <div>
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="font-inter font-bold text-slate-700">{snapshot.date}</span>
+                                                        {snapshot.date === debtDate && <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-100 text-rose-600 font-bold">最新</span>}
+                                                    </div>
+                                                    <div className="text-xs text-slate-400 mt-1">
+                                                        {snapshot.debts.length > 0 ? snapshot.debts.map((item) => item.name || item.lender || '未命名負債').join('、') : '無負債明細'}
+                                                    </div>
+                                                </div>
+                                                <span className={`font-inter font-bold text-rose-500 ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>
+                                                    {isPrivacyMode ? '****' : `-${formatMoney(snapshot.total)}`}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
                         <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
                             <div className="px-4 py-3 border-b border-slate-100 flex justify-between items-center">
-                                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">負債快照</span>
+                                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">最新負債快照</span>
                                 <span className="text-[10px] text-slate-400">{debtDate || '尚未記錄'}</span>
                             </div>
                             {localDebts.length > 0 ? localDebts.map((item, idx) => (

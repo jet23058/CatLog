@@ -636,7 +636,7 @@ describe('App Integration Tests', () => {
         // Switch to Debt Tab
         const debtTab = screen.getByText('總負債');
         await user.click(debtTab);
-        await waitFor(() => expect(screen.getByText('股票質押借款')).toBeInTheDocument());
+        await waitFor(() => expect(screen.getAllByText('股票質押借款').length).toBeGreaterThan(0));
         expect(screen.getByText('本月異動明細')).toBeInTheDocument();
         expect(screen.getByText('新增異動')).toBeInTheDocument();
         expect(screen.getByText('0050 質押')).toBeInTheDocument();
@@ -651,6 +651,40 @@ describe('App Integration Tests', () => {
         await user.click(backBtn);
 
         expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument();
+    });
+
+    test('Detail View lists all debt snapshots in the selected month', async () => {
+        const user = userEvent.setup();
+        const currentYear = new Date().getFullYear();
+        const mockData = {
+            records: { [`${currentYear}-04-30`]: [{ id: 'asset', name: '資產', amount: 400000, type: 'stock' }] },
+            memos: {},
+            incomes: {},
+            expenses: {},
+            debts: {
+                [`${currentYear}-04-09`]: [{ id: 'debt-1', name: '質押借貸', lender: '國泰證券', amount: 90000 }],
+                [`${currentYear}-04-15`]: [
+                    { id: 'debt-1', name: '質押借貸', lender: '國泰證券', amount: 90000 },
+                    { id: 'debt-2', name: '質押借貸', lender: '國泰證券', amount: 150000 }
+                ]
+            },
+            debtEvents: {},
+            fireSettings: { withdrawalRate: 4 }
+        };
+
+        getDocs.mockResolvedValue(createMockSnapshot(mockData));
+        render(<App />);
+
+        await waitFor(() => expect(screen.getByText('年度資產淨值')).toBeInTheDocument());
+        await user.click(screen.getByText('04'));
+        await waitFor(() => expect(screen.getByText('淨資產')).toBeInTheDocument());
+        await user.click(screen.getByText('總負債'));
+
+        expect(screen.getByText('本月負債快照版本')).toBeInTheDocument();
+        expect(screen.getByText(`${currentYear}-04-09`)).toBeInTheDocument();
+        expect(screen.getAllByText(`${currentYear}-04-15`).length).toBeGreaterThan(0);
+        expect(screen.getAllByText('最新負債快照').length).toBeGreaterThan(0);
+        expect(screen.getAllByText('質押借貸').length).toBeGreaterThan(1);
     });
 
 
