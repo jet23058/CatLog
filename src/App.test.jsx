@@ -329,12 +329,18 @@ describe('App Integration Tests', () => {
         expect(screen.getAllByText('台積電').length).toBeGreaterThan(0);
         expect(screen.getAllByText('永豐銀行').length).toBeGreaterThan(0);
 
+        const tsmcAmountInput = screen.getByLabelText('台積電 暫存金額');
+        await user.clear(tsmcAmountInput);
+        await user.type(tsmcAmountInput, '123456');
+
         await user.click(screen.getByText('儲存全部 (2)'));
 
         await waitFor(() => expect(screen.getByText('已新增 2 筆資產到 2026-04-17')).toBeInTheDocument());
-        const savedContent = setDoc.mock.calls.at(-1)[1].content;
-        expect(savedContent).toContain('台積電');
-        expect(savedContent).toContain('永豐銀行');
+        const savedData = JSON.parse(setDoc.mock.calls.at(-1)[1].content);
+        expect(savedData.records['2026-04-17']).toEqual(expect.arrayContaining([
+            expect.objectContaining({ name: '台積電', amount: 123456, originalAmount: 123456 }),
+            expect.objectContaining({ name: '永豐銀行', amount: 50000 })
+        ]));
     });
 
     test('Add Income flow', async () => {

@@ -2169,6 +2169,19 @@ const AddAssetModal = ({ onClose, onSave, historyRecords, exchangeRateCache }) =
         setPendingAssets((items) => items.filter((item) => item.id !== id));
     };
 
+    const handlePendingAmountChange = (id, value) => {
+        setPendingAssets((items) => items.map((item) => {
+            if (item.id !== id) return item;
+            const originalAmount = Number(value) || 0;
+            const exchangeRate = Number(item.exchangeRate) || 1;
+            return {
+                ...item,
+                originalAmount,
+                amount: Math.round(originalAmount * exchangeRate)
+            };
+        }));
+    };
+
     const handleImportPreviousAssets = () => {
         if (!previousAssetSnapshot.assets.length) return;
         const assetsInDate = historyRecords[date] || [];
@@ -2321,8 +2334,17 @@ const AddAssetModal = ({ onClose, onSave, historyRecords, exchangeRateCache }) =
                                             <div className="font-serif-tc font-bold text-sm text-slate-700 truncate">{asset.name}</div>
                                             <div className="text-[10px] text-slate-400 font-inter">{asset.date} · {asset.currency}</div>
                                         </div>
-                                        <div className="flex items-center gap-2">
-                                            <span className="font-inter text-sm font-bold text-slate-600">{formatMoney(asset.amount)}</span>
+                                        <div className="flex items-center gap-2 shrink-0">
+                                            <div className="w-24">
+                                                <input
+                                                    aria-label={`${asset.name} 暫存金額`}
+                                                    type="number"
+                                                    value={asset.originalAmount || ''}
+                                                    onChange={(e) => handlePendingAmountChange(asset.id, e.target.value)}
+                                                    className="w-full px-2 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-right text-sm font-inter font-bold text-slate-600 focus:border-teal-500 outline-none"
+                                                />
+                                                {asset.currency !== 'TWD' && <div className="text-[10px] text-slate-400 text-right mt-0.5">≈ {formatMoney(asset.amount)}</div>}
+                                            </div>
                                             <button type="button" onClick={() => handleRemovePending(asset.id)} className="p-1.5 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors" title="移除暫存"><Trash2 size={14} /></button>
                                         </div>
                                     </div>
