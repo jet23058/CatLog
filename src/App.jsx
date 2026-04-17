@@ -63,6 +63,41 @@ const INITIAL_DATA = {
     "fireSettings": { "withdrawalRate": 4.0 }
 };
 
+const normalizeAppData = (source = {}) => ({
+    ...INITIAL_DATA,
+    ...source,
+    debts: source.debts || {},
+    debtEvents: source.debtEvents || {},
+    stockTransactions: source.stockTransactions || [],
+    stockHoldingSnapshots: source.stockHoldingSnapshots || {}
+});
+
+const getDebtIdentity = (debt = {}) => debt.id || [
+    debt.name,
+    debt.lender,
+    debt.amount,
+    debt.category,
+    debt.memo,
+    JSON.stringify(debt.pledgeStocks || [])
+].join('|');
+
+const mergeDebtMaps = (...debtMaps) => {
+    const merged = {};
+    debtMaps.forEach((debtMap = {}) => {
+        Object.entries(debtMap || {}).forEach(([date, debts]) => {
+            if (!merged[date]) merged[date] = [];
+            const seen = new Set(merged[date].map(getDebtIdentity));
+            (Array.isArray(debts) ? debts : []).forEach((debt) => {
+                const identity = getDebtIdentity(debt);
+                if (seen.has(identity)) return;
+                seen.add(identity);
+                merged[date].push(debt);
+            });
+        });
+    });
+    return merged;
+};
+
 // --- 工具函數 ---
 const formatMoney = (val) => new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 0 }).format(val);
 const formatMoneyByMarket = (val, market = 'TW') => new Intl.NumberFormat('zh-TW', {
@@ -2252,7 +2287,7 @@ const AddDebtModal = ({ onClose, onSave, debtNames = [], accountOptions = [], as
         if (!name.trim()) return setErrorMsg("請輸入負債名稱");
         if (!amount || Number(amount) <= 0) return setErrorMsg("請輸入有效金額");
         const cleanPledgeStocks = pledgeStocks
-            .map((row) => ({ symbol: row.symbol.trim(), shares: Number(row.shares) || 0, rate: Number(row.rate) || 0 }))
+            .map((row) => ({ symbol: row.symbol.trim(), shares: Math.trunc(Number(row.shares)) || 0, rate: Number(row.rate) || 0 }))
             .filter((row) => row.symbol);
         if (category === 'stock_pledge' && cleanPledgeStocks.length === 0) return setErrorMsg("請至少輸入一筆質押股票");
 
@@ -2321,7 +2356,7 @@ const AddDebtModal = ({ onClose, onSave, debtNames = [], accountOptions = [], as
                                         </div>
                                         <div>
                                             {index === 0 && <label className="text-[10px] text-slate-400 font-bold mb-1 block">股數</label>}
-                                            <input type="number" step="0.001" value={row.shares} onChange={(e) => updatePledgeStock(row.id, 'shares', e.target.value)} className="w-full p-2.5 border border-rose-100 rounded-xl focus:border-rose-500 outline-none bg-white text-sm font-inter text-right placeholder:text-slate-300" placeholder="0" />
+                                            <input type="number" step="1" min="0" value={row.shares} onChange={(e) => updatePledgeStock(row.id, 'shares', e.target.value)} className="w-full p-2.5 border border-rose-100 rounded-xl focus:border-rose-500 outline-none bg-white text-sm font-inter text-right placeholder:text-slate-300" placeholder="0" />
                                         </div>
                                         <div>
                                             {index === 0 && <label className="text-[10px] text-slate-400 font-bold mb-1 block">利率 %</label>}
@@ -2938,7 +2973,7 @@ const DetailView = ({ monthKey, data, onBack, onUpdateData, assetNames, isPrivac
                                                     <div className="flex flex-wrap gap-1 mt-1">
                                                         {item.pledgeStocks.map((stock, stockIdx) => (
                                                             <span key={`${stock.symbol}-${stockIdx}`} className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 font-inter">
-                                                                {stock.symbol}{stock.shares ? ` · ${formatMoneyByMarket(stock.shares, 'US')} 股` : ''}{stock.rate ? ` · ${stock.rate}%` : ''}
+                                                                {stock.symbol}{stock.shares ? ` · ${formatMoney(Math.trunc(Number(stock.shares)))} 股` : ''}{stock.rate ? ` · ${stock.rate}%` : ''}
                                                             </span>
                                                         ))}
                                                     </div>
@@ -4449,7 +4484,7 @@ const AuthenticatedApp = () => {
                 const cloudData = await loadFromFirestoreChunks();
                 if (cloudData) {
                     console.log("Loaded data from Firestore chunks");
-                    setData({ ...INITIAL_DATA, ...cloudData, debts: cloudData.debts || {}, debtEvents: cloudData.debtEvents || {}, stockTransactions: cloudData.stockTransactions || [], stockHoldingSnapshots: cloudData.stockHoldingSnapshots || {} });
+                    setData(normalizeAppData(cloudData));
                     setCloudLoadError('');
                 } else {
                     console.log("No chunked data found, using empty state.");
@@ -4954,7 +4989,7 @@ const AuthenticatedApp = () => {
         setIsImporting(true);
         try {
             if (type === 'json') {
-                const normalizedData = { ...INITIAL_DATA, ...pendingData, debts: pendingData.debts || {}, debtEvents: pendingData.debtEvents || {}, stockTransactions: pendingData.stockTransactions || [], stockHoldingSnapshots: pendingData.stockHoldingSnapshots || {} };
+                const normalizedData = normalizeAppData(pendingData);
                 if (user) await saveToFirestoreChunks(normalizedData);
                 setData(normalizedData);
                 setCurrentYear(new Date().getFullYear());
@@ -5122,14 +5157,7 @@ const AuthenticatedApp = () => {
                 const parsed = JSON.parse(e.target.result);
                 if (!parsed.records) throw new Error("缺少 records 欄位");
 
-                const normalizedData = {
-                    ...INITIAL_DATA,
-                    ...parsed,
-                    debts: parsed.debts || {},
-                    debtEvents: parsed.debtEvents || {},
-                    stockTransactions: parsed.stockTransactions || [],
-                    stockHoldingSnapshots: parsed.stockHoldingSnapshots || {}
-                };
+                const normalizedData = normalizeAppData(parsed);
 
                 setIsSaving(true);
                 await writeFirestoreChunks(normalizedData);
@@ -5301,18 +5329,28 @@ const AuthenticatedApp = () => {
         setShowAddModal(false);
     };
 
-    const handleSaveNewDebt = (newDebt, dateKey) => {
-        const exactDateDebts = data.debts?.[dateKey];
-        const existingDebts = exactDateDebts || getLatestSnapshotItems(data.debts, dateKey);
-        const newData = {
-            ...data,
-            debts: { ...data.debts, [dateKey]: [...existingDebts, newDebt] }
-        };
-        setData(newData);
-        saveToFirestoreChunks(newData);
-        handleShowAlert("新增成功", `已新增一筆負債至 ${dateKey}`);
-        setShowAddDebtModal(false);
-        setShowAddModal(false);
+    const handleSaveNewDebt = async (newDebt, dateKey) => {
+        try {
+            const cloudData = await loadFromFirestoreChunks();
+            const cloudBase = cloudData ? normalizeAppData(cloudData) : null;
+            const mergedDebts = mergeDebtMaps(cloudBase?.debts, data.debts);
+            const baseData = cloudBase ? { ...data, ...cloudBase, debts: mergedDebts } : { ...data, debts: mergedDebts };
+            const exactDateDebts = mergedDebts?.[dateKey];
+            const existingDebts = exactDateDebts || getLatestSnapshotItems(mergedDebts, dateKey);
+            const newData = {
+                ...baseData,
+                debts: { ...mergedDebts, [dateKey]: [...existingDebts, newDebt] }
+            };
+            setData(newData);
+            const didSave = await saveToFirestoreChunks(newData);
+            if (!didSave) return;
+            handleShowAlert("新增成功", `已新增一筆負債至 ${dateKey}`);
+            setShowAddDebtModal(false);
+            setShowAddModal(false);
+        } catch (error) {
+            console.error(error);
+            handleShowAlert("新增失敗", "無法取得最新雲端資料，為避免覆蓋既有負債，這次沒有寫入。");
+        }
     };
 
     const handleImportStockTransactions = (transactions) => {

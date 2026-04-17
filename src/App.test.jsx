@@ -438,7 +438,7 @@ describe('App Integration Tests', () => {
         await waitFor(() => expect(screen.getByText('-24 萬')).toBeInTheDocument());
     });
 
-    test('queues debt saves while a previous cloud write is still running', async () => {
+    test('keeps both debt snapshots after sequential cloud saves', async () => {
         const user = userEvent.setup();
         let resolveFirstWrite;
         setDoc
@@ -457,6 +457,7 @@ describe('App Integration Tests', () => {
         await user.type(screen.getByPlaceholderText('例如：國泰證券 / 永豐金'), '國泰證券');
         await user.type(screen.getByPlaceholderText('0'), '90000');
         await user.click(screen.getByText('確認新增'));
+        resolveFirstWrite();
         await waitFor(() => expect(screen.getByText('已新增一筆負債至 2026-04-09')).toBeInTheDocument());
         await user.click(screen.getByText('知道了'));
 
@@ -470,14 +471,51 @@ describe('App Integration Tests', () => {
         await user.type(screen.getByPlaceholderText('0'), '150000');
         await user.click(screen.getByText('確認新增'));
 
-        resolveFirstWrite();
-
         await waitFor(() => expect(setDoc).toHaveBeenCalledTimes(2));
         const lastSavedContent = setDoc.mock.calls.at(-1)[1].content;
         expect(lastSavedContent).toContain('2026-04-09');
         expect(lastSavedContent).toContain('90000');
         expect(lastSavedContent).toContain('2026-04-15');
         expect(lastSavedContent).toContain('150000');
+    });
+
+    test('merges latest cloud debts before appending a new debt snapshot', async () => {
+        const user = userEvent.setup();
+        const cloudData = {
+            records: { '2026-04-30': [{ id: 'asset', name: '資產', amount: 400000, type: 'stock' }] },
+            memos: {},
+            incomes: {},
+            expenses: {},
+            debts: { '2026-04-09': [{ id: 'cloud-debt', name: '質押借貸', lender: '國泰證券', amount: 90000 }] },
+            debtEvents: {},
+            fireSettings: { withdrawalRate: 4 }
+        };
+        const emptySnapshot = { empty: true, docs: [], forEach: (fn) => [].forEach(fn) };
+
+        getDocs
+            .mockResolvedValueOnce(emptySnapshot)
+            .mockResolvedValueOnce(createMockSnapshot(cloudData))
+            .mockResolvedValue(emptySnapshot);
+
+        render(<App />);
+        await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
+
+        await user.click(document.querySelector('button.fixed.bottom-8.right-6'));
+        await waitFor(() => expect(screen.getByText('新增紀錄')).toBeInTheDocument());
+        await user.click(screen.getByText('新增負債'));
+        await waitFor(() => expect(screen.getByText('新增負債', { selector: 'h3' })).toBeInTheDocument());
+        fireEvent.change(document.querySelector('input[type="date"]'), { target: { value: '2026-04-15' } });
+        await user.type(screen.getByPlaceholderText('例如：股票質押借款'), '質押借貸');
+        await user.type(screen.getByPlaceholderText('例如：國泰證券 / 永豐金'), '國泰證券');
+        await user.type(screen.getByPlaceholderText('0'), '150000');
+        await user.click(screen.getByText('確認新增'));
+
+        await waitFor(() => expect(screen.getByText('已新增一筆負債至 2026-04-15')).toBeInTheDocument());
+        const savedContent = setDoc.mock.calls.at(-1)[1].content;
+        expect(savedContent).toContain('2026-04-09');
+        expect(savedContent).toContain('90000');
+        expect(savedContent).toContain('2026-04-15');
+        expect(savedContent).toContain('150000');
     });
 
     test('Add Debt flow supports stock pledge category details', async () => {
@@ -520,7 +558,7 @@ describe('App Integration Tests', () => {
         await waitFor(() => expect(screen.getByText('淨資產')).toBeInTheDocument());
         await user.click(screen.getByText('總負債'));
         expect(screen.getAllByText('股票質押').length).toBeGreaterThan(0);
-        expect(screen.getByText('0050 · 2.00 股 · 2.75%')).toBeInTheDocument();
+        expect(screen.getByText('0050 · 2 股 · 2.75%')).toBeInTheDocument();
     });
 
     test('Dashboard asset growth uses first and latest recorded asset dates only', async () => {
