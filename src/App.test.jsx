@@ -438,6 +438,48 @@ describe('App Integration Tests', () => {
         await waitFor(() => expect(screen.getByText('-24 萬')).toBeInTheDocument());
     });
 
+    test('queues debt saves while a previous cloud write is still running', async () => {
+        const user = userEvent.setup();
+        let resolveFirstWrite;
+        setDoc
+            .mockImplementationOnce(() => new Promise((resolve) => { resolveFirstWrite = resolve; }))
+            .mockResolvedValue(undefined);
+
+        render(<App />);
+        await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
+
+        await user.click(document.querySelector('button.fixed.bottom-8.right-6'));
+        await waitFor(() => expect(screen.getByText('新增紀錄')).toBeInTheDocument());
+        await user.click(screen.getByText('新增負債'));
+        await waitFor(() => expect(screen.getByText('新增負債', { selector: 'h3' })).toBeInTheDocument());
+        fireEvent.change(document.querySelector('input[type="date"]'), { target: { value: '2026-04-09' } });
+        await user.type(screen.getByPlaceholderText('例如：股票質押借款'), '質押借貸');
+        await user.type(screen.getByPlaceholderText('例如：國泰證券 / 永豐金'), '國泰證券');
+        await user.type(screen.getByPlaceholderText('0'), '90000');
+        await user.click(screen.getByText('確認新增'));
+        await waitFor(() => expect(screen.getByText('已新增一筆負債至 2026-04-09')).toBeInTheDocument());
+        await user.click(screen.getByText('知道了'));
+
+        await user.click(document.querySelector('button.fixed.bottom-8.right-6'));
+        await waitFor(() => expect(screen.getByText('新增紀錄')).toBeInTheDocument());
+        await user.click(screen.getByText('新增負債'));
+        await waitFor(() => expect(screen.getByText('新增負債', { selector: 'h3' })).toBeInTheDocument());
+        fireEvent.change(document.querySelector('input[type="date"]'), { target: { value: '2026-04-15' } });
+        await user.type(screen.getByPlaceholderText('例如：股票質押借款'), '質押借貸');
+        await user.type(screen.getByPlaceholderText('例如：國泰證券 / 永豐金'), '國泰證券');
+        await user.type(screen.getByPlaceholderText('0'), '150000');
+        await user.click(screen.getByText('確認新增'));
+
+        resolveFirstWrite();
+
+        await waitFor(() => expect(setDoc).toHaveBeenCalledTimes(2));
+        const lastSavedContent = setDoc.mock.calls.at(-1)[1].content;
+        expect(lastSavedContent).toContain('2026-04-09');
+        expect(lastSavedContent).toContain('90000');
+        expect(lastSavedContent).toContain('2026-04-15');
+        expect(lastSavedContent).toContain('150000');
+    });
+
     test('Add Debt flow supports stock pledge category details', async () => {
         const user = userEvent.setup();
         const mockData = {

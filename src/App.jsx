@@ -4241,6 +4241,8 @@ const AuthenticatedApp = () => {
     const [isDataLoaded, setIsDataLoaded] = useState(false);
     const [cloudLoadError, setCloudLoadError] = useState('');
     const [isSaving, setIsSaving] = useState(false);
+    const isSavingRef = useRef(false);
+    const pendingSaveRef = useRef(null);
     const [isImporting, setIsImporting] = useState(false);
     const [uploadProgress, setUploadProgress] = useState(0);
     const [isPrivacyMode, setIsPrivacyMode] = useState(() => {
@@ -4337,16 +4339,27 @@ const AuthenticatedApp = () => {
             handleShowAlert("儲存已暫停", "雲端資料目前無法解析。為避免覆蓋既有資料，請先修復雲端資料或匯入備份。");
             return false;
         }
-        if (isSaving) return false; // Prevent concurrent writes
+        if (isSavingRef.current) {
+            pendingSaveRef.current = userData;
+            return true;
+        }
+        isSavingRef.current = true;
         setIsSaving(true);
         try {
-            await writeFirestoreChunks(userData);
+            let dataToSave = userData;
+            while (dataToSave) {
+                pendingSaveRef.current = null;
+                await writeFirestoreChunks(dataToSave);
+                dataToSave = pendingSaveRef.current;
+            }
             return true;
         } catch (error) {
             console.error("Save failed:", error);
             handleShowAlert("儲存失敗", "無法同步至雲端，請檢查網路連線。");
             return false;
         } finally {
+            isSavingRef.current = false;
+            pendingSaveRef.current = null;
             setIsSaving(false);
             setUploadProgress(0);
         }
