@@ -264,6 +264,8 @@ describe('App Integration Tests', () => {
 
     test('Add Asset flow can batch pending assets and save once', async () => {
         const user = userEvent.setup();
+        const today = new Date();
+        const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
         render(<App />);
         await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
 
@@ -288,7 +290,7 @@ describe('App Integration Tests', () => {
 
         await user.click(screen.getByText('儲存全部 (2)'));
 
-        await waitFor(() => expect(screen.getByText('已新增 2 筆資產到 2026-04-17')).toBeInTheDocument());
+        await waitFor(() => expect(screen.getByText(`已新增 2 筆資產到 ${todayStr}`)).toBeInTheDocument());
         expect(setDoc).toHaveBeenCalledTimes(1);
         const savedContent = setDoc.mock.calls.at(-1)[1].content;
         expect(savedContent).toContain('Asset One');
@@ -297,6 +299,8 @@ describe('App Integration Tests', () => {
 
     test('Add Asset flow can import previous assets into pending list by choice', async () => {
         const user = userEvent.setup();
+        const today = new Date();
+        const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
         const mockData = {
             records: {
                 '2026-03-31': [
@@ -335,9 +339,9 @@ describe('App Integration Tests', () => {
 
         await user.click(screen.getByText('儲存全部 (2)'));
 
-        await waitFor(() => expect(screen.getByText('已新增 2 筆資產到 2026-04-17')).toBeInTheDocument());
+        await waitFor(() => expect(screen.getByText(`已新增 2 筆資產到 ${todayStr}`)).toBeInTheDocument());
         const savedData = JSON.parse(setDoc.mock.calls.at(-1)[1].content);
-        expect(savedData.records['2026-04-17']).toEqual(expect.arrayContaining([
+        expect(savedData.records[todayStr]).toEqual(expect.arrayContaining([
             expect.objectContaining({ name: '台積電', amount: 123456, originalAmount: 123456 }),
             expect.objectContaining({ name: '永豐銀行', amount: 50000 })
         ]));
@@ -1099,7 +1103,81 @@ describe('App Integration Tests', () => {
         expect(screen.queryByText(/台積電.*尚未支援/)).not.toBeInTheDocument();
     });
 
-    test('Stock Analysis: imports US realized gains separately', async () => {
+    test('Stock Analysis: rejects archived US realized gains from the default import flow', async () => {
+        const user = userEvent.setup();
+        render(<App />);
+        await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
+
+        const advancedBtn = document.querySelector('.lucide-layout-grid').closest('button');
+        await user.click(advancedBtn);
+        await waitFor(() => expect(screen.getByText('Advanced')).toBeInTheDocument());
+        await user.click(screen.getByText('個股績效'));
+
+        await waitFor(() => expect(screen.getByText('匯入股票交易')).toBeInTheDocument());
+        await user.click(screen.getByRole('button', { name: /匯入股票交易/ }));
+
+        const usCsv = [
+            '代號,詳細資訊,數量,持有日數,開倉日期,平倉日期,賣出收入,調整後成本,WS Loss Disallowed,淨益損$',
+            'NVDA,NVIDIA CORP,7.07476,15,06/03/2025,06/18/2025,"$1,018.62","$1,000.00",0,$18.62'
+        ].join('\n');
+
+        await user.type(screen.getByPlaceholderText(/類型,日期,項目/), usCsv);
+        await user.click(screen.getByText('預覽匯入明細'));
+
+        await waitFor(() => expect(screen.getAllByText(/美股已平倉損益 v1 匯入格式已封存/).length).toBeGreaterThan(0));
+        expect(screen.queryByText('確認匯入股票交易')).not.toBeInTheDocument();
+    });
+
+    test('Stock Analysis: imports US broker transaction details with cash-flow summary', async () => {
+        const user = userEvent.setup();
+        render(<App />);
+        await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
+
+        const advancedBtn = document.querySelector('.lucide-layout-grid').closest('button');
+        await user.click(advancedBtn);
+        await waitFor(() => expect(screen.getByText('Advanced')).toBeInTheDocument());
+        await user.click(screen.getByText('個股績效'));
+
+        await waitFor(() => expect(screen.getByText('匯入股票交易')).toBeInTheDocument());
+        await user.click(screen.getByRole('button', { name: /匯入股票交易/ }));
+
+        const brokerCsv = [
+            '日期,交易類別,數量,說明,代號,賬戶類別,價格,金額',
+            '06/03/2025,買進,5.1051,TAIWAN SEMICONDUCTOR,TSM,現金,195.8825,"-1,000.00"',
+            '06/05/2025,賣出,-2.88675,TESLA INC,TSLA,現金,316.9,914.81',
+            '06/30/2025,股息,0,NVIDIA CORP,NVDA,現金,0,12.34',
+            '06/30/2025,利息,0,USD CREDIT INTEREST,,現金,0,1.23',
+            '07/01/2025,匯款,0,ACH DEPOSIT,,現金,0,500',
+            '07/02/2025,存款,0,Wire Funds Received FedRef xxxxx SEN(xxxxxx),,現金,0,1000',
+            '07/03/2025,其他,0,REBATE FOR WIRE 2025-06-09,,現金,0,25'
+        ].join('\n');
+
+        await user.type(screen.getByPlaceholderText(/日期,交易類別,數量/), brokerCsv);
+        await user.click(screen.getByText('預覽匯入明細'));
+
+        await waitFor(() => expect(screen.getByText('確認匯入股票交易')).toBeInTheDocument());
+        expect(screen.getByText('將 append 新增 7 筆交易，不會覆蓋既有資料。')).toBeInTheDocument();
+        expect(within(screen.getByText('買入').parentElement).getByText('1')).toBeInTheDocument();
+        expect(within(screen.getByText('賣出').parentElement).getByText('1')).toBeInTheDocument();
+        expect(within(screen.getByText('股息').parentElement).getByText('1')).toBeInTheDocument();
+        expect(within(screen.getByText('利息').parentElement).getByText('1')).toBeInTheDocument();
+        expect(within(screen.getByText('匯入').parentElement).getByText('3')).toBeInTheDocument();
+
+        await user.click(screen.getByText('確認匯入'));
+        await waitFor(() => expect(screen.getByText('匯入成功')).toBeInTheDocument());
+        await user.click(screen.getByText('知道了'));
+
+        await user.click(screen.getByRole('button', { name: /美股/ }));
+        expect(screen.getAllByText('TSM').length).toBeGreaterThan(0);
+        expect(screen.getAllByText('TSLA').length).toBeGreaterThan(0);
+        expect(screen.getAllByText('NVDA').length).toBeGreaterThan(0);
+        expect(screen.getByText('利息').parentElement).toHaveTextContent('+1.23');
+        expect(screen.getByText('匯款淨額').parentElement).toHaveTextContent('+1,525.00');
+        expect(screen.getAllByText('USD CREDIT INTEREST').length).toBeGreaterThan(0);
+        expect(screen.getAllByText(/REBATE FOR WIRE/).length).toBeGreaterThan(0);
+    });
+
+    test('Stock Analysis: imports archived US realized gains separately by explicit choice', async () => {
         const user = userEvent.setup();
         render(<App />);
         await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
@@ -1120,9 +1198,10 @@ describe('App Integration Tests', () => {
         ].join('\n');
 
         await user.type(screen.getByPlaceholderText(/類型,日期,項目/), usCsv);
-        await user.click(screen.getByText('預覽匯入明細'));
+        await user.click(screen.getByText('封存 v1 格式預覽'));
 
         await waitFor(() => expect(screen.getByText('確認匯入股票交易')).toBeInTheDocument());
+        expect(screen.getByText('封存 v1 格式')).toBeInTheDocument();
         expect(screen.getByText('將 append 新增 6 筆交易，不會覆蓋既有資料。')).toBeInTheDocument();
         expect(within(screen.getByText('買入').parentElement).getByText('3')).toBeInTheDocument();
         expect(within(screen.getByText('賣出').parentElement).getByText('3')).toBeInTheDocument();

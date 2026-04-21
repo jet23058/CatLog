@@ -264,7 +264,9 @@ const getStockTradeLabel = (type) => ({
     buy: '買入',
     sell: '賣出',
     dividend: '股息',
+    interest: '利息',
     deposit: '入金',
+    withdrawal: '出金',
     fee: '費用'
 }[type] || '其他');
 
@@ -275,7 +277,100 @@ const STOCK_MARKETS = [
 
 const getStockMarketLabel = (market) => STOCK_MARKETS.find((item) => item.value === market)?.label || market || '其他';
 
-const processUSStockCSVRows = (rows, headers) => {
+const isUSBrokerTransactionCSVHeaders = (headers) => (
+    ['日期', '交易類別', '數量', '說明', '代號', '價格', '金額'].every((header) => headers.includes(header))
+);
+
+const getUSBrokerTradeType = (typeText = '', amount = 0, description = '') => {
+    const normalized = typeText.trim().toLowerCase();
+    const normalizedDescription = description.trim().toLowerCase();
+    if (['買進', '買入', 'buy'].some((keyword) => normalized.includes(keyword))) return 'buy';
+    if (['賣出', 'sell'].some((keyword) => normalized.includes(keyword))) return 'sell';
+    if (['現金股息', '股息', '配息', 'dividend'].some((keyword) => normalized.includes(keyword))) return 'dividend';
+    if (['利息', 'interest'].some((keyword) => normalized.includes(keyword))) return 'interest';
+    if (['匯款', '入金', '存入', '存款', '轉入', 'ach deposit', 'deposit'].some((keyword) => normalized.includes(keyword))) return 'deposit';
+    if (['出金', '轉出', 'withdrawal'].some((keyword) => normalized.includes(keyword))) return 'withdrawal';
+    if (['手續費', '費用', 'fee'].some((keyword) => normalized.includes(keyword))) return 'fee';
+    if (normalizedDescription.includes('wire funds received') || normalizedDescription.includes('rebate for wire')) return 'deposit';
+    if (normalized.includes('cash') && amount > 0) return 'deposit';
+    if (normalized.includes('cash') && amount < 0) return 'withdrawal';
+    return 'other';
+};
+
+const processUSBrokerTransactionCSVRows = (rows, headers) => {
+    const idxDate = headers.indexOf('日期');
+    const idxType = headers.indexOf('交易類別');
+    const idxQuantity = headers.indexOf('數量');
+    const idxDescription = headers.indexOf('說明');
+    const idxSymbol = headers.indexOf('代號');
+    const idxAccount = headers.indexOf('賬戶類別');
+    const idxPrice = headers.indexOf('價格');
+    const idxAmount = headers.indexOf('金額');
+
+    const transactions = [];
+    const skippedRows = [];
+
+    rows.slice(1).forEach((row, index) => {
+        const csvRow = index + 2;
+        const date = normalizeUSDate(row[idxDate]);
+        const typeText = row[idxType]?.trim() || '';
+        const symbol = row[idxSymbol]?.trim() || '';
+        const description = row[idxDescription]?.trim() || symbol || typeText;
+        const amountRaw = parseAmount(row[idxAmount]);
+        const tradeType = getUSBrokerTradeType(typeText, amountRaw, description);
+        const amount = Math.abs(amountRaw);
+        const shares = Math.abs(parseAmount(row[idxQuantity]));
+        const price = Math.abs(parseAmount(row[idxPrice]));
+
+        if (!date || !typeText) {
+            skippedRows.push({ row: csvRow, type: typeText || '空白', item: symbol || description || '空白', reason: '缺少日期或交易類別' });
+            return;
+        }
+
+        if (tradeType === 'other') {
+            skippedRows.push({ row: csvRow, type: typeText || '空白', item: symbol || description || '空白', reason: '尚未支援的美股交易類型' });
+            return;
+        }
+
+        if (!amount && !['buy', 'sell'].includes(tradeType)) {
+            skippedRows.push({ row: csvRow, type: typeText || '空白', item: symbol || description || '空白', reason: '金額為 0' });
+            return;
+        }
+
+        if (['buy', 'sell', 'dividend'].includes(tradeType) && !symbol) {
+            skippedRows.push({ row: csvRow, type: typeText || '空白', item: description || '空白', reason: '缺少股票代號' });
+            return;
+        }
+
+        transactions.push({
+            id: `stock-us-broker-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 8)}`,
+            source: 'csv-us-broker-transactions',
+            market: 'US',
+            currency: 'USD',
+            date,
+            type: tradeType,
+            symbol: ['buy', 'sell', 'dividend'].includes(tradeType) ? symbol : '',
+            name: description.split(/\r?\n/)[0]?.replace(/^\*+/, '').trim() || symbol || typeText,
+            rawItem: description,
+            amount,
+            signedAmount: amountRaw,
+            shares,
+            price,
+            balance: 0,
+            account: idxAccount >= 0 ? row[idxAccount]?.trim() || '' : '',
+            unassigned: tradeType === 'dividend' && !symbol,
+            memo: typeText
+        });
+    });
+
+    return { market: 'US', importMode: 'us-broker-transactions', transactions, skippedRows };
+};
+
+const isArchivedUSRealizedCSVHeaders = (headers) => (
+    headers.includes('代號') && headers.includes('調整後成本') && headers.includes('賣出收入')
+);
+
+const processArchivedUSRealizedCSVRows = (rows, headers) => {
     const idxSymbol = headers.indexOf('代號');
     const idxName = headers.indexOf('詳細資訊');
     const idxQuantity = headers.indexOf('數量');
@@ -286,7 +381,7 @@ const processUSStockCSVRows = (rows, headers) => {
     const idxWashSaleLoss = headers.indexOf('WS Loss Disallowed');
 
     if ([idxSymbol, idxOpenDate, idxCloseDate, idxProceeds, idxCost].some((idx) => idx === -1)) {
-        throw new Error("美股 CSV 格式不符，找不到代號、開倉/平倉日期、賣出收入或調整後成本欄位");
+        throw new Error("美股已平倉損益 v1 格式不符，找不到代號、開倉/平倉日期、賣出收入或調整後成本欄位");
     }
 
     const transactions = [];
@@ -328,7 +423,7 @@ const processUSStockCSVRows = (rows, headers) => {
                 amount: cost,
                 shares: quantity,
                 balance: 0,
-                memo: '美股平倉損益匯入：調整後成本'
+                memo: '封存 v1 美股平倉損益匯入：調整後成本'
             });
         }
 
@@ -346,21 +441,28 @@ const processUSStockCSVRows = (rows, headers) => {
                 amount: sellAmount,
                 shares: quantity,
                 balance: 0,
-                memo: washSaleLoss ? '美股平倉損益匯入：賣出收入 + WS Loss Disallowed' : '美股平倉損益匯入：賣出收入'
+                memo: washSaleLoss ? '封存 v1 美股平倉損益匯入：賣出收入 + WS Loss Disallowed' : '封存 v1 美股平倉損益匯入：賣出收入'
             });
         }
     });
 
-    return { market: 'US', transactions, skippedRows };
+    return { market: 'US', importMode: 'archived-us-realized', isArchived: true, transactions, skippedRows };
 };
 
-const processStockCSVText = (csvText) => {
+const processStockCSVText = (csvText, options = {}) => {
     const rows = parseCSV(csvText);
     if (rows.length === 0) throw new Error("CSV 檔案是空的");
 
     const headers = rows[0].map((header) => header.trim());
-    if (headers.includes('代號') && headers.includes('調整後成本') && headers.includes('賣出收入')) {
-        return processUSStockCSVRows(rows, headers);
+    if (isUSBrokerTransactionCSVHeaders(headers)) {
+        return processUSBrokerTransactionCSVRows(rows, headers);
+    }
+
+    if (isArchivedUSRealizedCSVHeaders(headers)) {
+        if (!options.allowArchivedUSRealized) {
+            throw new Error("美股已平倉損益 v1 匯入格式已封存。新的美股匯入會改走完整券商交易明細；若只是要補救舊資料，請使用下方「封存 v1 格式預覽」。");
+        }
+        return processArchivedUSRealizedCSVRows(rows, headers);
     }
 
     const idxType = headers.indexOf('類型');
@@ -3950,6 +4052,9 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
         totalBuy: marketFilteredStockRows.reduce((sum, item) => sum + item.buyAmount, 0),
         totalMarketValue: marketFilteredStockRows.reduce((sum, item) => sum + item.marketValue, 0),
         totalDividends: marketFilteredTransactions.filter((trade) => trade.type === 'dividend').reduce((sum, item) => sum + (Number(item.amount) || 0), 0),
+        totalInterest: marketFilteredTransactions.filter((trade) => trade.type === 'interest').reduce((sum, item) => sum + (Number(item.amount) || 0), 0),
+        totalDeposits: marketFilteredTransactions.filter((trade) => trade.type === 'deposit').reduce((sum, item) => sum + (Number(item.amount) || 0), 0),
+        totalWithdrawals: marketFilteredTransactions.filter((trade) => trade.type === 'withdrawal').reduce((sum, item) => sum + (Number(item.amount) || 0), 0),
         totalPnl: marketFilteredStockRows.reduce((sum, item) => sum + item.totalPnl, 0) + marketFilteredTransactions.filter((trade) => trade.type === 'dividend' && trade.unassigned).reduce((sum, item) => sum + (Number(item.amount) || 0), 0)
     }), [marketFilteredStockRows, marketFilteredTransactions]);
 
@@ -3991,10 +4096,10 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
         return rows.map((item) => ({ ...item, barWidth: Math.max(6, Math.round((Math.abs(item.totalPnl) / maxAbs) * 100)) }));
     }, [filteredStockRows]);
 
-    const parseImportText = (text) => {
+    const parseImportText = (text, options = {}) => {
         setErrorMsg('');
         try {
-            const result = processStockCSVText(text);
+            const result = processStockCSVText(text, options);
             if (result.transactions.length === 0) return setErrorMsg('沒有找到可匯入的股票交易。');
             setPreview(result);
         } catch (error) {
@@ -4068,6 +4173,9 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
     };
 
     const stockMoney = (amount, market = marketFilter, prefix = '') => isPrivacyMode ? '****' : `${prefix}${formatMoneyByMarket(amount, market)}`;
+    const remittanceNet = stockStats.totalDeposits - stockStats.totalWithdrawals;
+    const remittancePrefix = remittanceNet > 0 ? '+' : '';
+    const getTradeAmountPrefix = (trade) => ['buy', 'fee', 'withdrawal'].includes(trade.type) ? '-' : '+';
     const updateHoldingRow = (id, field, value) => setHoldingRows((rows) => rows.map((row) => row.id === id ? { ...row, [field]: value } : row));
     const addHoldingRow = () => setHoldingRows((rows) => [...rows, { id: `holding-row-${Date.now()}-${rows.length}`, market: rows.at(-1)?.market || 'TW', name: '', price: '', shares: '' }]);
     const removeHoldingRow = (id) => setHoldingRows((rows) => rows.length > 1 ? rows.filter((row) => row.id !== id) : rows);
@@ -4107,6 +4215,13 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
                             <div className="bg-white/5 rounded-xl p-3"><div className="text-slate-400 mb-1">快照市值</div><div className="font-inter font-bold">{stockMoney(stockStats.totalMarketValue)}</div></div>
                             <div className="bg-white/5 rounded-xl p-3"><div className="text-slate-400 mb-1">累計股息</div><div className="font-inter font-bold text-amber-200">{stockMoney(stockStats.totalDividends, marketFilter, '+')}</div></div>
                         </div>
+                        {marketFilter === 'US' && (
+                            <div className="grid grid-cols-3 gap-2 mt-2 text-xs">
+                                <div className="bg-white/5 rounded-xl p-3"><div className="text-slate-400 mb-1">利息</div><div className="font-inter font-bold text-sky-200">{stockMoney(stockStats.totalInterest, 'US', '+')}</div></div>
+                                <div className="bg-white/5 rounded-xl p-3"><div className="text-slate-400 mb-1">股息</div><div className="font-inter font-bold text-amber-200">{stockMoney(stockStats.totalDividends, 'US', '+')}</div></div>
+                                <div className="bg-white/5 rounded-xl p-3"><div className="text-slate-400 mb-1">匯款淨額</div><div className="font-inter font-bold text-blue-200">{stockMoney(remittanceNet, 'US', remittancePrefix)}</div></div>
+                            </div>
+                        )}
                         <p className="text-[10px] text-slate-500 mt-3">目前市值會以選定的持倉快照版本計算。</p>
                     </div>
                 </section>
@@ -4266,7 +4381,7 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
 
                 <section className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
                     <div className="px-4 py-3 border-b border-slate-100"><h3 className="text-sm font-serif-tc font-bold text-slate-700">最近匯入交易</h3></div>
-                    {latestTrades.length > 0 ? latestTrades.map((trade) => <div key={trade.id} className="px-4 py-3 border-b border-slate-50 last:border-0 flex justify-between items-center"><div><div className="font-bold text-sm text-slate-700">{trade.symbol || trade.rawItem || trade.name}</div><div className="text-xs text-slate-400">{trade.date} · {getStockMarketLabel(trade.market || 'TW')} · {getStockTradeLabel(trade.type)}</div></div><div className={`font-inter text-sm font-bold ${trade.type === 'buy' ? 'text-slate-600' : 'text-emerald-600'} ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>{stockMoney(trade.amount, trade.market || 'TW', trade.type === 'buy' ? '-' : '+')}</div></div>) : <div className="p-8 text-center text-slate-300 text-sm">尚無交易明細</div>}
+                    {latestTrades.length > 0 ? latestTrades.map((trade) => <div key={trade.id} className="px-4 py-3 border-b border-slate-50 last:border-0 flex justify-between items-center"><div><div className="font-bold text-sm text-slate-700">{trade.symbol || trade.rawItem || trade.name}</div><div className="text-xs text-slate-400">{trade.date} · {getStockMarketLabel(trade.market || 'TW')} · {getStockTradeLabel(trade.type)}</div></div><div className={`font-inter text-sm font-bold ${['buy', 'fee', 'withdrawal'].includes(trade.type) ? 'text-slate-600' : 'text-emerald-600'} ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>{stockMoney(trade.amount, trade.market || 'TW', getTradeAmountPrefix(trade))}</div></div>) : <div className="p-8 text-center text-slate-300 text-sm">尚無交易明細</div>}
                 </section>
             </main>
 
@@ -4276,7 +4391,11 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
                         <button onClick={() => setShowTransactionImportModal(false)} className="absolute top-4 right-4 text-slate-300 hover:text-slate-600"><X size={18} /></button>
                         <div className="mb-4 pr-8">
                             <h3 className="text-xl font-serif-tc font-bold text-slate-800 flex items-center gap-2"><Upload size={18} /> 匯入股票交易</h3>
-                            <p className="text-sm text-slate-400 mt-1">支援檔案或直接貼上 CSV。匯入採 append，不會覆蓋既有資料。</p>
+                            <p className="text-sm text-slate-400 mt-1">支援檔案或直接貼上 CSV。匯入採 append，不會覆蓋既有資料；美股新格式將改走完整券商交易明細。</p>
+                        </div>
+                        <div className="mb-4 rounded-2xl border border-amber-100 bg-amber-50 p-3 text-xs text-amber-800 leading-relaxed">
+                            <div className="font-bold mb-1">美股 v1 已封存</div>
+                            <div>舊版「已平倉損益」格式不再作為主要匯入流程維護。既有匯入資料仍會照常計算；若只是要補救舊檔，可貼上內容後使用下方封存格式預覽。</div>
                         </div>
                         {errorMsg && <div className="bg-rose-50 text-rose-500 text-xs p-3 rounded-xl flex items-center gap-2 font-bold mb-4"><AlertCircle size={14} />{errorMsg}</div>}
                         <div className="relative border border-dashed border-slate-300 rounded-xl p-4 text-center hover:border-blue-400 hover:text-blue-600 transition-colors text-slate-400 bg-slate-50">
@@ -4286,8 +4405,9 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
                         </div>
                         <div className="mt-4">
                             <label className="text-xs text-slate-400 font-bold mb-1 block">或貼上 CSV 內容</label>
-                            <textarea value={inputText} onChange={(e) => setInputText(e.target.value)} className="w-full min-h-[160px] p-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 outline-none text-xs font-inter text-slate-700" placeholder={"類型,日期,項目,股票買入,存入戶頭,帳面餘額\n匯款,2016/2/1,ＡＴＭ轉,,30000,32000\n,2016/2/3,國泰金,37081,,24919"} />
+                            <textarea value={inputText} onChange={(e) => setInputText(e.target.value)} className="w-full min-h-[160px] p-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 outline-none text-xs font-inter text-slate-700" placeholder={"類型,日期,項目,股票買入,存入戶頭,帳面餘額\n匯款,2016/2/1,ＡＴＭ轉,,30000,32000\n\n日期,交易類別,數量,說明,代號,賬戶類別,價格,金額\n06/03/2025,買進,5.1051,TAIWAN SEMICONDUCTOR,TSM,現金,195.8825,-1000\n06/05/2025,賣出,-2.88675,TESLA INC,TSLA,現金,316.9,914.81"} />
                             <button onClick={() => parseImportText(inputText)} disabled={!inputText.trim()} className="mt-3 w-full py-2.5 rounded-xl bg-blue-600 text-white font-bold text-sm hover:bg-blue-700 disabled:bg-slate-200 disabled:text-slate-400 transition-colors">預覽匯入明細</button>
+                            <button onClick={() => parseImportText(inputText, { allowArchivedUSRealized: true })} disabled={!inputText.trim()} className="mt-2 w-full py-2.5 rounded-xl bg-amber-50 text-amber-700 font-bold text-sm hover:bg-amber-100 disabled:bg-slate-50 disabled:text-slate-300 transition-colors">封存 v1 格式預覽</button>
                         </div>
                     </div>
                 </div>
@@ -4355,11 +4475,19 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
                     <div className="bg-white w-full max-w-md rounded-2xl p-6 shadow-2xl max-h-[85vh] flex flex-col">
                         <h3 className="text-xl font-serif-tc font-bold text-slate-800 mb-2">確認匯入股票交易</h3>
                         <p className="text-sm text-slate-400 mb-4">將 append 新增 {preview.transactions.length} 筆交易，不會覆蓋既有資料。</p>
-                        <div className="grid grid-cols-4 gap-2 mb-4 text-center text-xs">
+                        {preview.isArchived && (
+                            <div className="mb-4 rounded-xl bg-amber-50 text-amber-800 text-xs p-3 leading-relaxed">
+                                <div className="font-bold mb-1">封存 v1 格式</div>
+                                <div>這批資料會以舊版美股已平倉損益格式匯入，僅保留相容用途；後續美股新功能將不再以此格式延伸。</div>
+                            </div>
+                        )}
+                        <div className="grid grid-cols-3 gap-2 mb-4 text-center text-xs">
                             <div className="bg-slate-50 rounded-xl p-3"><div className="text-slate-400">買入</div><div className="font-bold text-slate-700">{preview.transactions.filter(t => t.type === 'buy').length}</div></div>
                             <div className="bg-slate-50 rounded-xl p-3"><div className="text-slate-400">賣出</div><div className="font-bold text-blue-600">{preview.transactions.filter(t => t.type === 'sell').length}</div></div>
                             <div className="bg-slate-50 rounded-xl p-3"><div className="text-slate-400">股息</div><div className="font-bold text-emerald-600">{preview.transactions.filter(t => t.type === 'dividend').length}</div></div>
-                            <div className="bg-slate-50 rounded-xl p-3"><div className="text-slate-400">入金</div><div className="font-bold text-blue-600">{preview.transactions.filter(t => t.type === 'deposit').length}</div></div>
+                            <div className="bg-slate-50 rounded-xl p-3"><div className="text-slate-400">利息</div><div className="font-bold text-sky-600">{preview.transactions.filter(t => t.type === 'interest').length}</div></div>
+                            <div className="bg-slate-50 rounded-xl p-3"><div className="text-slate-400">匯入</div><div className="font-bold text-blue-600">{preview.transactions.filter(t => t.type === 'deposit').length}</div></div>
+                            <div className="bg-slate-50 rounded-xl p-3"><div className="text-slate-400">匯出</div><div className="font-bold text-slate-600">{preview.transactions.filter(t => t.type === 'withdrawal').length}</div></div>
                         </div>
                         <div className="flex-1 overflow-y-auto border border-slate-100 rounded-xl divide-y divide-slate-50">
                             {preview.transactions.slice(0, 30).map((trade) => <div key={trade.id} className="p-3 flex justify-between items-center text-sm"><div><div className="font-bold text-slate-700">{trade.symbol || trade.rawItem || trade.name}</div><div className="text-xs text-slate-400">{trade.date} · {getStockTradeLabel(trade.type)}</div></div><div className="font-inter font-bold text-slate-700">{formatMoneyByMarket(trade.amount, trade.market || 'TW')}</div></div>)}
