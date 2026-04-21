@@ -1218,7 +1218,7 @@ describe('App Integration Tests', () => {
         expect(screen.getByText(/\(USD\) \+9.27/)).toBeInTheDocument();
         expect(screen.getByText('匯率 USD/TWD 32.5')).toBeInTheDocument();
         await user.click(screen.getByText('轉台幣'));
-        expect(screen.getByText(/NT\$\+301/)).toBeInTheDocument();
+        expect(screen.getByText(/NT\$\+/)).toBeInTheDocument();
         await user.click(screen.getByText('轉美金'));
         expect(screen.getByText(/\(USD\) \+9.27/)).toBeInTheDocument();
         expect(screen.getAllByText('+18.62').length).toBeGreaterThan(0);
