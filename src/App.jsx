@@ -612,6 +612,20 @@ const processStockHoldingCSVText = (csvText, fallbackMonth, note = '') => {
     return { month: snapshotMonth, note: note.trim(), holdings, skippedRows };
 };
 
+const fetchLatestStockQuote = async (market = 'TW', rawSymbol = '') => {
+    const symbol = rawSymbol.trim();
+    if (!symbol) throw new Error('請先輸入股票代號');
+    if (typeof fetch === 'undefined') throw new Error('目前環境無法抓取股價');
+
+    const params = new URLSearchParams({ market, symbol });
+    const response = await fetch(`/api/stock-quote?${params.toString()}`);
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload?.error || '股價來源暫時無法使用');
+    const price = Number(payload?.price);
+    if (!price || !Number.isFinite(price)) throw new Error(`找不到 ${rawSymbol} 的最新股價`);
+    return payload;
+};
+
 // --- 組件 ---
 const AmountWithTooltip = ({ amount, className = "", iconColor = "text-slate-300", align = "center", prefix = "", masked = false }) => (
     <div className={`flex items-center gap-1 w-fit ${className}`}>
@@ -3941,6 +3955,10 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
     const [marketFilter, setMarketFilter] = useState('TW');
     const [usdToTwdRate, setUsdToTwdRate] = useState(DEFAULT_EXCHANGE_RATES.USD);
     const [usPnlCurrency, setUsPnlCurrency] = useState('USD');
+    const [fetchingHoldingRowId, setFetchingHoldingRowId] = useState('');
+    const [latestHoldingQuotes, setLatestHoldingQuotes] = useState({});
+    const [isFetchingSnapshotQuotes, setIsFetchingSnapshotQuotes] = useState(false);
+    const [snapshotQuoteError, setSnapshotQuoteError] = useState('');
 
     const holdingSnapshots = useMemo(() => Object.entries(data.stockHoldingSnapshots || {}).flatMap(([month, versions]) =>
         (versions || []).map((snapshot) => ({ ...snapshot, month }))
@@ -4117,6 +4135,42 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
         event.target.value = '';
     };
 
+    const handleFetchHoldingRowPrice = async (row) => {
+        setErrorMsg('');
+        const symbol = row.name.trim();
+        if (!symbol) return setErrorMsg('請先輸入股票代號或 Yahoo 可辨識的代號，例如 AAPL 或 2330。');
+        setFetchingHoldingRowId(row.id);
+        try {
+            const quote = await fetchLatestStockQuote(row.market || 'TW', symbol);
+            updateHoldingRow(row.id, 'price', String(quote.price));
+        } catch (error) {
+            setErrorMsg(error.message || '無法抓取最新股價，請改用手動輸入。');
+        } finally {
+            setFetchingHoldingRowId('');
+        }
+    };
+
+    const handleFetchSnapshotQuotes = async () => {
+        setSnapshotQuoteError('');
+        setIsFetchingSnapshotQuotes(true);
+        const nextQuotes = {};
+        const failures = [];
+
+        await Promise.all(selectedSnapshotHoldings.map(async (holding) => {
+            const symbol = holding.symbol || holding.name || '';
+            try {
+                const quote = await fetchLatestStockQuote(holding.market || 'TW', symbol);
+                nextQuotes[holding.id] = quote;
+            } catch (error) {
+                failures.push(symbol || holding.name || '空白');
+            }
+        }));
+
+        setLatestHoldingQuotes((prev) => ({ ...prev, ...nextQuotes }));
+        if (failures.length > 0) setSnapshotQuoteError(`有 ${failures.length} 檔無法抓取最新股價，仍保留快照價顯示。`);
+        setIsFetchingSnapshotQuotes(false);
+    };
+
     const parseHoldingRows = () => {
         setErrorMsg('');
         const activeRows = holdingRows.filter((row) => row.name.trim() || row.price || row.shares);
@@ -4173,6 +4227,11 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
     };
 
     const stockMoney = (amount, market = marketFilter, prefix = '') => isPrivacyMode ? '****' : `${prefix}${formatMoneyByMarket(amount, market)}`;
+    const summaryMoney = (amount, market = marketFilter, prefix = '') => {
+        if (isPrivacyMode) return '****';
+        if (market === 'US' && usPnlCurrency === 'TWD') return `${prefix}${formatMoney(amount * usdToTwdRate)}`;
+        return `${prefix}${formatMoneyByMarket(amount, market)}`;
+    };
     const remittanceNet = stockStats.totalDeposits - stockStats.totalWithdrawals;
     const remittancePrefix = remittanceNet > 0 ? '+' : '';
     const getTradeAmountPrefix = (trade) => ['buy', 'fee', 'withdrawal'].includes(trade.type) ? '-' : '+';
@@ -4211,15 +4270,15 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
                             <div className="text-[10px] text-slate-500 mt-1">匯率 USD/TWD {formatExchangeRate(usdToTwdRate)}</div>
                         )}
                         <div className="grid grid-cols-3 gap-2 mt-5 text-xs">
-                            <div className="bg-white/5 rounded-xl p-3"><div className="text-slate-400 mb-1">累計買入</div><div className="font-inter font-bold">{stockMoney(stockStats.totalBuy)}</div></div>
-                            <div className="bg-white/5 rounded-xl p-3"><div className="text-slate-400 mb-1">快照市值</div><div className="font-inter font-bold">{stockMoney(stockStats.totalMarketValue)}</div></div>
-                            <div className="bg-white/5 rounded-xl p-3"><div className="text-slate-400 mb-1">累計股息</div><div className="font-inter font-bold text-amber-200">{stockMoney(stockStats.totalDividends, marketFilter, '+')}</div></div>
+                            <div className="bg-white/5 rounded-xl p-3"><div className="text-slate-400 mb-1">累計買入</div><div className="font-inter font-bold">{summaryMoney(stockStats.totalBuy)}</div></div>
+                            <div className="bg-white/5 rounded-xl p-3"><div className="text-slate-400 mb-1">快照市值</div><div className="font-inter font-bold">{summaryMoney(stockStats.totalMarketValue)}</div></div>
+                            <div className="bg-white/5 rounded-xl p-3"><div className="text-slate-400 mb-1">累計股息</div><div className="font-inter font-bold text-amber-200">{summaryMoney(stockStats.totalDividends, marketFilter, '+')}</div></div>
                         </div>
                         {marketFilter === 'US' && (
                             <div className="grid grid-cols-3 gap-2 mt-2 text-xs">
-                                <div className="bg-white/5 rounded-xl p-3"><div className="text-slate-400 mb-1">利息</div><div className="font-inter font-bold text-sky-200">{stockMoney(stockStats.totalInterest, 'US', '+')}</div></div>
-                                <div className="bg-white/5 rounded-xl p-3"><div className="text-slate-400 mb-1">股息</div><div className="font-inter font-bold text-amber-200">{stockMoney(stockStats.totalDividends, 'US', '+')}</div></div>
-                                <div className="bg-white/5 rounded-xl p-3"><div className="text-slate-400 mb-1">匯款淨額</div><div className="font-inter font-bold text-blue-200">{stockMoney(remittanceNet, 'US', remittancePrefix)}</div></div>
+                                <div className="bg-white/5 rounded-xl p-3"><div className="text-slate-400 mb-1">利息</div><div className="font-inter font-bold text-sky-200">{summaryMoney(stockStats.totalInterest, 'US', '+')}</div></div>
+                                <div className="bg-white/5 rounded-xl p-3"><div className="text-slate-400 mb-1">股息</div><div className="font-inter font-bold text-amber-200">{summaryMoney(stockStats.totalDividends, 'US', '+')}</div></div>
+                                <div className="bg-white/5 rounded-xl p-3"><div className="text-slate-400 mb-1">匯款淨額</div><div className="font-inter font-bold text-blue-200">{summaryMoney(remittanceNet, 'US', remittancePrefix)}</div></div>
                             </div>
                         )}
                         <p className="text-[10px] text-slate-500 mt-3">目前市值會以選定的持倉快照版本計算。</p>
@@ -4284,23 +4343,47 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
                             })}
                             {selectedSnapshot && (
                                 <div className="bg-slate-50/70 border-t border-slate-100 p-4">
-                                    <div className="flex justify-between items-center mb-3">
-                                        <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">版本內容</h4>
-                                        <span className="text-[10px] text-slate-400">{selectedSnapshot.month} v{selectedSnapshot.version}</span>
+                                    <div className="flex justify-between items-start gap-3 mb-3">
+                                        <div>
+                                            <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">版本內容</h4>
+                                            <div className="text-[10px] text-slate-400 mt-1">快照價為當時記錄；最新估值只是試算，不會改寫快照。</div>
+                                        </div>
+                                        <div className="text-right shrink-0">
+                                            <span className="block text-[10px] text-slate-400 mb-1">{selectedSnapshot.month} v{selectedSnapshot.version}</span>
+                                            <button onClick={handleFetchSnapshotQuotes} disabled={isFetchingSnapshotQuotes || selectedSnapshotHoldings.length === 0} className="px-2.5 py-1 rounded-full bg-white border border-slate-200 text-[10px] font-bold text-teal-600 hover:bg-teal-50 disabled:text-slate-300 transition-colors">
+                                                {isFetchingSnapshotQuotes ? '抓取中...' : '最新估值'}
+                                            </button>
+                                        </div>
                                     </div>
+                                    {snapshotQuoteError && <div className="mb-3 text-[10px] text-amber-700 bg-amber-50 rounded-xl px-3 py-2">{snapshotQuoteError}</div>}
                                     <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-                                        {selectedSnapshotHoldings.map((holding) => (
-                                            <div key={holding.id} className="bg-white rounded-xl border border-slate-100 p-3 flex justify-between gap-3">
+                                        {selectedSnapshotHoldings.map((holding) => {
+                                            const quote = latestHoldingQuotes[holding.id];
+                                            const latestValue = quote ? quote.price * (Number(holding.shares) || 0) : 0;
+                                            const diff = quote ? latestValue - (Number(holding.marketValue) || 0) : 0;
+                                            const diffRate = quote && holding.marketValue ? diff / Number(holding.marketValue) : 0;
+                                            return (
+                                            <div key={holding.id} className="bg-white rounded-xl border border-slate-100 p-3">
+                                                <div className="flex justify-between gap-3">
                                                 <div className="min-w-0">
                                                     <div className="font-bold text-sm text-slate-700 truncate">{holding.name || holding.symbol}</div>
-                                                    <div className="text-[10px] text-slate-400 font-inter">{getStockMarketLabel(holding.market || 'TW')} · {formatMoneyByMarket(holding.marketPrice || 0, holding.market || 'TW')} x {formatMoneyByMarket(holding.shares || 0, holding.market || 'TW')} 股</div>
+                                                    <div className="text-[10px] text-slate-400 font-inter">{getStockMarketLabel(holding.market || 'TW')} · 快照價 {formatMoneyByMarket(holding.marketPrice || 0, holding.market || 'TW')} x {formatMoneyByMarket(holding.shares || 0, holding.market || 'TW')} 股</div>
                                                 </div>
                                                 <div className="text-right">
                                                     <div className="font-inter font-bold text-teal-600">{formatMoneyByMarket(holding.marketValue || 0, holding.market || 'TW')}</div>
-                                                    <div className="text-[10px] text-slate-400">目前市值</div>
+                                                    <div className="text-[10px] text-slate-400">快照市值</div>
                                                 </div>
+                                                </div>
+                                                {quote && (
+                                                    <div className="mt-3 pt-3 border-t border-slate-50 grid grid-cols-3 gap-2 text-[10px]">
+                                                        <div><div className="text-slate-400">最新價</div><div className="font-inter text-slate-700">{formatMoneyByMarket(quote.price, holding.market || 'TW')}</div></div>
+                                                        <div><div className="text-slate-400">最新估值</div><div className="font-inter text-slate-700">{formatMoneyByMarket(latestValue, holding.market || 'TW')}</div></div>
+                                                        <div><div className="text-slate-400">差異</div><div className={`font-inter font-bold ${diff >= 0 ? 'text-emerald-600' : 'text-rose-500'}`}>{diff >= 0 ? '+' : ''}{formatMoneyByMarket(diff, holding.market || 'TW')} · {formatRate(diffRate)}</div></div>
+                                                    </div>
+                                                )}
                                             </div>
-                                        ))}
+                                            );
+                                        })}
                                     </div>
                                 </div>
                             )}
@@ -4436,34 +4519,43 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
                             <label className="text-xs text-slate-400 font-bold mb-1 block">手動輸入持倉</label>
                             <div className="space-y-2">
                                 {holdingRows.map((row, index) => (
-                                    <div key={row.id} className="grid grid-cols-[76px_1fr_72px_72px_64px] gap-2 items-end">
-                                        <div>
-                                            {index === 0 && <label className="text-[10px] text-slate-400 font-bold mb-1 block">市場</label>}
-                                            <select value={row.market || 'TW'} onChange={(e) => updateHoldingRow(row.id, 'market', e.target.value)} className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:border-teal-500 outline-none text-sm">
-                                                <option value="TW">台股</option>
-                                                <option value="US">美股</option>
-                                            </select>
+                                    <div key={row.id} className="rounded-2xl border border-slate-100 bg-slate-50/70 p-2.5">
+                                        <div className="grid grid-cols-[78px_minmax(0,1fr)] gap-2">
+                                            <div>
+                                                {index === 0 && <label className="text-[10px] text-slate-400 font-bold mb-1 block">市場</label>}
+                                                <select value={row.market || 'TW'} onChange={(e) => updateHoldingRow(row.id, 'market', e.target.value)} className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:border-teal-500 outline-none text-sm">
+                                                    <option value="TW">台股</option>
+                                                    <option value="US">美股</option>
+                                                </select>
+                                            </div>
+                                            <div>
+                                                {index === 0 && <label className="text-[10px] text-slate-400 font-bold mb-1 block">股票名稱</label>}
+                                                <input type="text" value={row.name} onChange={(e) => updateHoldingRow(row.id, 'name', e.target.value)} className="w-full p-2.5 rounded-xl border border-slate-200 bg-white focus:border-teal-500 outline-none text-sm" placeholder="AAPL / 2330 / 台積電" />
+                                            </div>
                                         </div>
-                                        <div>
-                                            {index === 0 && <label className="text-[10px] text-slate-400 font-bold mb-1 block">股票名稱</label>}
-                                            <input type="text" value={row.name} onChange={(e) => updateHoldingRow(row.id, 'name', e.target.value)} className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:border-teal-500 outline-none text-sm" placeholder="台積電" />
-                                        </div>
-                                        <div>
-                                            {index === 0 && <label className="text-[10px] text-slate-400 font-bold mb-1 block">現價</label>}
-                                            <input type="number" value={row.price} onChange={(e) => updateHoldingRow(row.id, 'price', e.target.value)} className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:border-teal-500 outline-none text-sm text-right font-inter" placeholder="0" />
-                                        </div>
-                                        <div>
-                                            {index === 0 && <label className="text-[10px] text-slate-400 font-bold mb-1 block">股數</label>}
-                                            <input type="number" value={row.shares} onChange={(e) => updateHoldingRow(row.id, 'shares', e.target.value)} className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:border-teal-500 outline-none text-sm text-right font-inter" placeholder="0" />
-                                        </div>
-                                        <div className="flex gap-1">
-                                            <button type="button" onClick={addHoldingRow} className="flex-1 h-10 rounded-xl bg-teal-50 text-teal-600 hover:bg-teal-100 transition-colors flex items-center justify-center" title="新增一列"><Plus size={14} /></button>
-                                            <button type="button" onClick={() => removeHoldingRow(row.id)} disabled={holdingRows.length === 1} className="flex-1 h-10 rounded-xl bg-rose-50 text-rose-500 hover:bg-rose-100 disabled:bg-slate-50 disabled:text-slate-300 transition-colors flex items-center justify-center" title="刪除此列"><Trash2 size={14} /></button>
+                                        <div className="mt-2 grid grid-cols-[minmax(0,1fr)_92px_64px] gap-2 items-end">
+                                            <div>
+                                                {index === 0 && <label className="text-[10px] text-slate-400 font-bold mb-1 block">現價</label>}
+                                                <div className="flex overflow-hidden rounded-xl border border-slate-200 bg-white focus-within:border-teal-500 focus-within:ring-2 focus-within:ring-teal-50 transition-colors">
+                                                    <input type="number" value={row.price} onChange={(e) => updateHoldingRow(row.id, 'price', e.target.value)} className="min-w-0 flex-1 p-2.5 bg-transparent outline-none text-sm text-right font-inter" placeholder="0" />
+                                                    <button type="button" onClick={() => handleFetchHoldingRowPrice(row)} disabled={fetchingHoldingRowId === row.id || !row.name.trim()} className="shrink-0 border-l border-teal-100 bg-teal-50 px-3 text-[11px] font-bold text-teal-600 hover:bg-teal-100 disabled:bg-slate-50 disabled:text-slate-300 disabled:border-slate-100 transition-colors">
+                                                        {fetchingHoldingRowId === row.id ? '抓取中' : '抓價'}
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            <div>
+                                                {index === 0 && <label className="text-[10px] text-slate-400 font-bold mb-1 block">股數</label>}
+                                                <input type="number" value={row.shares} onChange={(e) => updateHoldingRow(row.id, 'shares', e.target.value)} className="w-full p-2.5 rounded-xl border border-slate-200 bg-white focus:border-teal-500 outline-none text-sm text-right font-inter" placeholder="0" />
+                                            </div>
+                                            <div className="flex gap-1">
+                                                <button type="button" onClick={addHoldingRow} className="flex-1 h-10 rounded-xl bg-teal-50 text-teal-600 hover:bg-teal-100 transition-colors flex items-center justify-center" title="新增一列"><Plus size={14} /></button>
+                                                <button type="button" onClick={() => removeHoldingRow(row.id)} disabled={holdingRows.length === 1} className="flex-1 h-10 rounded-xl bg-rose-50 text-rose-500 hover:bg-rose-100 disabled:bg-white disabled:text-slate-300 transition-colors flex items-center justify-center" title="刪除此列"><Trash2 size={14} /></button>
+                                            </div>
                                         </div>
                                     </div>
                                 ))}
                             </div>
-                            <p className="text-[10px] text-slate-400 mt-2">至少保留一列資料。市值會用「現價 x 股數」計算。</p>
+                            <p className="text-[10px] text-slate-400 mt-2">至少保留一列資料。可用代號抓取最新價；存成快照後仍視為當下記錄，不會自動改寫。</p>
                             <button onClick={parseHoldingRows} className="mt-3 w-full py-2.5 rounded-xl bg-teal-600 text-white font-bold text-sm hover:bg-teal-700 transition-colors">預覽持倉快照</button>
                         </div>
                     </div>

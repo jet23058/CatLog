@@ -1175,6 +1175,15 @@ describe('App Integration Tests', () => {
         expect(screen.getByText('匯款淨額').parentElement).toHaveTextContent('+1,525.00');
         expect(screen.getAllByText('USD CREDIT INTEREST').length).toBeGreaterThan(0);
         expect(screen.getAllByText(/REBATE FOR WIRE/).length).toBeGreaterThan(0);
+
+        await user.click(screen.getByText('轉台幣'));
+        expect(screen.getByText('累計買入').parentElement).not.toHaveTextContent('1,000.00');
+        expect(screen.getByText('累計買入').parentElement).not.toHaveTextContent('TWD');
+        expect(screen.getByText('快照市值').parentElement).not.toHaveTextContent('TWD');
+        expect(screen.getByText('累計股息').parentElement).not.toHaveTextContent('12.34');
+        expect(screen.getByText('利息').parentElement).not.toHaveTextContent('+1.23');
+        expect(screen.getAllByText('股息')[0].parentElement).not.toHaveTextContent('+12.34');
+        expect(screen.getByText('匯款淨額').parentElement).not.toHaveTextContent('+1,525.00');
     });
 
     test('Stock Analysis: imports archived US realized gains separately by explicit choice', async () => {
@@ -1329,7 +1338,7 @@ describe('App Integration Tests', () => {
         await user.click(screen.getByRole('button', { name: /匯入持倉快照/ }));
         fireEvent.change(document.querySelector('input[type="month"]'), { target: { value: '2025-10' } });
 
-        fireEvent.change(screen.getByPlaceholderText('台積電'), { target: { value: '台積電' } });
+        fireEvent.change(screen.getByPlaceholderText(/台積電/), { target: { value: '台積電' } });
         const holdingNumbers = document.querySelectorAll('input[type="number"]');
         fireEvent.change(holdingNumbers[0], { target: { value: '1200' } });
         fireEvent.change(holdingNumbers[1], { target: { value: '10' } });
@@ -1351,6 +1360,69 @@ describe('App Integration Tests', () => {
         await user.click(screen.getByText('取消'));
     });
 
+    test('Stock Analysis: fetches latest prices for holding entry and snapshot estimate', async () => {
+        const originalFetch = global.fetch;
+        global.fetch = vi.fn().mockResolvedValue({
+            ok: true,
+            json: async () => ({
+                symbol: '2330.TW',
+                displaySymbol: '2330',
+                name: '台積電',
+                price: 1300,
+                currency: 'TWD',
+                source: 'TWSE',
+                fetchedAt: '2026-04-22T01:00:00.000Z'
+            })
+        });
+
+        const user = userEvent.setup();
+        const mockData = {
+            records: {},
+            memos: {},
+            incomes: {},
+            expenses: {},
+            debts: {},
+            debtEvents: {},
+            stockTransactions: [],
+            stockHoldingSnapshots: {
+                '2025-10': [{
+                    id: 'snapshot-v1',
+                    version: 1,
+                    note: '月底',
+                    importedAt: '2025-10-31T10:00:00.000Z',
+                    holdings: [{ id: 'holding-tsmc', month: '2025-10', market: 'TW', symbol: '2330', name: '台積電', shares: 10, marketPrice: 1200, marketValue: 12000 }]
+                }]
+            },
+            fireSettings: { withdrawalRate: 4 }
+        };
+        getDocs.mockResolvedValue(createMockSnapshot(mockData));
+        render(<App />);
+        await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
+
+        const advancedBtn = document.querySelector('.lucide-layout-grid').closest('button');
+        await user.click(advancedBtn);
+        await waitFor(() => expect(screen.getByText('Advanced')).toBeInTheDocument());
+        await user.click(screen.getByText('個股績效'));
+
+        await waitFor(() => expect(screen.getByText('匯入持倉快照')).toBeInTheDocument());
+        await user.click(screen.getByRole('button', { name: /匯入持倉快照/ }));
+        fireEvent.change(screen.getByPlaceholderText(/台積電/), { target: { value: '2330' } });
+        await user.click(screen.getByText('抓價'));
+        await waitFor(() => expect(document.querySelectorAll('input[type="number"]')[0]).toHaveValue(1300));
+        expect(global.fetch).toHaveBeenCalledWith('/api/stock-quote?market=TW&symbol=2330');
+
+        await user.click(document.querySelector('.fixed.inset-0 button.absolute'));
+        await waitFor(() => expect(screen.queryByText('抓價')).not.toBeInTheDocument());
+
+        await user.click(screen.getByText('最新估值'));
+        await waitFor(() => expect(screen.getByText('最新價')).toBeInTheDocument());
+        expect(screen.getAllByText('最新估值').find((item) => item.parentElement?.textContent?.includes('13,000')).parentElement).toHaveTextContent('13,000');
+        expect(screen.getByText('差異').parentElement).toHaveTextContent('+1,000');
+        expect(screen.getByText(/最新估值只是試算，不會改寫快照/)).toBeInTheDocument();
+
+        global.fetch = originalFetch;
+    });
+
     test('Stock Analysis: imports multiple manual holding rows', async () => {
         const user = userEvent.setup();
         render(<App />);
@@ -1365,13 +1437,13 @@ describe('App Integration Tests', () => {
         await user.click(screen.getByRole('button', { name: /匯入持倉快照/ }));
         fireEvent.change(document.querySelector('input[type="month"]'), { target: { value: '2025-11' } });
 
-        fireEvent.change(screen.getByPlaceholderText('台積電'), { target: { value: '台積電' } });
+        fireEvent.change(screen.getByPlaceholderText(/台積電/), { target: { value: '台積電' } });
         let holdingNumbers = document.querySelectorAll('input[type="number"]');
         fireEvent.change(holdingNumbers[0], { target: { value: '1000' } });
         fireEvent.change(holdingNumbers[1], { target: { value: '10' } });
 
         await user.click(document.querySelector('button[title="新增一列"]'));
-        const nameInputs = screen.getAllByPlaceholderText('台積電');
+        const nameInputs = screen.getAllByPlaceholderText(/台積電/);
         fireEvent.change(nameInputs[1], { target: { value: '國泰永續高股息' } });
         holdingNumbers = document.querySelectorAll('input[type="number"]');
         fireEvent.change(holdingNumbers[2], { target: { value: '21' } });
