@@ -128,6 +128,10 @@ const formatMoneyByMarket = (val, market = 'TW') => new Intl.NumberFormat('zh-TW
     minimumFractionDigits: market === 'US' ? 2 : 0,
     maximumFractionDigits: market === 'US' ? 2 : 0
 }).format(val);
+const formatPriceUpToTwo = (val) => new Intl.NumberFormat('zh-TW', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2
+}).format(Number(val) || 0);
 const formatExchangeRate = (val) => new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 3 }).format(val);
 const formatWan = (val) => {
     if (Math.abs(val) < 10000) return formatMoney(val);
@@ -4695,7 +4699,7 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
                                                 <div className="flex justify-between gap-3">
                                                 <div className="min-w-0">
                                                     <div className="font-bold text-sm text-slate-700 truncate">{holding.name || holding.symbol}</div>
-                                                    <div className="text-[10px] text-slate-400 font-inter">{getStockMarketLabel(holding.market || 'TW')} · 快照價 {formatMoneyByMarket(holding.marketPrice || 0, holding.market || 'TW')} x {formatMoneyByMarket(holding.shares || 0, holding.market || 'TW')} 股</div>
+                                                    <div className="text-[10px] text-slate-400 font-inter">{getStockMarketLabel(holding.market || 'TW')} · 快照價 {formatPriceUpToTwo(holding.marketPrice || 0)} x {formatMoneyByMarket(holding.shares || 0, holding.market || 'TW')} 股</div>
                                                 </div>
                                                 <div className="text-right">
                                                     <div className="font-inter font-bold text-teal-600">{formatMoneyByMarket(holding.marketValue || 0, holding.market || 'TW')}</div>
@@ -4704,7 +4708,7 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
                                                 </div>
                                                 {quote && (
                                                     <div className="mt-3 pt-3 border-t border-slate-50 grid grid-cols-3 gap-2 text-[10px]">
-                                                        <div><div className="text-slate-400">最新價</div><div className="font-inter text-slate-700">{formatMoneyByMarket(quote.price, holding.market || 'TW')}</div></div>
+                                                        <div><div className="text-slate-400">最新價</div><div className="font-inter text-slate-700">{formatPriceUpToTwo(quote.price)}</div></div>
                                                         <div><div className="text-slate-400">最新估值</div><div className="font-inter text-slate-700">{formatMoneyByMarket(latestValue, holding.market || 'TW')}</div></div>
                                                         <div><div className="text-slate-400">差異</div><div className={`font-inter font-bold ${diff >= 0 ? 'text-emerald-600' : 'text-rose-500'}`}>{diff >= 0 ? '+' : ''}{formatMoneyByMarket(diff, holding.market || 'TW')} · {formatRate(diffRate)}</div></div>
                                                     </div>
