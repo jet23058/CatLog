@@ -1431,6 +1431,14 @@ describe('App Integration Tests', () => {
         expect(screen.getByText('個股損益圖表')).toBeInTheDocument();
         fireEvent.change(screen.getByPlaceholderText('搜尋股票名稱或代號'), { target: { value: '台積' } });
         expect(screen.getAllByText('台積電').length).toBeGreaterThan(0);
+        await user.click(screen.getByRole('button', { name: /台積電/ }));
+        await waitFor(() => expect(screen.getByText('逐筆交易')).toBeInTheDocument());
+        expect(screen.getByText('台積電 交易明細')).toBeInTheDocument();
+        const detailPanel = screen.getByText('逐筆交易').closest('div').parentElement;
+        expect(within(detailPanel).getByText('買入')).toBeInTheDocument();
+        expect(within(detailPanel).getByText('2025-10-13')).toBeInTheDocument();
+        await user.click(screen.getAllByRole('button').find((button) => button.querySelector('.lucide-x')));
+        await waitFor(() => expect(screen.queryByText('逐筆交易')).not.toBeInTheDocument());
         await user.click(document.querySelector('button[title="刪除版本"]'));
         await waitFor(() => expect(screen.getByText('刪除持倉快照版本')).toBeInTheDocument());
         await user.click(screen.getByText('取消'));
@@ -1688,6 +1696,56 @@ describe('App Integration Tests', () => {
         await user.click(screen.getAllByRole('button', { name: /台股/ })[0]);
         expect(screen.getAllByText('國泰金').length).toBeGreaterThan(0);
         expect(screen.getByText('目前台股已有 2 筆。若剛剛重複匯入或想重新整理，可以只清空目前市場再匯入。')).toBeInTheDocument();
+    });
+
+    test('Stock Analysis: opens full winner leaderboard popup', async () => {
+        const user = userEvent.setup();
+        const mockData = {
+            records: {},
+            memos: {},
+            incomes: {},
+            expenses: {},
+            debts: {},
+            debtEvents: {},
+            stockTransactions: [
+                { id: 't1', market: 'TW', currency: 'TWD', date: '2026-04-01', type: 'buy', symbol: '2330', name: '台積電', amount: 1000 },
+                { id: 't2', market: 'TW', currency: 'TWD', date: '2026-04-02', type: 'buy', symbol: '0050', name: '元大台灣50', amount: 500 },
+                { id: 't3', market: 'TW', currency: 'TWD', date: '2026-04-03', type: 'buy', symbol: '2454', name: '聯發科', amount: 800 }
+            ],
+            stockHoldingSnapshots: {
+                '2026-04': [{
+                    id: 'winner-snapshot',
+                    version: 1,
+                    note: '月底',
+                    importedAt: '2026-04-30T10:00:00.000Z',
+                    holdings: [
+                        { id: 'h1', month: '2026-04', market: 'TW', symbol: '2330', name: '台積電', shares: 1, marketPrice: 1500, marketValue: 1500 },
+                        { id: 'h2', month: '2026-04', market: 'TW', symbol: '0050', name: '元大台灣50', shares: 1, marketPrice: 700, marketValue: 700 },
+                        { id: 'h3', month: '2026-04', market: 'TW', symbol: '2454', name: '聯發科', shares: 1, marketPrice: 600, marketValue: 600 }
+                    ]
+                }]
+            },
+            fireSettings: { withdrawalRate: 4 }
+        };
+
+        getDocs.mockResolvedValue(createMockSnapshot(mockData));
+        render(<App />);
+        await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
+
+        const advancedBtn = document.querySelector('.lucide-layout-grid').closest('button');
+        await user.click(advancedBtn);
+        await waitFor(() => expect(screen.getByText('Advanced')).toBeInTheDocument());
+        await user.click(screen.getByText('個股績效'));
+
+        await waitFor(() => expect(screen.getByText('賺最多')).toBeInTheDocument());
+        await user.click(screen.getByTitle('查看全部獲利股'));
+
+        await waitFor(() => expect(screen.getByText('全部獲利股')).toBeInTheDocument());
+        const leaderboardModal = screen.getByText('全部獲利股').parentElement.parentElement.parentElement;
+        expect(within(leaderboardModal).getByText('台股 · 共 2 檔')).toBeInTheDocument();
+        expect(within(leaderboardModal).getByText('2330')).toBeInTheDocument();
+        expect(within(leaderboardModal).getByText('0050')).toBeInTheDocument();
+        expect(within(leaderboardModal).queryByText('2454')).not.toBeInTheDocument();
     });
 
     test('Opens Range Statistics Modal', async () => {

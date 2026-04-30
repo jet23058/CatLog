@@ -4059,6 +4059,8 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
     const [showTransactionImportModal, setShowTransactionImportModal] = useState(false);
     const [showHoldingImportModal, setShowHoldingImportModal] = useState(false);
     const [confirmDeleteSnapshot, setConfirmDeleteSnapshot] = useState(null);
+    const [selectedStockDetailKey, setSelectedStockDetailKey] = useState('');
+    const [leaderboardModalType, setLeaderboardModalType] = useState('');
     const [stockSearch, setStockSearch] = useState('');
     const [marketFilter, setMarketFilter] = useState('TW');
     const [usdToTwdRate, setUsdToTwdRate] = useState(DEFAULT_EXCHANGE_RATES.USD);
@@ -4213,6 +4215,17 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
         if (!keyword) return marketFilteredStockRows;
         return marketFilteredStockRows.filter((item) => `${item.symbol} ${item.name}`.toLowerCase().includes(keyword));
     }, [marketFilteredStockRows, stockSearch]);
+
+    const selectedStockDetail = useMemo(() => (
+        stockRows.find((item) => item.key === selectedStockDetailKey) || null
+    ), [stockRows, selectedStockDetailKey]);
+
+    const selectedStockTrades = useMemo(() => {
+        if (!selectedStockDetail) return [];
+        return (data.stockTransactions || [])
+            .filter((trade) => (trade.market || 'TW') === selectedStockDetail.market && trade.symbol === selectedStockDetail.symbol)
+            .sort((a, b) => new Date(b.date) - new Date(a.date));
+    }, [data.stockTransactions, selectedStockDetail]);
 
     const stockChartRows = useMemo(() => {
         const rows = [...filteredStockRows]
@@ -4383,6 +4396,10 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
     const topWinners = marketFilteredStockRows.filter((item) => item.totalPnl > 0).slice(0, 5);
     const topLosers = [...marketFilteredStockRows].filter((item) => item.totalPnl < 0).sort((a, b) => a.totalPnl - b.totalPnl).slice(0, 5);
     const latestTrades = [...marketFilteredTransactions].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 8);
+    const fullWinners = useMemo(() => marketFilteredStockRows.filter((item) => item.totalPnl > 0), [marketFilteredStockRows]);
+    const fullLosers = useMemo(() => [...marketFilteredStockRows].filter((item) => item.totalPnl < 0).sort((a, b) => a.totalPnl - b.totalPnl), [marketFilteredStockRows]);
+    const leaderboardModalRows = leaderboardModalType === 'winners' ? fullWinners : fullLosers;
+    const leaderboardModalTitle = leaderboardModalType === 'winners' ? '全部獲利股' : '全部虧損股';
 
     return (
         <div className="min-h-screen bg-[#F9F9F7] text-slate-800 font-sans animate-[fadeIn_0.2s]">
@@ -4544,11 +4561,21 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
 
                 <section className="grid grid-cols-2 gap-3">
                     <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4">
-                        <h3 className="text-xs font-bold text-emerald-600 mb-3 flex items-center gap-1"><TrendingUp size={14} /> 賺最多</h3>
+                        <div className="flex items-center justify-between gap-2 mb-3">
+                            <h3 className="text-xs font-bold text-emerald-600 flex items-center gap-1"><TrendingUp size={14} /> 賺最多</h3>
+                            <button type="button" onClick={() => setLeaderboardModalType('winners')} disabled={fullWinners.length === 0} className="p-1.5 rounded-lg text-slate-300 hover:text-emerald-600 hover:bg-emerald-50 disabled:text-slate-200 disabled:hover:bg-transparent transition-colors" title="查看全部獲利股">
+                                <Eye size={14} />
+                            </button>
+                        </div>
                         {topWinners.length > 0 ? topWinners.map((item) => <div key={item.key} className="py-2 border-b border-slate-50 last:border-0"><div className="font-bold text-slate-700 text-sm">{item.symbol}</div><div className={`text-xs font-inter text-emerald-600 ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>{stockMoney(item.totalPnl, item.market, '+')}</div></div>) : <div className="text-xs text-slate-300 py-4">尚無獲利資料</div>}
                     </div>
                     <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4">
-                        <h3 className="text-xs font-bold text-rose-500 mb-3 flex items-center gap-1"><TrendingDown size={14} /> 虧最多</h3>
+                        <div className="flex items-center justify-between gap-2 mb-3">
+                            <h3 className="text-xs font-bold text-rose-500 flex items-center gap-1"><TrendingDown size={14} /> 虧最多</h3>
+                            <button type="button" onClick={() => setLeaderboardModalType('losers')} disabled={fullLosers.length === 0} className="p-1.5 rounded-lg text-slate-300 hover:text-rose-500 hover:bg-rose-50 disabled:text-slate-200 disabled:hover:bg-transparent transition-colors" title="查看全部虧損股">
+                                <Eye size={14} />
+                            </button>
+                        </div>
                         {topLosers.length > 0 ? topLosers.map((item) => <div key={item.key} className="py-2 border-b border-slate-50 last:border-0"><div className="font-bold text-slate-700 text-sm">{item.symbol}</div><div className={`text-xs font-inter text-rose-500 ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>{stockMoney(item.totalPnl, item.market)}</div></div>) : <div className="text-xs text-slate-300 py-4">尚無虧損資料</div>}
                     </div>
                 </section>
@@ -4583,7 +4610,7 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
                         </div>
                     )}
                     {marketFilteredStockRows.length > 0 ? (filteredStockRows.length > 0 ? <div className="divide-y divide-slate-100">{filteredStockRows.map((item) => (
-                        <div key={item.key} className="p-4">
+                        <button key={item.key} type="button" onClick={() => setSelectedStockDetailKey(item.key)} className="w-full p-4 text-left hover:bg-slate-50 transition-colors">
                             <div className="flex justify-between gap-4">
                                 <div className="min-w-0">
                                     <div className="flex items-center gap-2"><span className="font-serif-tc font-bold text-slate-800">{item.symbol}</span><span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">{getStockMarketLabel(item.market)}</span>{item.realizedOnly && <span className="text-[10px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded">已實現</span>}{!item.hasSnapshot && !item.realizedOnly && <span className="text-[10px] bg-amber-50 text-amber-600 px-1.5 py-0.5 rounded">未對應資產快照</span>}</div>
@@ -4599,7 +4626,7 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
                                 <div className="bg-slate-50 rounded-lg p-2"><div className="text-slate-400">市值</div><div className="font-inter text-slate-700">{stockMoney(item.marketValue, item.market)}</div></div>
                                 <div className="bg-slate-50 rounded-lg p-2"><div className="text-slate-400">股息</div><div className="font-inter text-amber-600">{stockMoney(item.dividends, item.market, '+')}</div></div>
                             </div>
-                        </div>
+                        </button>
                     ))}</div> : <div className="p-8 text-center text-slate-300 text-sm">找不到符合搜尋的股票</div>) : <div className="p-8 text-center text-slate-300 text-sm">尚無{getStockMarketLabel(marketFilter)}股票交易資料</div>}
                 </section>
 
@@ -4721,6 +4748,74 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
                             </div>
                             <p className="text-[10px] text-slate-400 mt-2">至少保留一列資料。會依你目前所在分頁，自動帶入上一次同市場持倉；帶入時只會覆蓋同市場列。可用代號抓取最新價；存成快照後仍視為當下記錄，不會自動改寫。</p>
                             <button onClick={parseHoldingRows} className="mt-3 w-full py-2.5 rounded-xl bg-teal-600 text-white font-bold text-sm hover:bg-teal-700 transition-colors">預覽持倉快照</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {selectedStockDetail && (
+                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-6">
+                    <div className="bg-white w-full max-w-lg rounded-2xl p-6 shadow-2xl max-h-[85vh] overflow-y-auto relative">
+                        <button onClick={() => setSelectedStockDetailKey('')} className="absolute top-4 right-4 text-slate-300 hover:text-slate-600"><X size={18} /></button>
+                        <div className="mb-4 pr-8">
+                            <div className="flex items-center gap-2">
+                                <h3 className="text-xl font-serif-tc font-bold text-slate-800">{selectedStockDetail.symbol}</h3>
+                                <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">{getStockMarketLabel(selectedStockDetail.market)}</span>
+                            </div>
+                            <p className="text-sm text-slate-400 mt-1">{selectedStockDetail.name || selectedStockDetail.symbol} 交易明細</p>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2 mb-4 text-xs">
+                            <div className="bg-slate-50 rounded-xl p-3"><div className="text-slate-400 mb-1">累計買入</div><div className="font-inter font-bold text-slate-700">{stockMoney(selectedStockDetail.buyAmount, selectedStockDetail.market)}</div></div>
+                            <div className="bg-slate-50 rounded-xl p-3"><div className="text-slate-400 mb-1">目前市值</div><div className="font-inter font-bold text-slate-700">{stockMoney(selectedStockDetail.marketValue, selectedStockDetail.market)}</div></div>
+                            <div className="bg-slate-50 rounded-xl p-3"><div className="text-slate-400 mb-1">總損益</div><div className={`font-inter font-bold ${selectedStockDetail.totalPnl >= 0 ? 'text-emerald-600' : 'text-rose-500'}`}>{stockMoney(selectedStockDetail.totalPnl, selectedStockDetail.market, selectedStockDetail.totalPnl >= 0 ? '+' : '')}</div></div>
+                        </div>
+                        <div className="border border-slate-100 rounded-2xl overflow-hidden">
+                            <div className="px-4 py-3 border-b border-slate-100 bg-slate-50/70 flex items-center justify-between">
+                                <h4 className="text-sm font-bold text-slate-700">逐筆交易</h4>
+                                <span className="text-[10px] text-slate-400">{selectedStockTrades.length} 筆</span>
+                            </div>
+                            {selectedStockTrades.length > 0 ? selectedStockTrades.map((trade) => (
+                                <div key={trade.id} className="px-4 py-3 border-b border-slate-50 last:border-0 flex justify-between items-start gap-3">
+                                    <div className="min-w-0">
+                                        <div className="font-bold text-sm text-slate-700">{getStockTradeLabel(trade.type)}</div>
+                                        <div className="text-xs text-slate-400 mt-1">{trade.date}</div>
+                                        {(trade.shares || trade.price) ? <div className="text-[11px] text-slate-400 mt-1 font-inter">{trade.shares ? `${formatMoneyByMarket(trade.shares, trade.market || 'TW')} 股` : ''}{trade.shares && trade.price ? ' · ' : ''}{trade.price ? `價格 ${formatMoneyByMarket(trade.price, trade.market || 'TW')}` : ''}</div> : null}
+                                        {getStockTradeDescription(trade) && <div className="text-[11px] text-slate-400 mt-1 break-words">{getStockTradeDescription(trade)}</div>}
+                                    </div>
+                                    <div className={`shrink-0 font-inter text-sm font-bold ${['buy', 'fee', 'withdrawal'].includes(trade.type) ? 'text-slate-600' : 'text-emerald-600'}`}>{stockMoney(trade.amount, trade.market || 'TW', getTradeAmountPrefix(trade))}</div>
+                                </div>
+                            )) : <div className="p-6 text-center text-slate-300 text-sm">尚無這檔股票的交易明細</div>}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {leaderboardModalType && (
+                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-6">
+                    <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl max-h-[85vh] overflow-hidden flex flex-col">
+                        <div className="sticky top-0 z-10 bg-white px-6 pt-6 pb-4 border-b border-slate-100 relative">
+                            <button onClick={() => setLeaderboardModalType('')} className="absolute top-6 right-6 text-slate-300 hover:text-slate-600"><X size={18} /></button>
+                            <div className="pr-8">
+                                <h3 className="text-xl font-serif-tc font-bold text-slate-800">{leaderboardModalTitle}</h3>
+                                <p className="text-sm text-slate-400 mt-1">{getStockMarketLabel(marketFilter)} · 共 {leaderboardModalRows.length} 檔</p>
+                            </div>
+                        </div>
+                        <div className="flex-1 overflow-y-auto p-6 pt-4">
+                        <div className="border border-slate-100 rounded-2xl overflow-hidden">
+                            {leaderboardModalRows.length > 0 ? leaderboardModalRows.map((item, index) => (
+                                <div key={item.key} className="px-4 py-3 border-b border-slate-50 last:border-0 flex items-center justify-between gap-3">
+                                    <div className="min-w-0">
+                                        <div className="text-[10px] text-slate-300 font-inter mb-1">#{index + 1}</div>
+                                        <div className="font-bold text-sm text-slate-700">{item.symbol}</div>
+                                        <div className="text-xs text-slate-400 mt-1">{item.tradeCount} 筆交易 · 最近 {item.latestTradeDate}</div>
+                                    </div>
+                                    <div className="text-right shrink-0">
+                                        <div className={`font-inter font-bold ${item.totalPnl >= 0 ? 'text-emerald-600' : 'text-rose-500'} ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>{stockMoney(item.totalPnl, item.market, item.totalPnl >= 0 ? '+' : '')}</div>
+                                        <div className="text-[10px] text-slate-400 font-inter">{formatRate(item.roi)}</div>
+                                    </div>
+                                </div>
+                            )) : <div className="p-8 text-center text-slate-300 text-sm">目前沒有可顯示的股票</div>}
+                        </div>
                         </div>
                     </div>
                 </div>
