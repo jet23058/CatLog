@@ -692,6 +692,10 @@ describe('App Integration Tests', () => {
         await user.type(screen.getByPlaceholderText('0050 / 台積電'), '0050');
         await user.type(screen.getAllByPlaceholderText('0')[1], '2');
         await user.type(screen.getByPlaceholderText('2.5'), '2.75');
+        expect(screen.getByText('預估月息')).toBeInTheDocument();
+        expect(screen.getByText('206')).toBeInTheDocument();
+        expect(screen.getByText('預估年息')).toBeInTheDocument();
+        expect(screen.getByText('2,475')).toBeInTheDocument();
         await user.click(screen.getByText('確認新增'));
 
         await waitFor(() => expect(screen.getByText('已新增一筆負債至 2026-04-15')).toBeInTheDocument());
@@ -701,6 +705,8 @@ describe('App Integration Tests', () => {
         await user.click(screen.getByText('總負債'));
         expect(screen.getAllByText('股票質押').length).toBeGreaterThan(0);
         expect(screen.getByText('0050 · 2 股 · 2.75%')).toBeInTheDocument();
+        expect(screen.getByText('月息估算 · 206')).toBeInTheDocument();
+        expect(screen.getByText('年息估算 · 2,475')).toBeInTheDocument();
     });
 
     test('Dashboard asset growth uses first and latest recorded asset dates only', async () => {
@@ -1300,12 +1306,12 @@ describe('App Integration Tests', () => {
         expect(screen.getAllByText('ONON').length).toBeGreaterThan(0);
         expect(screen.getAllByText('TSLA').length).toBeGreaterThan(0);
         expect(screen.getByText(/美股 · 3 \/ 3 檔/)).toBeInTheDocument();
-        expect(screen.getByText(/\(USD\) \+9.27/)).toBeInTheDocument();
+        expect(screen.getAllByText(/\(USD\) \+9.27/).length).toBeGreaterThan(0);
         expect(screen.getByText('匯率 USD/TWD 32.5')).toBeInTheDocument();
         await user.click(screen.getByText('轉台幣'));
-        expect(screen.getByText(/NT\$\+/)).toBeInTheDocument();
+        expect(screen.getAllByText(/NT\$\+/).length).toBeGreaterThan(0);
         await user.click(screen.getByText('轉美金'));
-        expect(screen.getByText(/\(USD\) \+9.27/)).toBeInTheDocument();
+        expect(screen.getAllByText(/\(USD\) \+9.27/).length).toBeGreaterThan(0);
         expect(screen.getAllByText('+18.62').length).toBeGreaterThan(0);
         expect(screen.getAllByText('-9.35').length).toBeGreaterThan(0);
         expect(screen.getAllByText('0').length).toBeGreaterThan(0);
@@ -1746,6 +1752,74 @@ describe('App Integration Tests', () => {
         expect(within(leaderboardModal).getByText('2330')).toBeInTheDocument();
         expect(within(leaderboardModal).getByText('0050')).toBeInTheDocument();
         expect(within(leaderboardModal).queryByText('2454')).not.toBeInTheDocument();
+    });
+
+    test('Stock Analysis: separates stock pledge debt from gross pnl by market', async () => {
+        const user = userEvent.setup();
+        const mockData = {
+            records: {},
+            memos: {},
+            incomes: {},
+            expenses: {},
+            debts: {
+                '2026-04-30': [
+                    {
+                        id: 'debt-tw',
+                        category: 'stock_pledge',
+                        name: '股票質押',
+                        amount: 200,
+                        pledgeStocks: [{ symbol: '台積電', shares: 1, rate: 12 }]
+                    },
+                    {
+                        id: 'debt-us',
+                        category: 'stock_pledge',
+                        name: '股票質押',
+                        amount: 300,
+                        pledgeStocks: [{ symbol: 'TSLA', shares: 1, rate: 6 }]
+                    }
+                ]
+            },
+            debtEvents: {},
+            stockTransactions: [
+                { id: 'trade-tw', market: 'TW', currency: 'TWD', date: '2026-04-01', type: 'buy', symbol: '2330', name: '台積電', amount: 1000 },
+                { id: 'trade-us', market: 'US', currency: 'USD', date: '2026-04-01', type: 'buy', symbol: 'TSLA', name: 'TESLA', amount: 1000 }
+            ],
+            stockHoldingSnapshots: {
+                '2026-04': [{
+                    id: 'snapshot-mixed',
+                    version: 1,
+                    note: '月底',
+                    importedAt: '2026-04-30T10:00:00.000Z',
+                    holdings: [
+                        { id: 'tw-hold', month: '2026-04', market: 'TW', symbol: '2330', name: '台積電', shares: 1, marketPrice: 1500, marketValue: 1500 },
+                        { id: 'us-hold', month: '2026-04', market: 'US', symbol: 'TSLA', name: 'TESLA', shares: 1, marketPrice: 1200, marketValue: 1200 }
+                    ]
+                }]
+            },
+            fireSettings: { withdrawalRate: 4 }
+        };
+
+        getDocs.mockResolvedValue(createMockSnapshot(mockData));
+        render(<App />);
+        await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
+
+        const advancedBtn = document.querySelector('.lucide-layout-grid').closest('button');
+        await user.click(advancedBtn);
+        await waitFor(() => expect(screen.getByText('Advanced')).toBeInTheDocument());
+        await user.click(screen.getByText('個股績效'));
+
+        await waitFor(() => expect(screen.getByText('股票總損益')).toBeInTheDocument());
+        const summarySection = screen.getByText('股票總損益').closest('section');
+        expect(within(summarySection).getByText('扣除質押後淨損益')).toBeInTheDocument();
+        expect(within(summarySection).getByText('最新質押負債')).toBeInTheDocument();
+        expect(within(summarySection).getByText('+500')).toBeInTheDocument();
+        expect(within(summarySection).getByText('+300')).toBeInTheDocument();
+        expect(within(summarySection).getByText('-200')).toBeInTheDocument();
+        expect(within(summarySection).getByText('預估月息')).toBeInTheDocument();
+        expect(within(summarySection).getByText('-2')).toBeInTheDocument();
+        expect(within(summarySection).getByText('預估年息')).toBeInTheDocument();
+        expect(within(summarySection).getByText('-24')).toBeInTheDocument();
+        expect(screen.getByText('依 2026-04-30 的股票質押快照估算。')).toBeInTheDocument();
     });
 
     test('Opens Range Statistics Modal', async () => {

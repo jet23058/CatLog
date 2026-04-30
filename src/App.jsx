@@ -137,6 +137,59 @@ const formatWan = (val) => {
 const formatRate = (val) => `${(val * 100).toFixed(1)}%`;
 const formatPercent = (value) => !isFinite(value) ? "0.0%" : `${Math.abs(value).toFixed(1)}%`;
 const getDebtTotal = (debts = []) => debts.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+const getMonthEndDateKey = (monthKey) => {
+    if (!monthKey || !/^\d{4}-\d{2}$/.test(monthKey)) return '';
+    const [year, month] = monthKey.split('-').map(Number);
+    const endDay = new Date(year, month, 0).getDate();
+    return `${year}-${String(month).padStart(2, '0')}-${String(endDay).padStart(2, '0')}`;
+};
+const inferPledgeStockMarket = (value = '') => {
+    const text = String(value || '').trim().toUpperCase();
+    if (!text) return null;
+    if (/[\u4e00-\u9fff]/.test(text)) return 'TW';
+    if (/^\d{4,6}$/.test(text)) return 'TW';
+    if (/^[A-Z.\-]+$/.test(text)) return 'US';
+    return null;
+};
+const getDebtMarketAllocation = (debt = {}) => {
+    if (debt.category !== 'stock_pledge') return {};
+    const pledgeStocks = Array.isArray(debt.pledgeStocks) ? debt.pledgeStocks : [];
+    const weights = {};
+
+    pledgeStocks.forEach((stock) => {
+        const market = inferPledgeStockMarket(stock.symbol || stock.name || '');
+        if (!market) return;
+        const rawWeight = Number(stock.shares);
+        const weight = rawWeight > 0 ? rawWeight : 1;
+        weights[market] = (weights[market] || 0) + weight;
+    });
+
+    const totalWeight = Object.values(weights).reduce((sum, value) => sum + value, 0);
+    if (totalWeight <= 0) return {};
+
+    return Object.fromEntries(Object.entries(weights).map(([market, weight]) => [market, weight / totalWeight]));
+};
+const getPledgeAverageRate = (debt = {}) => {
+    const pledgeStocks = Array.isArray(debt.pledgeStocks) ? debt.pledgeStocks : [];
+    const weighted = pledgeStocks.reduce((acc, stock) => {
+        const rate = Number(stock.rate) || 0;
+        if (rate <= 0) return acc;
+        const rawWeight = Number(stock.shares);
+        const weight = rawWeight > 0 ? rawWeight : 1;
+        acc.totalWeight += weight;
+        acc.totalRate += rate * weight;
+        return acc;
+    }, { totalWeight: 0, totalRate: 0 });
+    if (weighted.totalWeight <= 0) return 0;
+    return weighted.totalRate / weighted.totalWeight;
+};
+const getDebtEstimatedAnnualInterest = (debt = {}) => {
+    const amount = Number(debt.amount) || 0;
+    const rate = getPledgeAverageRate(debt);
+    if (debt.category !== 'stock_pledge' || amount <= 0 || rate <= 0) return 0;
+    return amount * (rate / 100);
+};
+const getDebtEstimatedMonthlyInterest = (debt = {}) => getDebtEstimatedAnnualInterest(debt) / 12;
 const DEBT_CATEGORIES = [
     { value: 'stock_pledge', label: '股票質押' },
     { value: 'personal_loan', label: '信用貸款' },
@@ -2652,6 +2705,17 @@ const AddDebtModal = ({ onClose, onSave, debtNames = [], accountOptions = [], as
         setPledgeStocks((rows) => rows.length > 1 ? rows.filter((row) => row.id !== id) : rows);
     };
 
+    const estimatedPledgeInterest = useMemo(() => {
+        if (category !== 'stock_pledge') return { monthly: 0, annual: 0 };
+        const previewDebt = {
+            category,
+            amount: Number(amount) || 0,
+            pledgeStocks: pledgeStocks.map((row) => ({ symbol: row.symbol, shares: Math.trunc(Number(row.shares)) || 0, rate: Number(row.rate) || 0 }))
+        };
+        const annual = getDebtEstimatedAnnualInterest(previewDebt);
+        return { annual, monthly: annual / 12 };
+    }, [amount, category, pledgeStocks]);
+
     const handleSubmit = () => {
         setErrorMsg('');
         if (!date) return setErrorMsg("請選擇日期");
@@ -2740,6 +2804,18 @@ const AddDebtModal = ({ onClose, onSave, debtNames = [], accountOptions = [], as
                                     </div>
                                 ))}
                             </div>
+                            {estimatedPledgeInterest.annual > 0 && (
+                                <div className="grid grid-cols-2 gap-2 mt-3 text-[10px]">
+                                    <div className="rounded-xl bg-white px-3 py-2 border border-rose-100">
+                                        <div className="text-slate-400">預估月息</div>
+                                        <div className="font-inter font-bold text-amber-700">{formatMoney(estimatedPledgeInterest.monthly)}</div>
+                                    </div>
+                                    <div className="rounded-xl bg-white px-3 py-2 border border-rose-100">
+                                        <div className="text-slate-400">預估年息</div>
+                                        <div className="font-inter font-bold text-amber-700">{formatMoney(estimatedPledgeInterest.annual)}</div>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     )}
                     <div>
@@ -3332,8 +3408,8 @@ const DetailView = ({ monthKey, data, onBack, onUpdateData, assetNames, isPrivac
                                             <button type="button" onClick={() => handleDeleteDebt(idx)} className="absolute top-2 right-2 p-2 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-full transition-colors" title="刪除"><Trash2 size={16} /></button>
                                         </div>
                                     ) : (
-                                        <div className="flex items-center justify-between">
-                                            <div className="flex flex-col gap-1">
+                                        <div className="flex items-center justify-between gap-3">
+                                            <div className="flex flex-col gap-1 min-w-0">
                                                 <div className="flex items-center gap-2">
                                                     <span className="font-serif-tc font-bold text-slate-700">{item.name}</span>
                                                     {item.category && <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-50 text-rose-500 font-bold">{getDebtCategoryLabel(item.category)}</span>}
@@ -3347,6 +3423,16 @@ const DetailView = ({ monthKey, data, onBack, onUpdateData, assetNames, isPrivac
                                                                 {stock.symbol}{stock.shares ? ` · ${formatMoney(Math.trunc(Number(stock.shares)))} 股` : ''}{stock.rate ? ` · ${stock.rate}%` : ''}
                                                             </span>
                                                         ))}
+                                                    </div>
+                                                )}
+                                                {item.category === 'stock_pledge' && getDebtEstimatedAnnualInterest(item) > 0 && (
+                                                    <div className="flex flex-wrap gap-1 mt-1">
+                                                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 font-inter">
+                                                            月息估算 · {formatMoney(getDebtEstimatedMonthlyInterest(item))}
+                                                        </span>
+                                                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 font-inter">
+                                                            年息估算 · {formatMoney(getDebtEstimatedAnnualInterest(item))}
+                                                        </span>
                                                     </div>
                                                 )}
                                             </div>
@@ -4186,6 +4272,51 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
         totalPnl: marketFilteredStockRows.reduce((sum, item) => sum + item.totalPnl, 0) + marketFilteredTransactions.filter((trade) => trade.type === 'dividend' && trade.unassigned).reduce((sum, item) => sum + (Number(item.amount) || 0), 0)
     }), [marketFilteredStockRows, marketFilteredTransactions]);
 
+    const stockStatsTargetDate = useMemo(() => {
+        if (selectedSnapshot?.month) return getMonthEndDateKey(selectedSnapshot.month);
+        const latestTradeDate = [...marketFilteredTransactions]
+            .sort((a, b) => new Date(b.date) - new Date(a.date))[0]?.date;
+        return latestTradeDate || new Date().toISOString().slice(0, 10);
+    }, [selectedSnapshot, marketFilteredTransactions]);
+
+    const stockDebtStats = useMemo(() => {
+        const latestDebtItems = getLatestSnapshotItems(data.debts, stockStatsTargetDate);
+        const debtSnapshotDate = Object.keys(data.debts || {})
+            .filter((date) => date <= stockStatsTargetDate)
+            .sort()
+            .at(-1) || null;
+        let marketPledgeDebt = 0;
+        let totalPledgeDebt = 0;
+        let unallocatedPledgeDebt = 0;
+        let marketEstimatedAnnualInterest = 0;
+
+        latestDebtItems.forEach((debt) => {
+            if (debt.category !== 'stock_pledge') return;
+            const amount = Number(debt.amount) || 0;
+            if (amount <= 0) return;
+            totalPledgeDebt += amount;
+            const estimatedAnnualInterest = getDebtEstimatedAnnualInterest(debt);
+            const allocation = getDebtMarketAllocation(debt);
+            const marketShare = allocation[marketFilter] || 0;
+            if (Object.keys(allocation).length === 0) {
+                unallocatedPledgeDebt += amount;
+                return;
+            }
+            marketPledgeDebt += amount * marketShare;
+            marketEstimatedAnnualInterest += estimatedAnnualInterest * marketShare;
+        });
+
+        return {
+            debtSnapshotDate,
+            marketPledgeDebt,
+            totalPledgeDebt,
+            unallocatedPledgeDebt,
+            marketEstimatedAnnualInterest,
+            marketEstimatedMonthlyInterest: marketEstimatedAnnualInterest / 12,
+            netPnlAfterDebt: stockStats.totalPnl - marketPledgeDebt
+        };
+    }, [data.debts, marketFilter, stockStats.totalPnl, stockStatsTargetDate]);
+
     useEffect(() => {
         if (marketFilter !== 'US' || typeof fetch === 'undefined') return;
         let isCancelled = false;
@@ -4209,6 +4340,15 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
         if (usPnlCurrency === 'TWD') return `NT$${sign}${formatMoney(twdAmount)}`;
         return `(USD) ${sign}${formatMoneyByMarket(stockStats.totalPnl, 'US')}`;
     }, [isPrivacyMode, marketFilter, stockStats.totalPnl, usdToTwdRate, usPnlCurrency]);
+
+    const netPnlAfterDebtLabel = useMemo(() => {
+        if (isPrivacyMode) return '****';
+        const sign = stockDebtStats.netPnlAfterDebt >= 0 ? '+' : '';
+        if (marketFilter !== 'US') return `${sign}${formatMoney(stockDebtStats.netPnlAfterDebt)}`;
+        const twdAmount = stockDebtStats.netPnlAfterDebt * usdToTwdRate;
+        if (usPnlCurrency === 'TWD') return `NT$${sign}${formatMoney(twdAmount)}`;
+        return `(USD) ${sign}${formatMoneyByMarket(stockDebtStats.netPnlAfterDebt, 'US')}`;
+    }, [isPrivacyMode, marketFilter, stockDebtStats.netPnlAfterDebt, usdToTwdRate, usPnlCurrency]);
 
     const filteredStockRows = useMemo(() => {
         const keyword = stockSearch.trim().toLowerCase();
@@ -4422,11 +4562,41 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
                         </button>
                     )}
                     <div className="relative z-10">
-                        <div className="text-xs text-slate-400 mb-1">目前總損益</div>
+                        <div className="text-xs text-slate-400 mb-1">股票總損益</div>
                         <div className={`text-3xl font-inter font-bold ${stockStats.totalPnl >= 0 ? 'text-emerald-300' : 'text-rose-300'} ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>{totalPnlLabel}</div>
                         {marketFilter === 'US' && !isPrivacyMode && (
                             <div className="text-[10px] text-slate-500 mt-1">匯率 USD/TWD {formatExchangeRate(usdToTwdRate)}</div>
                         )}
+                        <div className="mt-3 rounded-xl bg-white/5 border border-white/10 px-4 py-3">
+                            <div className="flex items-start justify-between gap-3">
+                                <div>
+                                    <div className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">扣除質押後淨損益</div>
+                                    <div className={`text-lg font-inter font-bold mt-1 ${stockDebtStats.netPnlAfterDebt >= 0 ? 'text-emerald-200' : 'text-rose-200'} ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>{netPnlAfterDebtLabel}</div>
+                                </div>
+                                <div className="text-right shrink-0">
+                                    <div className="text-[10px] text-slate-500">最新質押負債</div>
+                                    <div className={`font-inter font-bold text-rose-200 ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>{summaryMoney(stockDebtStats.marketPledgeDebt, marketFilter, '-')}</div>
+                                </div>
+                            </div>
+                            <div className="text-[10px] text-slate-500 mt-2">
+                                {stockDebtStats.debtSnapshotDate
+                                    ? `依 ${stockDebtStats.debtSnapshotDate} 的股票質押快照估算`
+                                    : '尚未找到可對應的股票質押負債快照'}
+                                {stockDebtStats.unallocatedPledgeDebt > 0 ? '；部分質押未能判斷市場，暫未扣入。' : '。'}
+                            </div>
+                            {stockDebtStats.marketEstimatedAnnualInterest > 0 && (
+                                <div className="grid grid-cols-2 gap-2 mt-2 text-[10px]">
+                                    <div className="rounded-lg bg-white/5 px-3 py-2">
+                                        <div className="text-slate-500">預估月息</div>
+                                        <div className="font-inter font-bold text-amber-200">{summaryMoney(stockDebtStats.marketEstimatedMonthlyInterest, marketFilter, '-')}</div>
+                                    </div>
+                                    <div className="rounded-lg bg-white/5 px-3 py-2">
+                                        <div className="text-slate-500">預估年息</div>
+                                        <div className="font-inter font-bold text-amber-200">{summaryMoney(stockDebtStats.marketEstimatedAnnualInterest, marketFilter, '-')}</div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
                         <div className="grid grid-cols-3 gap-2 mt-5 text-xs">
                             <div className="bg-white/5 rounded-xl p-3"><div className="text-slate-400 mb-1">累計買入</div><div className="font-inter font-bold">{summaryMoney(stockStats.totalBuy)}</div></div>
                             <div className="bg-white/5 rounded-xl p-3"><div className="text-slate-400 mb-1">快照市值</div><div className="font-inter font-bold">{summaryMoney(stockStats.totalMarketValue)}</div></div>
@@ -4439,7 +4609,7 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
                                 <div className="bg-white/5 rounded-xl p-3"><div className="text-slate-400 mb-1">匯款淨額</div><div className="font-inter font-bold text-blue-200">{summaryMoney(remittanceNet, 'US', remittancePrefix)}</div></div>
                             </div>
                         )}
-                        <p className="text-[10px] text-slate-500 mt-3">目前市值會以選定的持倉快照版本計算。</p>
+                        <p className="text-[10px] text-slate-500 mt-3">目前市值會以選定的持倉快照版本計算；質押負債則會對齊同時間點以前最近一次的股票質押快照。</p>
                     </div>
                 </section>
 
@@ -4755,36 +4925,40 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
 
             {selectedStockDetail && (
                 <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-6">
-                    <div className="bg-white w-full max-w-lg rounded-2xl p-6 shadow-2xl max-h-[85vh] overflow-y-auto relative">
-                        <button onClick={() => setSelectedStockDetailKey('')} className="absolute top-4 right-4 text-slate-300 hover:text-slate-600"><X size={18} /></button>
-                        <div className="mb-4 pr-8">
-                            <div className="flex items-center gap-2">
-                                <h3 className="text-xl font-serif-tc font-bold text-slate-800">{selectedStockDetail.symbol}</h3>
-                                <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">{getStockMarketLabel(selectedStockDetail.market)}</span>
-                            </div>
-                            <p className="text-sm text-slate-400 mt-1">{selectedStockDetail.name || selectedStockDetail.symbol} 交易明細</p>
-                        </div>
-                        <div className="grid grid-cols-3 gap-2 mb-4 text-xs">
-                            <div className="bg-slate-50 rounded-xl p-3"><div className="text-slate-400 mb-1">累計買入</div><div className="font-inter font-bold text-slate-700">{stockMoney(selectedStockDetail.buyAmount, selectedStockDetail.market)}</div></div>
-                            <div className="bg-slate-50 rounded-xl p-3"><div className="text-slate-400 mb-1">目前市值</div><div className="font-inter font-bold text-slate-700">{stockMoney(selectedStockDetail.marketValue, selectedStockDetail.market)}</div></div>
-                            <div className="bg-slate-50 rounded-xl p-3"><div className="text-slate-400 mb-1">總損益</div><div className={`font-inter font-bold ${selectedStockDetail.totalPnl >= 0 ? 'text-emerald-600' : 'text-rose-500'}`}>{stockMoney(selectedStockDetail.totalPnl, selectedStockDetail.market, selectedStockDetail.totalPnl >= 0 ? '+' : '')}</div></div>
-                        </div>
-                        <div className="border border-slate-100 rounded-2xl overflow-hidden">
-                            <div className="px-4 py-3 border-b border-slate-100 bg-slate-50/70 flex items-center justify-between">
-                                <h4 className="text-sm font-bold text-slate-700">逐筆交易</h4>
-                                <span className="text-[10px] text-slate-400">{selectedStockTrades.length} 筆</span>
-                            </div>
-                            {selectedStockTrades.length > 0 ? selectedStockTrades.map((trade) => (
-                                <div key={trade.id} className="px-4 py-3 border-b border-slate-50 last:border-0 flex justify-between items-start gap-3">
-                                    <div className="min-w-0">
-                                        <div className="font-bold text-sm text-slate-700">{getStockTradeLabel(trade.type)}</div>
-                                        <div className="text-xs text-slate-400 mt-1">{trade.date}</div>
-                                        {(trade.shares || trade.price) ? <div className="text-[11px] text-slate-400 mt-1 font-inter">{trade.shares ? `${formatMoneyByMarket(trade.shares, trade.market || 'TW')} 股` : ''}{trade.shares && trade.price ? ' · ' : ''}{trade.price ? `價格 ${formatMoneyByMarket(trade.price, trade.market || 'TW')}` : ''}</div> : null}
-                                        {getStockTradeDescription(trade) && <div className="text-[11px] text-slate-400 mt-1 break-words">{getStockTradeDescription(trade)}</div>}
-                                    </div>
-                                    <div className={`shrink-0 font-inter text-sm font-bold ${['buy', 'fee', 'withdrawal'].includes(trade.type) ? 'text-slate-600' : 'text-emerald-600'}`}>{stockMoney(trade.amount, trade.market || 'TW', getTradeAmountPrefix(trade))}</div>
+                    <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl max-h-[85vh] overflow-hidden flex flex-col">
+                        <div className="sticky top-0 z-10 bg-white px-6 pt-6 pb-4 border-b border-slate-100 relative">
+                            <button onClick={() => setSelectedStockDetailKey('')} className="absolute top-6 right-6 text-slate-300 hover:text-slate-600"><X size={18} /></button>
+                            <div className="pr-8">
+                                <div className="flex items-center gap-2">
+                                    <h3 className="text-xl font-serif-tc font-bold text-slate-800">{selectedStockDetail.symbol}</h3>
+                                    <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">{getStockMarketLabel(selectedStockDetail.market)}</span>
                                 </div>
-                            )) : <div className="p-6 text-center text-slate-300 text-sm">尚無這檔股票的交易明細</div>}
+                                <p className="text-sm text-slate-400 mt-1">{selectedStockDetail.name || selectedStockDetail.symbol} 交易明細</p>
+                            </div>
+                        </div>
+                        <div className="flex-1 overflow-y-auto p-6 pt-4">
+                            <div className="grid grid-cols-3 gap-2 mb-4 text-xs">
+                                <div className="bg-slate-50 rounded-xl p-3"><div className="text-slate-400 mb-1">累計買入</div><div className="font-inter font-bold text-slate-700">{stockMoney(selectedStockDetail.buyAmount, selectedStockDetail.market)}</div></div>
+                                <div className="bg-slate-50 rounded-xl p-3"><div className="text-slate-400 mb-1">目前市值</div><div className="font-inter font-bold text-slate-700">{stockMoney(selectedStockDetail.marketValue, selectedStockDetail.market)}</div></div>
+                                <div className="bg-slate-50 rounded-xl p-3"><div className="text-slate-400 mb-1">總損益</div><div className={`font-inter font-bold ${selectedStockDetail.totalPnl >= 0 ? 'text-emerald-600' : 'text-rose-500'}`}>{stockMoney(selectedStockDetail.totalPnl, selectedStockDetail.market, selectedStockDetail.totalPnl >= 0 ? '+' : '')}</div></div>
+                            </div>
+                            <div className="border border-slate-100 rounded-2xl overflow-hidden">
+                                <div className="px-4 py-3 border-b border-slate-100 bg-slate-50/70 flex items-center justify-between">
+                                    <h4 className="text-sm font-bold text-slate-700">逐筆交易</h4>
+                                    <span className="text-[10px] text-slate-400">{selectedStockTrades.length} 筆</span>
+                                </div>
+                                {selectedStockTrades.length > 0 ? selectedStockTrades.map((trade) => (
+                                    <div key={trade.id} className="px-4 py-3 border-b border-slate-50 last:border-0 flex justify-between items-start gap-3">
+                                        <div className="min-w-0">
+                                            <div className="font-bold text-sm text-slate-700">{getStockTradeLabel(trade.type)}</div>
+                                            <div className="text-xs text-slate-400 mt-1">{trade.date}</div>
+                                            {(trade.shares || trade.price) ? <div className="text-[11px] text-slate-400 mt-1 font-inter">{trade.shares ? `${formatMoneyByMarket(trade.shares, trade.market || 'TW')} 股` : ''}{trade.shares && trade.price ? ' · ' : ''}{trade.price ? `價格 ${formatMoneyByMarket(trade.price, trade.market || 'TW')}` : ''}</div> : null}
+                                            {getStockTradeDescription(trade) && <div className="text-[11px] text-slate-400 mt-1 break-words">{getStockTradeDescription(trade)}</div>}
+                                        </div>
+                                        <div className={`shrink-0 font-inter text-sm font-bold ${['buy', 'fee', 'withdrawal'].includes(trade.type) ? 'text-slate-600' : 'text-emerald-600'}`}>{stockMoney(trade.amount, trade.market || 'TW', getTradeAmountPrefix(trade))}</div>
+                                    </div>
+                                )) : <div className="p-6 text-center text-slate-300 text-sm">尚無這檔股票的交易明細</div>}
+                            </div>
                         </div>
                     </div>
                 </div>
