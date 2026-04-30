@@ -192,12 +192,31 @@ const getLatestSnapshotItems = (records = {}, targetDateStr) => {
     return latestItems;
 };
 
+const detectDelimitedTextSeparator = (text = '') => {
+    const sample = text
+        .replace(/\r\n/g, '\n')
+        .replace(/\r/g, '\n')
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .slice(0, 5)
+        .join('\n');
+
+    const tabCount = (sample.match(/\t/g) || []).length;
+    const commaCount = (sample.match(/,/g) || []).length;
+    return tabCount > commaCount ? '\t' : ',';
+};
+
 const parseCSV = (text) => {
     const rows = [];
     let currentRow = [];
     let currentCell = '';
     let insideQuote = false;
-    const normalizedText = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/，/g, ',');
+    const separator = detectDelimitedTextSeparator(text);
+    const normalizedText = (separator === ','
+        ? text.replace(/，/g, ',')
+        : text
+    ).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
 
     for (let i = 0; i < normalizedText.length; i++) {
         const char = normalizedText[i];
@@ -209,7 +228,7 @@ const parseCSV = (text) => {
             } else {
                 insideQuote = !insideQuote;
             }
-        } else if (char === ',' && !insideQuote) {
+        } else if (char === separator && !insideQuote) {
             currentRow.push(currentCell.trim());
             currentCell = '';
         } else if (char === '\n' && !insideQuote) {
@@ -270,6 +289,48 @@ const getStockTradeLabel = (type) => ({
     fee: '費用'
 }[type] || '其他');
 
+const normalizeTradeDescription = (value = '') => value.replace(/\s+/g, ' ').trim();
+
+const getStockTradeTitle = (trade = {}) => {
+    if (trade.symbol) return trade.symbol;
+    if (trade.type === 'interest') return '利息收入';
+    if (trade.type === 'deposit') return '匯款入金';
+    if (trade.type === 'withdrawal') return '匯款出金';
+    if (trade.type === 'fee') return '手續費';
+    return normalizeTradeDescription(trade.name || trade.rawItem || getStockTradeLabel(trade.type));
+};
+
+const getStockTradeDescription = (trade = {}) => {
+    const description = normalizeTradeDescription(trade.rawItem || trade.name || '');
+    if (!description) return '';
+    if (trade.symbol && description === trade.symbol) return '';
+    if (!trade.symbol && description === getStockTradeTitle(trade)) return '';
+    return description;
+};
+
+const createHoldingRow = (overrides = {}) => ({
+    id: `holding-row-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    market: 'TW',
+    name: '',
+    price: '',
+    shares: '',
+    ...overrides
+});
+
+const normalizeMonthValue = (value = '') => {
+    const normalized = String(value).trim().replace(/\//g, '-');
+    const match = normalized.match(/^(\d{4})-(\d{1,2})$/);
+    if (!match) return normalized;
+    const [, year, month] = match;
+    return `${year}-${month.padStart(2, '0')}`;
+};
+
+const normalizeSnapshotVersions = (versions) => {
+    if (Array.isArray(versions)) return versions.filter(Boolean);
+    if (versions && typeof versions === 'object' && Array.isArray(versions.holdings)) return [versions];
+    return [];
+};
+
 const STOCK_MARKETS = [
     { value: 'TW', label: '台股' },
     { value: 'US', label: '美股' }
@@ -279,6 +340,10 @@ const getStockMarketLabel = (market) => STOCK_MARKETS.find((item) => item.value 
 
 const isUSBrokerTransactionCSVHeaders = (headers) => (
     ['日期', '交易類別', '數量', '說明', '代號', '價格', '金額'].every((header) => headers.includes(header))
+);
+
+const looksLikeUSBrokerPastedRows = (rows = []) => (
+    rows.some((row) => /^\d{1,2}[/-]\d{1,2}[/-]\d{4}$/.test((row?.[0] || '').trim()) && (row?.[1] || '').trim())
 );
 
 const getUSBrokerTradeType = (typeText = '', amount = 0, description = '') => {
@@ -297,21 +362,24 @@ const getUSBrokerTradeType = (typeText = '', amount = 0, description = '') => {
     return 'other';
 };
 
-const processUSBrokerTransactionCSVRows = (rows, headers) => {
-    const idxDate = headers.indexOf('日期');
-    const idxType = headers.indexOf('交易類別');
-    const idxQuantity = headers.indexOf('數量');
-    const idxDescription = headers.indexOf('說明');
-    const idxSymbol = headers.indexOf('代號');
-    const idxAccount = headers.indexOf('賬戶類別');
-    const idxPrice = headers.indexOf('價格');
-    const idxAmount = headers.indexOf('金額');
+const processUSBrokerTransactionRows = (rows, fieldMap, options = {}) => {
+    const {
+        idxDate,
+        idxType,
+        idxQuantity,
+        idxDescription,
+        idxSymbol,
+        idxAccount,
+        idxPrice,
+        idxAmount
+    } = fieldMap;
+    const rowNumberOffset = options.rowNumberOffset ?? 1;
 
     const transactions = [];
     const skippedRows = [];
 
-    rows.slice(1).forEach((row, index) => {
-        const csvRow = index + 2;
+    rows.forEach((row, index) => {
+        const csvRow = index + rowNumberOffset;
         const date = normalizeUSDate(row[idxDate]);
         const typeText = row[idxType]?.trim() || '';
         const symbol = row[idxSymbol]?.trim() || '';
@@ -365,6 +433,28 @@ const processUSBrokerTransactionCSVRows = (rows, headers) => {
 
     return { market: 'US', importMode: 'us-broker-transactions', transactions, skippedRows };
 };
+
+const processUSBrokerTransactionCSVRows = (rows, headers) => processUSBrokerTransactionRows(rows.slice(1), {
+    idxDate: headers.indexOf('日期'),
+    idxType: headers.indexOf('交易類別'),
+    idxQuantity: headers.indexOf('數量'),
+    idxDescription: headers.indexOf('說明'),
+    idxSymbol: headers.indexOf('代號'),
+    idxAccount: headers.indexOf('賬戶類別'),
+    idxPrice: headers.indexOf('價格'),
+    idxAmount: headers.indexOf('金額')
+}, { rowNumberOffset: 2 });
+
+const processUSBrokerTransactionPastedRows = (rows) => processUSBrokerTransactionRows(rows, {
+    idxDate: 0,
+    idxType: 1,
+    idxQuantity: 2,
+    idxDescription: 3,
+    idxSymbol: 4,
+    idxAccount: 5,
+    idxPrice: 6,
+    idxAmount: 7
+}, { rowNumberOffset: 1 });
 
 const isArchivedUSRealizedCSVHeaders = (headers) => (
     headers.includes('代號') && headers.includes('調整後成本') && headers.includes('賣出收入')
@@ -458,6 +548,10 @@ const processStockCSVText = (csvText, options = {}) => {
         return processUSBrokerTransactionCSVRows(rows, headers);
     }
 
+    if (looksLikeUSBrokerPastedRows(rows)) {
+        return processUSBrokerTransactionPastedRows(rows);
+    }
+
     if (isArchivedUSRealizedCSVHeaders(headers)) {
         if (!options.allowArchivedUSRealized) {
             throw new Error("美股已平倉損益 v1 匯入格式已封存。新的美股匯入會改走完整券商交易明細；若只是要補救舊資料，請使用下方「封存 v1 格式預覽」。");
@@ -465,28 +559,42 @@ const processStockCSVText = (csvText, options = {}) => {
         return processArchivedUSRealizedCSVRows(rows, headers);
     }
 
-    const idxType = headers.indexOf('類型');
-    const idxDate = headers.indexOf('日期');
-    const idxItem = headers.indexOf('項目');
-    const idxBuy = headers.indexOf('股票買入');
-    const idxDeposit = headers.indexOf('存入戶頭');
-    const idxBalance = headers.indexOf('帳面餘額');
+    const hasTWHeaders = headers.includes('日期') && headers.includes('項目');
+    const idxType = hasTWHeaders ? headers.indexOf('類型') : 0;
+    const idxDate = hasTWHeaders ? headers.indexOf('日期') : 1;
+    const idxItem = hasTWHeaders ? headers.indexOf('項目') : 2;
+    const idxBuy = hasTWHeaders ? headers.indexOf('股票買入') : 3;
+    const idxDeposit = hasTWHeaders ? headers.indexOf('存入戶頭') : 4;
+    const idxBalance = hasTWHeaders ? headers.indexOf('帳面餘額') : 5;
 
     if (idxDate === -1 || idxItem === -1) throw new Error("CSV 格式不符，找不到日期或項目欄位");
+
+    const dataRows = hasTWHeaders ? rows.slice(1) : rows;
+    if (!hasTWHeaders) {
+        const looksLikePasteFormat = dataRows.some((row) => normalizeDate(row[idxDate]) && row[idxItem]?.trim());
+        if (!looksLikePasteFormat) throw new Error("CSV 格式不符，找不到日期或項目欄位");
+    }
 
     const transactions = [];
     const skippedRows = [];
 
-    rows.slice(1).forEach((row, index) => {
+    dataRows.forEach((row, index) => {
         const typeText = idxType >= 0 ? row[idxType]?.trim() : '';
         const date = normalizeDate(row[idxDate]);
         const item = row[idxItem]?.trim() || '';
         const buyAmount = idxBuy >= 0 ? parseAmount(row[idxBuy]) : 0;
         const depositAmount = idxDeposit >= 0 ? parseAmount(row[idxDeposit]) : 0;
         const balance = idxBalance >= 0 ? parseAmount(row[idxBalance]) : 0;
+        const normalizedType = typeText.replace(/\s+/g, '');
+        const actualRowNumber = index + 1 + (hasTWHeaders ? 1 : 0);
 
         if (!date || !item) {
-            skippedRows.push({ row: index + 2, type: typeText || '空白', item: item || '空白', reason: '缺少日期或項目' });
+            skippedRows.push({ row: actualRowNumber, type: typeText || '空白', item: item || '空白', reason: '缺少日期或項目' });
+            return;
+        }
+
+        if (normalizedType.includes('質押')) {
+            skippedRows.push({ row: actualRowNumber, type: typeText || '空白', item, reason: '質押借款已由負債模組追蹤，匯入股票績效時會自動略過' });
             return;
         }
 
@@ -496,7 +604,7 @@ const processStockCSVText = (csvText, options = {}) => {
         const isDividendRow = typeText.includes('股息') || /^現金股息/.test(item) || /^股息[-－]/.test(item);
 
         if (typeText.includes('匯款')) {
-            tradeType = 'deposit';
+            tradeType = depositAmount > 0 ? 'deposit' : 'withdrawal';
             amount = depositAmount || buyAmount;
             symbol = '';
         } else if (isDividendRow) {
@@ -513,12 +621,12 @@ const processStockCSVText = (csvText, options = {}) => {
         }
 
         if (!amount && tradeType !== 'other') {
-            skippedRows.push({ row: index + 2, type: typeText || '空白', item, reason: '金額為 0' });
+            skippedRows.push({ row: actualRowNumber, type: typeText || '空白', item, reason: '金額為 0' });
             return;
         }
 
         if (tradeType === 'other') {
-            skippedRows.push({ row: index + 2, type: typeText || '空白', item, reason: '尚未支援的交易類型' });
+            skippedRows.push({ row: actualRowNumber, type: typeText || '空白', item, reason: '尚未支援的交易類型' });
             return;
         }
 
@@ -3938,10 +4046,10 @@ const FIREModal = ({ fireStats, yearlyStats = [], onRateChange, onClose }) => {
 
 const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransactions, onImportHoldingSnapshot, onDeleteHoldingSnapshot, isPrivacyMode }) => {
     const [inputText, setInputText] = useState('');
-    const [holdingRows, setHoldingRows] = useState([{ id: 'holding-row-1', market: 'TW', name: '', price: '', shares: '' }]);
+    const [holdingRows, setHoldingRows] = useState([createHoldingRow()]);
     const [holdingMonth, setHoldingMonth] = useState(() => {
         const today = new Date();
-        return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+        return normalizeMonthValue(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`);
     });
     const [holdingNote, setHoldingNote] = useState('');
     const [preview, setPreview] = useState(null);
@@ -3961,8 +4069,8 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
     const [snapshotQuoteError, setSnapshotQuoteError] = useState('');
 
     const holdingSnapshots = useMemo(() => Object.entries(data.stockHoldingSnapshots || {}).flatMap(([month, versions]) =>
-        (versions || []).map((snapshot) => ({ ...snapshot, month }))
-    ).sort((a, b) => new Date(b.importedAt || 0) - new Date(a.importedAt || 0)), [data.stockHoldingSnapshots]);
+        normalizeSnapshotVersions(versions).map((snapshot) => ({ ...snapshot, month, holdings: Array.isArray(snapshot.holdings) ? snapshot.holdings : [] }))
+    ).sort((a, b) => new Date(b.importedAt || `${b.month}-01`).getTime() - new Date(a.importedAt || `${a.month}-01`).getTime()), [data.stockHoldingSnapshots]);
 
     const [selectedSnapshotId, setSelectedSnapshotId] = useState('');
 
@@ -4221,7 +4329,7 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
     const confirmHoldingImport = () => {
         onImportHoldingSnapshot(holdingPreview);
         setHoldingPreview(null);
-        setHoldingRows([{ id: `holding-row-${Date.now()}`, market: 'TW', name: '', price: '', shares: '' }]);
+        setHoldingRows([createHoldingRow()]);
         setHoldingNote('');
         setShowHoldingImportModal(false);
     };
@@ -4234,10 +4342,43 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
     };
     const remittanceNet = stockStats.totalDeposits - stockStats.totalWithdrawals;
     const remittancePrefix = remittanceNet > 0 ? '+' : '';
+    const activeHoldingMarket = marketFilter || 'TW';
+    const activeHoldingImportLabel = activeHoldingMarket === 'US' ? '帶入上次美股' : '帶入上次台股';
     const getTradeAmountPrefix = (trade) => ['buy', 'fee', 'withdrawal'].includes(trade.type) ? '-' : '+';
     const updateHoldingRow = (id, field, value) => setHoldingRows((rows) => rows.map((row) => row.id === id ? { ...row, [field]: value } : row));
-    const addHoldingRow = () => setHoldingRows((rows) => [...rows, { id: `holding-row-${Date.now()}-${rows.length}`, market: rows.at(-1)?.market || 'TW', name: '', price: '', shares: '' }]);
+    const addHoldingRow = () => setHoldingRows((rows) => [...rows, createHoldingRow({ market: rows.at(-1)?.market || 'TW' })]);
     const removeHoldingRow = (id) => setHoldingRows((rows) => rows.length > 1 ? rows.filter((row) => row.id !== id) : rows);
+    const getLatestHoldingSnapshotForMarket = (market) => (
+        [...holdingSnapshots]
+            .filter((snapshot) => (snapshot.holdings || []).some((holding) => (holding.market || 'TW') === market))
+            .sort((a, b) => {
+                const timeA = new Date(a.importedAt || `${a.month}-01`).getTime() || 0;
+                const timeB = new Date(b.importedAt || `${b.month}-01`).getTime() || 0;
+                if (timeB !== timeA) return timeB - timeA;
+                return (Number(b.version) || 0) - (Number(a.version) || 0);
+            })[0] || null
+    );
+    const importPreviousHoldingRows = (market) => {
+        const snapshot = getLatestHoldingSnapshotForMarket(market);
+        if (!snapshot) return;
+
+        const importedRows = (snapshot.holdings || [])
+            .filter((holding) => (holding.market || 'TW') === market)
+            .map((holding) => createHoldingRow({
+                market,
+                name: holding.name || holding.symbol || '',
+                price: holding.marketPrice ? String(holding.marketPrice) : '',
+                shares: holding.shares ? String(holding.shares) : ''
+            }));
+
+        if (importedRows.length === 0) return;
+
+        setHoldingRows((rows) => {
+            const otherMarketRows = rows.filter((row) => (row.market || 'TW') !== market && (row.name.trim() || row.price || row.shares));
+            return [...otherMarketRows, ...importedRows];
+        });
+        setErrorMsg('');
+    };
     const getSnapshotMarketHoldings = (snapshot) => (snapshot.holdings || []).filter((holding) => (holding.market || 'TW') === marketFilter);
     const topWinners = marketFilteredStockRows.filter((item) => item.totalPnl > 0).slice(0, 5);
     const topLosers = [...marketFilteredStockRows].filter((item) => item.totalPnl < 0).sort((a, b) => a.totalPnl - b.totalPnl).slice(0, 5);
@@ -4310,7 +4451,7 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
                         <button onClick={() => { setErrorMsg(''); setShowTransactionImportModal(true); }} className="p-4 rounded-2xl bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors text-left">
                             <Upload size={18} className="mb-2" />
                             <div className="font-bold text-sm">匯入股票交易</div>
-                            <div className="text-[10px] text-blue-500 mt-1">檔案或貼上 CSV</div>
+                            <div className="text-[10px] text-blue-500 mt-1">檔案或直接貼上內容</div>
                         </button>
                         <button onClick={() => { setErrorMsg(''); setShowHoldingImportModal(true); }} className="p-4 rounded-2xl bg-teal-50 text-teal-700 hover:bg-teal-100 transition-colors text-left">
                             <Package size={18} className="mb-2" />
@@ -4464,7 +4605,16 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
 
                 <section className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
                     <div className="px-4 py-3 border-b border-slate-100"><h3 className="text-sm font-serif-tc font-bold text-slate-700">最近匯入交易</h3></div>
-                    {latestTrades.length > 0 ? latestTrades.map((trade) => <div key={trade.id} className="px-4 py-3 border-b border-slate-50 last:border-0 flex justify-between items-center"><div><div className="font-bold text-sm text-slate-700">{trade.symbol || trade.rawItem || trade.name}</div><div className="text-xs text-slate-400">{trade.date} · {getStockMarketLabel(trade.market || 'TW')} · {getStockTradeLabel(trade.type)}</div></div><div className={`font-inter text-sm font-bold ${['buy', 'fee', 'withdrawal'].includes(trade.type) ? 'text-slate-600' : 'text-emerald-600'} ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>{stockMoney(trade.amount, trade.market || 'TW', getTradeAmountPrefix(trade))}</div></div>) : <div className="p-8 text-center text-slate-300 text-sm">尚無交易明細</div>}
+                    {latestTrades.length > 0 ? latestTrades.map((trade) => (
+                        <div key={trade.id} className="px-4 py-3 border-b border-slate-50 last:border-0 flex justify-between items-start gap-3">
+                            <div className="min-w-0">
+                                <div className="font-bold text-sm text-slate-700 break-words">{getStockTradeTitle(trade)}</div>
+                                {getStockTradeDescription(trade) && <div className="text-[11px] text-slate-400 mt-0.5 break-words">{getStockTradeDescription(trade)}</div>}
+                                <div className="text-xs text-slate-400 mt-1">{trade.date} · {getStockMarketLabel(trade.market || 'TW')} · {getStockTradeLabel(trade.type)}</div>
+                            </div>
+                            <div className={`shrink-0 font-inter text-sm font-bold ${['buy', 'fee', 'withdrawal'].includes(trade.type) ? 'text-slate-600' : 'text-emerald-600'} ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>{stockMoney(trade.amount, trade.market || 'TW', getTradeAmountPrefix(trade))}</div>
+                        </div>
+                    )) : <div className="p-8 text-center text-slate-300 text-sm">尚無交易明細</div>}
                 </section>
             </main>
 
@@ -4474,7 +4624,7 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
                         <button onClick={() => setShowTransactionImportModal(false)} className="absolute top-4 right-4 text-slate-300 hover:text-slate-600"><X size={18} /></button>
                         <div className="mb-4 pr-8">
                             <h3 className="text-xl font-serif-tc font-bold text-slate-800 flex items-center gap-2"><Upload size={18} /> 匯入股票交易</h3>
-                            <p className="text-sm text-slate-400 mt-1">支援檔案或直接貼上 CSV。匯入採 append，不會覆蓋既有資料；美股新格式將改走完整券商交易明細。</p>
+                            <p className="text-sm text-slate-400 mt-1">支援上傳交易檔案，或直接貼上你整理過的台股 / 美股交易內容。匯入採 append，不會覆蓋既有資料。</p>
                         </div>
                         <div className="mb-4 rounded-2xl border border-amber-100 bg-amber-50 p-3 text-xs text-amber-800 leading-relaxed">
                             <div className="font-bold mb-1">美股 v1 已封存</div>
@@ -4482,13 +4632,13 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
                         </div>
                         {errorMsg && <div className="bg-rose-50 text-rose-500 text-xs p-3 rounded-xl flex items-center gap-2 font-bold mb-4"><AlertCircle size={14} />{errorMsg}</div>}
                         <div className="relative border border-dashed border-slate-300 rounded-xl p-4 text-center hover:border-blue-400 hover:text-blue-600 transition-colors text-slate-400 bg-slate-50">
-                            <input type="file" accept=".csv" onChange={handleFileUpload} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
+                            <input type="file" accept=".csv,.txt" onChange={handleFileUpload} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
                             <Upload size={18} className="mx-auto mb-1" />
-                            <div className="text-xs font-bold">選擇股票交易 CSV</div>
+                            <div className="text-xs font-bold">選擇股票交易檔案</div>
                         </div>
                         <div className="mt-4">
-                            <label className="text-xs text-slate-400 font-bold mb-1 block">或貼上 CSV 內容</label>
-                            <textarea value={inputText} onChange={(e) => setInputText(e.target.value)} className="w-full min-h-[160px] p-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 outline-none text-xs font-inter text-slate-700" placeholder={"類型,日期,項目,股票買入,存入戶頭,帳面餘額\n匯款,2016/2/1,ＡＴＭ轉,,30000,32000\n\n日期,交易類別,數量,說明,代號,賬戶類別,價格,金額\n06/03/2025,買進,5.1051,TAIWAN SEMICONDUCTOR,TSM,現金,195.8825,-1000\n06/05/2025,賣出,-2.88675,TESLA INC,TSLA,現金,316.9,914.81"} />
+                            <label className="text-xs text-slate-400 font-bold mb-1 block">或直接貼上交易內容</label>
+                            <textarea value={inputText} onChange={(e) => setInputText(e.target.value)} className="w-full min-h-[160px] p-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 outline-none text-xs font-inter text-slate-700" placeholder={"台股可直接貼上：\n\t2026/04/01\t台積電\t89,576\t\t479,138\n匯款\t2026/04/02\t行動轉出\t33,000\t\t625,503\n\t2026/04/09\t現金股息-台積電\t\t2,251\t275,126\n\n美股仍可貼上券商明細：\n日期,交易類別,數量,說明,代號,賬戶類別,價格,金額\n06/03/2025,買進,5.1051,TAIWAN SEMICONDUCTOR,TSM,現金,195.8825,-1000"} />
                             <button onClick={() => parseImportText(inputText)} disabled={!inputText.trim()} className="mt-3 w-full py-2.5 rounded-xl bg-blue-600 text-white font-bold text-sm hover:bg-blue-700 disabled:bg-slate-200 disabled:text-slate-400 transition-colors">預覽匯入明細</button>
                             <button onClick={() => parseImportText(inputText, { allowArchivedUSRealized: true })} disabled={!inputText.trim()} className="mt-2 w-full py-2.5 rounded-xl bg-amber-50 text-amber-700 font-bold text-sm hover:bg-amber-100 disabled:bg-slate-50 disabled:text-slate-300 transition-colors">封存 v1 格式預覽</button>
                         </div>
@@ -4508,7 +4658,7 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
                         <div className="grid grid-cols-2 gap-3">
                             <div>
                                 <label className="text-xs text-slate-400 font-bold mb-1 block">快照月份</label>
-                                <input type="month" value={holdingMonth} onChange={(e) => setHoldingMonth(e.target.value)} className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 outline-none text-sm font-inter" />
+                                <input type="text" inputMode="numeric" value={holdingMonth} onChange={(e) => setHoldingMonth(normalizeMonthValue(e.target.value))} className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 outline-none text-sm font-inter" placeholder="YYYY-MM" />
                             </div>
                             <div>
                                 <label className="text-xs text-slate-400 font-bold mb-1 block">版本備註</label>
@@ -4517,6 +4667,20 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
                         </div>
                         <div className="mt-4">
                             <label className="text-xs text-slate-400 font-bold mb-1 block">手動輸入持倉</label>
+                            <div className="mb-3">
+                                <button
+                                    type="button"
+                                    onClick={() => importPreviousHoldingRows(activeHoldingMarket)}
+                                    disabled={!getLatestHoldingSnapshotForMarket(activeHoldingMarket)}
+                                    className={`w-full px-3 py-2.5 rounded-xl bg-white border border-slate-200 text-xs font-bold transition-colors disabled:bg-slate-50 disabled:text-slate-300 disabled:border-slate-100 ${
+                                        activeHoldingMarket === 'US'
+                                            ? 'text-blue-700 hover:bg-blue-50'
+                                            : 'text-teal-700 hover:bg-teal-50'
+                                    }`}
+                                >
+                                    {activeHoldingImportLabel}
+                                </button>
+                            </div>
                             <div className="space-y-2">
                                 {holdingRows.map((row, index) => (
                                     <div key={row.id} className="rounded-2xl border border-slate-100 bg-slate-50/70 p-2.5">
@@ -4555,7 +4719,7 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
                                     </div>
                                 ))}
                             </div>
-                            <p className="text-[10px] text-slate-400 mt-2">至少保留一列資料。可用代號抓取最新價；存成快照後仍視為當下記錄，不會自動改寫。</p>
+                            <p className="text-[10px] text-slate-400 mt-2">至少保留一列資料。會依你目前所在分頁，自動帶入上一次同市場持倉；帶入時只會覆蓋同市場列。可用代號抓取最新價；存成快照後仍視為當下記錄，不會自動改寫。</p>
                             <button onClick={parseHoldingRows} className="mt-3 w-full py-2.5 rounded-xl bg-teal-600 text-white font-bold text-sm hover:bg-teal-700 transition-colors">預覽持倉快照</button>
                         </div>
                     </div>
@@ -4582,7 +4746,16 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
                             <div className="bg-slate-50 rounded-xl p-3"><div className="text-slate-400">匯出</div><div className="font-bold text-slate-600">{preview.transactions.filter(t => t.type === 'withdrawal').length}</div></div>
                         </div>
                         <div className="flex-1 overflow-y-auto border border-slate-100 rounded-xl divide-y divide-slate-50">
-                            {preview.transactions.slice(0, 30).map((trade) => <div key={trade.id} className="p-3 flex justify-between items-center text-sm"><div><div className="font-bold text-slate-700">{trade.symbol || trade.rawItem || trade.name}</div><div className="text-xs text-slate-400">{trade.date} · {getStockTradeLabel(trade.type)}</div></div><div className="font-inter font-bold text-slate-700">{formatMoneyByMarket(trade.amount, trade.market || 'TW')}</div></div>)}
+                            {preview.transactions.slice(0, 30).map((trade) => (
+                                <div key={trade.id} className="p-3 flex justify-between items-start gap-3 text-sm">
+                                    <div className="min-w-0">
+                                        <div className="font-bold text-slate-700 break-words">{getStockTradeTitle(trade)}</div>
+                                        {getStockTradeDescription(trade) && <div className="text-[11px] text-slate-400 mt-0.5 break-words">{getStockTradeDescription(trade)}</div>}
+                                        <div className="text-xs text-slate-400 mt-1">{trade.date} · {getStockTradeLabel(trade.type)}</div>
+                                    </div>
+                                    <div className="shrink-0 font-inter font-bold text-slate-700">{formatMoneyByMarket(trade.amount, trade.market || 'TW')}</div>
+                                </div>
+                            ))}
                             {preview.transactions.length > 30 && <div className="p-3 text-center text-xs text-slate-400">還有 {preview.transactions.length - 30} 筆未顯示</div>}
                         </div>
                         {preview.skippedRows.length > 0 && (

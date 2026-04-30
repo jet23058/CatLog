@@ -1023,7 +1023,7 @@ describe('App Integration Tests', () => {
             '匯款,2016/2/1,ＡＴＭ轉,,"30,000","32,000"'
         ].join('\n');
 
-        await user.type(screen.getByPlaceholderText(/類型,日期,項目/), stockCsv);
+        await user.type(screen.getByPlaceholderText(/台股可直接貼上/), stockCsv);
         await user.click(screen.getByText('預覽匯入明細'));
 
         await waitFor(() => expect(screen.getByText('確認匯入股票交易')).toBeInTheDocument());
@@ -1039,6 +1039,41 @@ describe('App Integration Tests', () => {
         await waitFor(() => expect(screen.getByText('個股損益表')).toBeInTheDocument());
         expect(screen.getAllByText('國泰金').length).toBeGreaterThan(0);
         expect(screen.getByText(/2 筆交易/)).toBeInTheDocument();
+    });
+
+    test('Stock Analysis: imports headerless TW pasted format and skips pledge rows', async () => {
+        const user = userEvent.setup();
+        render(<App />);
+        await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
+
+        const advancedBtn = document.querySelector('.lucide-layout-grid').closest('button');
+        await user.click(advancedBtn);
+        await waitFor(() => expect(screen.getByText('Advanced')).toBeInTheDocument());
+        await user.click(screen.getByText('個股績效'));
+
+        await waitFor(() => expect(screen.getByText('匯入股票交易')).toBeInTheDocument());
+        await user.click(screen.getByRole('button', { name: /匯入股票交易/ }));
+
+        const stockPaste = [
+            '\t2026/04/01\t台塑化\t57,649\t\t568,714',
+            '\t2026/04/02\t台化\t\t45,724\t524,862',
+            '匯款\t2026/04/02\t行動轉出\t33,000\t\t625,503',
+            '\t2026/04/09\t現金股息-台積電\t\t2,251\t275,126',
+            '質押\t2026/04/09\t轉帳存入\t\t90,000\t365,126'
+        ].join('\n');
+
+        await user.type(screen.getByPlaceholderText(/台股可直接貼上/), stockPaste);
+        await user.click(screen.getByText('預覽匯入明細'));
+
+        await waitFor(() => expect(screen.getByText('確認匯入股票交易')).toBeInTheDocument());
+        expect(screen.getByText('將 append 新增 4 筆交易，不會覆蓋既有資料。')).toBeInTheDocument();
+        expect(within(screen.getByText('買入').parentElement).getByText('1')).toBeInTheDocument();
+        expect(within(screen.getByText('賣出').parentElement).getByText('1')).toBeInTheDocument();
+        expect(within(screen.getByText('股息').parentElement).getByText('1')).toBeInTheDocument();
+        expect(within(screen.getByText('匯出').parentElement).getByText('1')).toBeInTheDocument();
+        expect(screen.getByText('略過 1 列無法辨識或不需納入績效的資料：')).toBeInTheDocument();
+        expect(screen.getByText('第 5 列')).toBeInTheDocument();
+        expect(screen.getByText(/質押借款已由負債模組追蹤/)).toBeInTheDocument();
     });
 
     test('Stock Analysis: imports unassigned cash dividends', async () => {
@@ -1061,7 +1096,7 @@ describe('App Integration Tests', () => {
             '其他,2016/6/22,未支援事件,,,17048'
         ].join('\n');
 
-        await user.type(screen.getByPlaceholderText(/類型,日期,項目/), stockCsv);
+        await user.type(screen.getByPlaceholderText(/台股可直接貼上/), stockCsv);
         await user.click(screen.getByText('預覽匯入明細'));
 
         await waitFor(() => expect(screen.getByText('確認匯入股票交易')).toBeInTheDocument());
@@ -1094,7 +1129,7 @@ describe('App Integration Tests', () => {
             '匯款,2025/10/17,行動轉出,"16,000",,"67,409"'
         ].join('\n');
 
-        await user.type(screen.getByPlaceholderText(/類型,日期,項目/), stockCsv);
+        await user.type(screen.getByPlaceholderText(/台股可直接貼上/), stockCsv);
         await user.click(screen.getByText('預覽匯入明細'));
 
         await waitFor(() => expect(screen.getByText('確認匯入股票交易')).toBeInTheDocument());
@@ -1121,7 +1156,7 @@ describe('App Integration Tests', () => {
             'NVDA,NVIDIA CORP,7.07476,15,06/03/2025,06/18/2025,"$1,018.62","$1,000.00",0,$18.62'
         ].join('\n');
 
-        await user.type(screen.getByPlaceholderText(/類型,日期,項目/), usCsv);
+        await user.type(screen.getByPlaceholderText(/台股可直接貼上/), usCsv);
         await user.click(screen.getByText('預覽匯入明細'));
 
         await waitFor(() => expect(screen.getAllByText(/美股已平倉損益 v1 匯入格式已封存/).length).toBeGreaterThan(0));
@@ -1186,6 +1221,47 @@ describe('App Integration Tests', () => {
         expect(screen.getByText('匯款淨額').parentElement).not.toHaveTextContent('+1,525.00');
     });
 
+    test('Stock Analysis: imports pasted US broker rows without headers', async () => {
+        const user = userEvent.setup();
+        render(<App />);
+        await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
+
+        const advancedBtn = document.querySelector('.lucide-layout-grid').closest('button');
+        await user.click(advancedBtn);
+        await waitFor(() => expect(screen.getByText('Advanced')).toBeInTheDocument());
+        await user.click(screen.getByText('個股績效'));
+
+        await waitFor(() => expect(screen.getByText('匯入股票交易')).toBeInTheDocument());
+        await user.click(screen.getByRole('button', { name: /匯入股票交易/ }));
+
+        const pastedUsRows = [
+            '04/01/2026\t股息\t\tNVIDIA CORP CASH DIV ON 20 SHS REC 03/11/26 PAY 04/01/26 NON-RES TAX WITHHELD $0.06000\tNVDA\t現金\t\t0.2',
+            '04/08/2026\t賣出\t-10\tHIMS & HERS HEALTH INC CLASS A COMMON STOCK UNSOLICITED\tHIMS\t現金\t19.875\t198.74',
+            '04/09/2026\t買進\t5\tAPPLIED OPTOELECTRONICS INC COM UNSOLICITED\tAAOI\t現金\t139.7999\t-699',
+            '04/16/2026\t利息收入\t\tINTEREST ON CREDIT BALANCE AT 0.150% 03/16 THRU 04/15\t\t現金\t\t0.08'
+        ].join('\n');
+
+        await user.type(screen.getByPlaceholderText(/台股可直接貼上/), pastedUsRows);
+        await user.click(screen.getByText('預覽匯入明細'));
+
+        await waitFor(() => expect(screen.getByText('確認匯入股票交易')).toBeInTheDocument());
+        expect(screen.getByText('將 append 新增 4 筆交易，不會覆蓋既有資料。')).toBeInTheDocument();
+        expect(within(screen.getByText('買入').parentElement).getByText('1')).toBeInTheDocument();
+        expect(within(screen.getByText('賣出').parentElement).getByText('1')).toBeInTheDocument();
+        expect(within(screen.getByText('股息').parentElement).getByText('1')).toBeInTheDocument();
+        expect(within(screen.getByText('利息').parentElement).getByText('1')).toBeInTheDocument();
+
+        await user.click(screen.getByText('確認匯入'));
+        await waitFor(() => expect(screen.getByText('匯入成功')).toBeInTheDocument());
+        await user.click(screen.getByText('知道了'));
+
+        await user.click(screen.getByRole('button', { name: /美股/ }));
+        expect(screen.getAllByText('NVDA').length).toBeGreaterThan(0);
+        expect(screen.getAllByText('HIMS').length).toBeGreaterThan(0);
+        expect(screen.getAllByText('AAOI').length).toBeGreaterThan(0);
+        expect(screen.getByText('利息').parentElement).toHaveTextContent('+0.08');
+    });
+
     test('Stock Analysis: imports archived US realized gains separately by explicit choice', async () => {
         const user = userEvent.setup();
         render(<App />);
@@ -1206,7 +1282,7 @@ describe('App Integration Tests', () => {
             'TSLA,TESLA INC,2.88675,2,06/03/2025,06/05/2025,$914.81,"$1,000.00",85.19,$0.00 WS'
         ].join('\n');
 
-        await user.type(screen.getByPlaceholderText(/類型,日期,項目/), usCsv);
+        await user.type(screen.getByPlaceholderText(/台股可直接貼上/), usCsv);
         await user.click(screen.getByText('封存 v1 格式預覽'));
 
         await waitFor(() => expect(screen.getByText('確認匯入股票交易')).toBeInTheDocument());
@@ -1301,7 +1377,7 @@ describe('App Integration Tests', () => {
             '股息,2025/05/14,基金配息,,"13,900","130,834"'
         ].join('\n');
 
-        await user.type(screen.getByPlaceholderText(/類型,日期,項目/), stockCsv);
+        await user.type(screen.getByPlaceholderText(/台股可直接貼上/), stockCsv);
         await user.click(screen.getByText('預覽匯入明細'));
 
         await waitFor(() => expect(screen.getByText('確認匯入股票交易')).toBeInTheDocument());
@@ -1328,7 +1404,7 @@ describe('App Integration Tests', () => {
             '類型,日期,項目,股票買入,存入戶頭,帳面餘額',
             ',2025/10/13,台積電,"10,000",,"27,140"'
         ].join('\n');
-        fireEvent.change(screen.getByPlaceholderText(/類型,日期,項目/), { target: { value: transactionCsv } });
+        fireEvent.change(screen.getByPlaceholderText(/台股可直接貼上/), { target: { value: transactionCsv } });
         await user.click(screen.getByText('預覽匯入明細'));
         await waitFor(() => expect(screen.getByText('確認匯入股票交易')).toBeInTheDocument());
         await user.click(screen.getByText('確認匯入'));
@@ -1336,7 +1412,7 @@ describe('App Integration Tests', () => {
         await user.click(screen.getByText('知道了'));
 
         await user.click(screen.getByRole('button', { name: /匯入持倉快照/ }));
-        fireEvent.change(document.querySelector('input[type="month"]'), { target: { value: '2025-10' } });
+        fireEvent.change(screen.getByPlaceholderText('YYYY-MM'), { target: { value: '2025-10' } });
 
         fireEvent.change(screen.getByPlaceholderText(/台積電/), { target: { value: '台積電' } });
         const holdingNumbers = document.querySelectorAll('input[type="number"]');
@@ -1435,7 +1511,7 @@ describe('App Integration Tests', () => {
 
         await waitFor(() => expect(screen.getByText('匯入持倉快照')).toBeInTheDocument());
         await user.click(screen.getByRole('button', { name: /匯入持倉快照/ }));
-        fireEvent.change(document.querySelector('input[type="month"]'), { target: { value: '2025-11' } });
+        fireEvent.change(screen.getByPlaceholderText('YYYY-MM'), { target: { value: '2025-11' } });
 
         fireEvent.change(screen.getByPlaceholderText(/台積電/), { target: { value: '台積電' } });
         let holdingNumbers = document.querySelectorAll('input[type="number"]');
@@ -1509,6 +1585,63 @@ describe('App Integration Tests', () => {
         expect(screen.getByText(/200\.25 x 5\.13 股/)).toBeInTheDocument();
         expect(screen.getAllByText('1,026.28').length).toBeGreaterThan(0);
         expect(screen.queryByText('台積電')).not.toBeInTheDocument();
+    });
+
+    test('Stock Analysis: can carry previous holdings by active market into holding form', async () => {
+        const user = userEvent.setup();
+        const mockData = {
+            records: {},
+            memos: {},
+            incomes: {},
+            expenses: {},
+            debts: {},
+            debtEvents: {},
+            stockTransactions: [],
+            stockHoldingSnapshots: {
+                '2026-03': [{
+                    id: 'carry-snapshot',
+                    version: 1,
+                    note: '月底',
+                    importedAt: '2026-03-31T10:00:00.000Z',
+                    holdings: [
+                        { id: 'carry-tw', month: '2026-03', market: 'TW', symbol: '2330', name: '台積電', shares: 10, marketPrice: 980, marketValue: 9800 },
+                        { id: 'carry-us', month: '2026-03', market: 'US', symbol: 'TSLA', name: 'TESLA INC', shares: 2, marketPrice: 250.5, marketValue: 501 }
+                    ]
+                }]
+            },
+            fireSettings: { withdrawalRate: 4 }
+        };
+
+        getDocs.mockResolvedValue(createMockSnapshot(mockData));
+        render(<App />);
+        await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
+
+        const advancedBtn = document.querySelector('.lucide-layout-grid').closest('button');
+        await user.click(advancedBtn);
+        await waitFor(() => expect(screen.getByText('Advanced')).toBeInTheDocument());
+        await user.click(screen.getByText('個股績效'));
+
+        await waitFor(() => expect(screen.getByText('匯入持倉快照')).toBeInTheDocument());
+        await user.click(screen.getByRole('button', { name: /匯入持倉快照/ }));
+
+        await user.click(screen.getByRole('button', { name: '帶入上次台股' }));
+        expect(screen.getByDisplayValue('台積電')).toBeInTheDocument();
+        expect(screen.getByDisplayValue('980')).toBeInTheDocument();
+        expect(screen.getByDisplayValue('10')).toBeInTheDocument();
+
+        await user.click(document.querySelector('.fixed.inset-0 button.absolute'));
+        await waitFor(() => expect(screen.queryByText('帶入上次台股')).not.toBeInTheDocument());
+
+        await user.click(screen.getAllByRole('button', { name: /美股/ })[0]);
+        await user.click(screen.getByRole('button', { name: /匯入持倉快照/ }));
+        expect(screen.queryByRole('button', { name: '帶入上次台股' })).not.toBeInTheDocument();
+        expect(screen.getByRole('button', { name: '帶入上次美股' })).toBeInTheDocument();
+
+        await user.click(screen.getByRole('button', { name: '帶入上次美股' }));
+        expect(screen.getByDisplayValue('TESLA INC')).toBeInTheDocument();
+        expect(screen.getByDisplayValue('250.5')).toBeInTheDocument();
+        expect(screen.getByDisplayValue('2')).toBeInTheDocument();
+        expect(screen.getByDisplayValue('台積電')).toBeInTheDocument();
     });
 
     test('Stock Analysis: clears only the selected market transactions', async () => {
