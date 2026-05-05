@@ -80,6 +80,11 @@ const getDebtIdentity = (debt = {}) => debt.id || [
     debt.memo,
     JSON.stringify(debt.pledgeStocks || [])
 ].join('|');
+const getDebtTargetKey = (debt = {}) => debt.id ? `id:${debt.id}` : `fallback:${[
+    debt.category,
+    debt.name,
+    debt.lender
+].join('|')}`;
 
 const mergeDebtMaps = (...debtMaps) => {
     const merged = {};
@@ -215,8 +220,94 @@ const getDebtEventLabel = (type) => ({
     repay: '還本金',
     interest: '利息',
     fee: '手續費',
-    collateral: '擔保品'
+    collateral: '擔保品',
+    rate_change: '利率調整'
 }[type] || '異動');
+const mergePledgeRateRows = (baseRows = [], eventRows = []) => {
+    const rowMap = new Map((Array.isArray(baseRows) ? baseRows : []).map((row) => [String(row.symbol || '').trim(), { ...row }]));
+
+    (Array.isArray(eventRows) ? eventRows : []).forEach((row) => {
+        const symbol = String(row.symbol || '').trim();
+        if (!symbol) return;
+        const current = rowMap.get(symbol) || { symbol, shares: 0, rate: 0 };
+        rowMap.set(symbol, {
+            ...current,
+            ...row,
+            symbol,
+            shares: Number(row.shares) > 0 ? Math.trunc(Number(row.shares)) : current.shares,
+            rate: Number(row.rate) || 0
+        });
+    });
+
+    return Array.from(rowMap.values());
+};
+const getRateChangeEventsForDebt = (debt = {}, debtEvents = {}, targetDateStr = '') => {
+    const targetDate = new Date(targetDateStr || '9999-12-31');
+    const targetKey = getDebtTargetKey(debt);
+    return Object.values(debtEvents || {})
+        .flatMap((items) => items || [])
+        .filter((event) => {
+            if (event.type !== 'rate_change') return false;
+            if (!event.date || new Date(event.date) > targetDate) return false;
+            return event.targetDebtKey === targetKey
+                || (event.targetDebtId && debt.id && event.targetDebtId === debt.id)
+                || (!event.targetDebtKey && event.name === debt.name && event.lender === debt.lender && (event.category || debt.category) === debt.category);
+        })
+        .sort((a, b) => new Date(a.date) - new Date(b.date));
+};
+const getEffectiveDebtAtDate = (debt = {}, debtEvents = {}, targetDateStr = '') => {
+    if (debt.category !== 'stock_pledge') return debt;
+    const effectiveDebt = { ...debt, pledgeStocks: Array.isArray(debt.pledgeStocks) ? debt.pledgeStocks.map((row) => ({ ...row })) : [] };
+    getRateChangeEventsForDebt(debt, debtEvents, targetDateStr).forEach((event) => {
+        effectiveDebt.pledgeStocks = mergePledgeRateRows(effectiveDebt.pledgeStocks, event.pledgeStocks);
+    });
+    return effectiveDebt;
+};
+const getEffectiveDebtSnapshotAtDate = (debts = {}, debtEvents = {}, targetDateStr = '') => (
+    getLatestSnapshotItems(debts, targetDateStr).map((debt) => getEffectiveDebtAtDate(debt, debtEvents, targetDateStr))
+);
+const getDebtEffectiveDate = (debt = {}, debts = {}) => {
+    const debtKey = getDebtTargetKey(debt);
+    const matchedDate = Object.entries(debts || {})
+        .sort(([a], [b]) => a.localeCompare(b))
+        .find(([, items]) => (items || []).some((item) => getDebtTargetKey(item) === debtKey));
+    return matchedDate?.[0] || '';
+};
+const getMonthlyDebtInterestEstimate = (debt = {}, monthKey = '', debtEvents = {}, debts = {}) => {
+    if (debt.category !== 'stock_pledge' || !monthKey) return 0;
+    const [year, month] = monthKey.split('-').map(Number);
+    if (!year || !month) return 0;
+    const monthStart = new Date(year, month - 1, 1);
+    const monthEnd = new Date(year, month, 0);
+    const debtStartDateText = getDebtEffectiveDate(debt, debts);
+    const debtStartDate = debtStartDateText ? new Date(debtStartDateText) : monthStart;
+    let segmentStart = debtStartDate > monthStart ? new Date(debtStartDate) : new Date(monthStart);
+    if (segmentStart > monthEnd) return 0;
+
+    let runningDebt = getEffectiveDebtAtDate(debt, debtEvents, new Date(segmentStart.getTime() - 86400000).toISOString().slice(0, 10));
+    let totalInterest = 0;
+
+    const monthEvents = getRateChangeEventsForDebt(debt, debtEvents, monthEnd.toISOString().slice(0, 10))
+        .filter((event) => new Date(event.date) >= segmentStart);
+
+    monthEvents.forEach((event) => {
+        const eventDate = new Date(event.date);
+        const segmentEnd = new Date(eventDate.getTime() - 86400000);
+        if (segmentEnd >= segmentStart) {
+            const dayCount = Math.floor((segmentEnd - segmentStart) / 86400000) + 1;
+            totalInterest += getDebtEstimatedAnnualInterest(runningDebt) * (dayCount / 365);
+        }
+        runningDebt = { ...runningDebt, pledgeStocks: mergePledgeRateRows(runningDebt.pledgeStocks, event.pledgeStocks) };
+        segmentStart = eventDate;
+    });
+
+    if (segmentStart <= monthEnd) {
+        const dayCount = Math.floor((monthEnd - segmentStart) / 86400000) + 1;
+        totalInterest += getDebtEstimatedAnnualInterest(runningDebt) * (dayCount / 365);
+    }
+
+    return totalInterest;
+};
 const getLatestSnapshotTotal = (records = {}, targetDateStr, calculator) => {
     const targetDate = new Date(targetDateStr);
     let latestDate = null;
@@ -2836,7 +2927,7 @@ const AddDebtModal = ({ onClose, onSave, debtNames = [], accountOptions = [], as
     );
 };
 
-const AddDebtEventModal = ({ monthKey, onClose, onSave, debtNames = [] }) => {
+const AddDebtEventModal = ({ monthKey, onClose, onSave, debtNames = [], debtTargets = [] }) => {
     const today = new Date();
     const fallbackDate = `${monthKey}-${String(new Date(Number(monthKey.split('-')[0]), Number(monthKey.split('-')[1]), 0).getDate()).padStart(2, '0')}`;
     const todayStr = today.toISOString().split('T')[0].startsWith(monthKey) ? today.toISOString().split('T')[0] : fallbackDate;
@@ -2848,6 +2939,8 @@ const AddDebtEventModal = ({ monthKey, onClose, onSave, debtNames = [] }) => {
     const [amount, setAmount] = useState('');
     const [memo, setMemo] = useState('');
     const [collateralText, setCollateralText] = useState('');
+    const [selectedDebtTarget, setSelectedDebtTarget] = useState('');
+    const [rateChangeRows, setRateChangeRows] = useState([{ id: `rate-${Date.now()}`, symbol: '', shares: '', rate: '' }]);
     const [errorMsg, setErrorMsg] = useState('');
 
     const parseCollateral = (text) => text
@@ -2859,10 +2952,58 @@ const AddDebtEventModal = ({ monthKey, onClose, onSave, debtNames = [] }) => {
             return { symbol: symbol || part, shares: Number(shares) || 0 };
         });
 
+    useEffect(() => {
+        if (type !== 'rate_change') return;
+        const target = debtTargets.find((item) => item.targetKey === selectedDebtTarget) || debtTargets[0];
+        if (!target) return;
+        if (selectedDebtTarget !== target.targetKey) setSelectedDebtTarget(target.targetKey);
+        setName(target.name || '股票質押');
+        setLender(target.lender || '');
+        setRateChangeRows((target.pledgeStocks || []).length > 0
+            ? target.pledgeStocks.map((row, index) => ({ id: `rate-${target.targetKey}-${index}`, symbol: row.symbol || '', shares: row.shares || '', rate: row.rate || '' }))
+            : [{ id: `rate-${Date.now()}`, symbol: '', shares: '', rate: '' }]
+        );
+    }, [type, selectedDebtTarget, debtTargets]);
+
+    const updateRateChangeRow = (id, field, value) => {
+        setRateChangeRows((rows) => rows.map((row) => row.id === id ? { ...row, [field]: value } : row));
+    };
+
+    const addRateChangeRow = () => {
+        setRateChangeRows((rows) => [...rows, { id: `rate-${Date.now()}-${rows.length}`, symbol: '', shares: '', rate: '' }]);
+    };
+
+    const removeRateChangeRow = (id) => {
+        setRateChangeRows((rows) => rows.length > 1 ? rows.filter((row) => row.id !== id) : rows);
+    };
+
     const handleSubmit = () => {
         setErrorMsg('');
         if (!date || !date.startsWith(monthKey)) return setErrorMsg("日期需在目前月份內");
         if (!name.trim()) return setErrorMsg("請輸入負債名稱");
+        if (type === 'rate_change') {
+            const target = debtTargets.find((item) => item.targetKey === selectedDebtTarget);
+            const cleanRows = rateChangeRows
+                .map((row) => ({ symbol: String(row.symbol || '').trim(), shares: Math.trunc(Number(row.shares)) || 0, rate: Number(row.rate) || 0 }))
+                .filter((row) => row.symbol && row.rate > 0);
+            if (!target) return setErrorMsg("請先選擇要調整利率的股票質押");
+            if (cleanRows.length === 0) return setErrorMsg("請至少輸入一筆新的利率資料");
+            onSave({
+                id: Date.now(),
+                date,
+                type,
+                name: target.name || name.trim(),
+                lender: target.lender || lender.trim(),
+                category: target.category || 'stock_pledge',
+                targetDebtId: target.id || '',
+                targetDebtKey: target.targetKey,
+                amount: 0,
+                collateral: [],
+                pledgeStocks: cleanRows,
+                memo: memo.trim()
+            });
+            return;
+        }
         if (type !== 'collateral' && (!amount || Number(amount) <= 0)) return setErrorMsg("請輸入有效金額");
 
         onSave({
@@ -2898,30 +3039,72 @@ const AddDebtEventModal = ({ monthKey, onClose, onSave, debtNames = [] }) => {
                             <option value="interest">利息</option>
                             <option value="fee">手續費</option>
                             <option value="collateral">只記擔保品</option>
+                            <option value="rate_change">利率調整</option>
                         </select>
                     </div>
+                    {type === 'rate_change' && (
+                        <div>
+                            <label className="text-xs text-slate-400 font-bold mb-1 block ml-1">調整對象</label>
+                            <select value={selectedDebtTarget} onChange={(e) => setSelectedDebtTarget(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl focus:border-orange-500 outline-none bg-slate-50 text-sm">
+                                <option value="">{debtTargets.length > 0 ? '選擇股票質押' : '本月尚無可調整的股票質押'}</option>
+                                {debtTargets.map((item) => <option key={item.targetKey} value={item.targetKey}>{item.name} {item.lender ? `· ${item.lender}` : ''}</option>)}
+                            </select>
+                        </div>
+                    )}
                     <div>
                         <label className="text-xs text-slate-400 font-bold mb-1 block ml-1">負債名稱</label>
-                        <input list="history-debt-events" type="text" value={name} onChange={(e) => setName(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none bg-slate-50 font-serif-tc text-slate-800 placeholder:text-slate-300" placeholder="例如：股票質押借款" />
+                        <input list="history-debt-events" type="text" value={name} onChange={(e) => setName(e.target.value)} readOnly={type === 'rate_change'} className="w-full p-3 border border-slate-200 rounded-xl focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none bg-slate-50 font-serif-tc text-slate-800 placeholder:text-slate-300 read-only:text-slate-500 read-only:cursor-not-allowed" placeholder="例如：股票質押借款" />
                         <datalist id="history-debt-events">
                             {debtNames.map((item) => <option key={item} value={item} />)}
                         </datalist>
                     </div>
                     <div>
                         <label className="text-xs text-slate-400 font-bold mb-1 block ml-1">機構 / 帳戶</label>
-                        <input type="text" value={lender} onChange={(e) => setLender(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none bg-slate-50 font-serif-tc text-slate-800 placeholder:text-slate-300" placeholder="例如：國泰證券" />
+                        <input type="text" value={lender} onChange={(e) => setLender(e.target.value)} readOnly={type === 'rate_change'} className="w-full p-3 border border-slate-200 rounded-xl focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none bg-slate-50 font-serif-tc text-slate-800 placeholder:text-slate-300 read-only:text-slate-500 read-only:cursor-not-allowed" placeholder="例如：國泰證券" />
                     </div>
-                    {type !== 'collateral' && (
+                    {type !== 'collateral' && type !== 'rate_change' && (
                         <div>
                             <label className="text-xs text-slate-400 font-bold mb-1 block ml-1">金額 (TWD)</label>
                             <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none bg-slate-50 text-sm font-inter text-right placeholder:text-slate-300" placeholder="0" />
                         </div>
                     )}
-                    <div>
-                        <label className="text-xs text-slate-400 font-bold mb-1 block ml-1">擔保品</label>
-                        <input type="text" value={collateralText} onChange={(e) => setCollateralText(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none bg-slate-50 text-sm font-inter text-slate-800 placeholder:text-slate-300" placeholder="例如：0050:2, 0052:1" />
-                        <p className="text-[10px] text-slate-400 mt-1 ml-1">多檔請用逗號分隔，格式：代號:張數</p>
-                    </div>
+                    {type === 'rate_change' && (
+                        <div className="bg-amber-50/70 border border-amber-100 rounded-2xl p-3">
+                            <div className="flex items-center justify-between mb-2">
+                                <label className="text-xs text-amber-700 font-bold block ml-1">調整後利率</label>
+                                <span className="text-[10px] text-slate-400">會用這個日期開始套用新利率</span>
+                            </div>
+                            <div className="space-y-2">
+                                {rateChangeRows.map((row, index) => (
+                                    <div key={row.id} className="grid grid-cols-[1fr_74px_82px_76px] gap-2 items-end">
+                                        <div>
+                                            {index === 0 && <label className="text-[10px] text-slate-400 font-bold mb-1 block">股票代號 / 名稱</label>}
+                                            <input type="text" value={row.symbol} onChange={(e) => updateRateChangeRow(row.id, 'symbol', e.target.value)} className="w-full p-2.5 border border-amber-100 rounded-xl focus:border-amber-500 outline-none bg-white text-sm font-inter text-slate-800 placeholder:text-slate-300" placeholder="0050 / 台積電" />
+                                        </div>
+                                        <div>
+                                            {index === 0 && <label className="text-[10px] text-slate-400 font-bold mb-1 block">股數</label>}
+                                            <input type="number" step="1" min="0" value={row.shares} onChange={(e) => updateRateChangeRow(row.id, 'shares', e.target.value)} className="w-full p-2.5 border border-amber-100 rounded-xl focus:border-amber-500 outline-none bg-white text-sm font-inter text-right placeholder:text-slate-300" placeholder="0" />
+                                        </div>
+                                        <div>
+                                            {index === 0 && <label className="text-[10px] text-slate-400 font-bold mb-1 block">新利率 %</label>}
+                                            <input type="number" step="0.01" value={row.rate} onChange={(e) => updateRateChangeRow(row.id, 'rate', e.target.value)} className="w-full p-2.5 border border-amber-100 rounded-xl focus:border-amber-500 outline-none bg-white text-sm font-inter text-right placeholder:text-slate-300" placeholder="3.1" />
+                                        </div>
+                                        <div className="flex gap-1">
+                                            <button type="button" onClick={addRateChangeRow} className="flex-1 h-10 rounded-xl bg-white text-amber-600 hover:bg-amber-100 border border-amber-100 transition-colors flex items-center justify-center" title="新增股票"><Plus size={14} /></button>
+                                            <button type="button" onClick={() => removeRateChangeRow(row.id)} disabled={rateChangeRows.length === 1} className="flex-1 h-10 rounded-xl bg-white text-slate-400 hover:text-amber-600 hover:bg-amber-100 border border-amber-100 disabled:text-slate-200 disabled:bg-slate-50 transition-colors flex items-center justify-center" title="刪除此列"><Trash2 size={14} /></button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                    {type === 'collateral' && (
+                        <div>
+                            <label className="text-xs text-slate-400 font-bold mb-1 block ml-1">擔保品</label>
+                            <input type="text" value={collateralText} onChange={(e) => setCollateralText(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none bg-slate-50 text-sm font-inter text-slate-800 placeholder:text-slate-300" placeholder="例如：0050:2, 0052:1" />
+                            <p className="text-[10px] text-slate-400 mt-1 ml-1">多檔請用逗號分隔，格式：代號:張數</p>
+                        </div>
+                    )}
                     <div>
                         <label className="text-xs text-slate-400 font-bold mb-1 block ml-1">備註</label>
                         <input type="text" value={memo} onChange={(e) => setMemo(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none bg-slate-50 text-sm font-serif-tc text-slate-800 placeholder:text-slate-300" placeholder="例如：新增質押額度 / 展延" />
@@ -2969,6 +3152,16 @@ const DetailView = ({ monthKey, data, onBack, onUpdateData, assetNames, isPrivac
                 total: getDebtTotal(debts)
             }));
     }, [data.debts, monthKey]);
+    const currentMonthDebtEventLatestDate = useMemo(() => (
+        [...(data.debtEvents?.[monthKey] || [])]
+            .map((item) => item.date)
+            .filter(Boolean)
+            .sort()
+            .pop() || ''
+    ), [data.debtEvents, monthKey]);
+    const baseDebtSnapshotItems = useMemo(() => (
+        debtDate ? (data.debts?.[debtDate] || []) : []
+    ), [data.debts, debtDate]);
 
     useEffect(() => {
         if (assetDate && data.records[assetDate]) {
@@ -2981,9 +3174,10 @@ const DetailView = ({ monthKey, data, onBack, onUpdateData, assetNames, isPrivac
         setLocalMemo(memoContent);
         const incomes = data.incomes[monthKey]?.sources || [];
         setLocalIncomes(incomes.map((item, idx) => ({ ...item, _tempId: idx })));
-        const debts = debtDate ? (data.debts?.[debtDate] || []) : [];
+        const effectiveDebtDate = debtDate && currentMonthDebtEventLatestDate && currentMonthDebtEventLatestDate > debtDate ? currentMonthDebtEventLatestDate : debtDate;
+        const debts = effectiveDebtDate ? getEffectiveDebtSnapshotAtDate(data.debts, data.debtEvents, effectiveDebtDate) : [];
         setLocalDebts(debts.map((item, idx) => ({ ...item, _tempId: item.id || idx })));
-    }, [assetDate, debtDate, memoDate, monthKey, data]);
+    }, [assetDate, debtDate, memoDate, monthKey, data, currentMonthDebtEventLatestDate]);
 
     const sortedMonths = useMemo(() => {
         const months = new Set();
@@ -3028,15 +3222,27 @@ const DetailView = ({ monthKey, data, onBack, onUpdateData, assetNames, isPrivac
     const currentDebtEvents = useMemo(() => {
         return [...(data.debtEvents?.[monthKey] || [])].sort((a, b) => new Date(a.date) - new Date(b.date));
     }, [data.debtEvents, monthKey]);
+    const debtEventTargets = useMemo(() => (
+        (localDebts || [])
+            .filter((item) => item.category === 'stock_pledge')
+            .map((item) => ({
+                ...item,
+                targetKey: getDebtTargetKey(item)
+            }))
+    ), [localDebts]);
 
     const debtEventStats = useMemo(() => {
         return currentDebtEvents.reduce((acc, item) => {
             acc.principal += getDebtEventImpact(item);
             if (item.type === 'interest') acc.interest += Number(item.amount) || 0;
             if (item.type === 'fee') acc.fees += Number(item.amount) || 0;
+            if (item.type === 'rate_change') acc.rateChanges += 1;
             return acc;
-        }, { principal: 0, interest: 0, fees: 0 });
+        }, { principal: 0, interest: 0, fees: 0, rateChanges: 0 });
     }, [currentDebtEvents]);
+    const estimatedMonthlyDebtInterest = useMemo(() => (
+        baseDebtSnapshotItems.reduce((sum, debt) => sum + getMonthlyDebtInterestEstimate(debt, monthKey, data.debtEvents, data.debts), 0)
+    ), [baseDebtSnapshotItems, monthKey, data.debtEvents, data.debts]);
 
     const prevMonthIncome = useMemo(() => {
         if (!prevMonth) return 0;
@@ -3142,7 +3348,7 @@ const DetailView = ({ monthKey, data, onBack, onUpdateData, assetNames, isPrivac
 
     return (
         <div className="fixed inset-0 bg-[#F9F9F7] z-40 overflow-y-auto animate-[slideIn_0.3s_ease-out]">
-            {showDebtEventModal && <AddDebtEventModal monthKey={monthKey} onClose={() => setShowDebtEventModal(false)} onSave={handleAddDebtEvent} debtNames={debtNames} />}
+            {showDebtEventModal && <AddDebtEventModal monthKey={monthKey} onClose={() => setShowDebtEventModal(false)} onSave={handleAddDebtEvent} debtNames={debtNames} debtTargets={debtEventTargets} />}
             {confirmDeleteId && <ConfirmModal title="刪除資產" message="確定要刪除這筆資產紀錄嗎？" onConfirm={confirmDeleteAsset} onCancel={() => setConfirmDeleteId(null)} />}
             {confirmDeleteMonth && <ConfirmModal title="刪除整月紀錄" message={`確定要刪除 ${monthKey} 的資產、負債與備忘嗎？\n收入與花費紀錄會保留。`} onConfirm={executeDeleteMonth} onCancel={() => setConfirmDeleteMonth(false)} />}
 
@@ -3360,6 +3566,18 @@ const DetailView = ({ monthKey, data, onBack, onUpdateData, assetNames, isPrivac
 
                 {activeTab === 'debt' && (
                     <div className="space-y-4 animate-[fadeIn_0.2s]">
+                        <div className="grid grid-cols-2 gap-3">
+                            <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+                                <div className="text-[10px] text-slate-400 uppercase tracking-wider font-inter mb-1">本月預估利息</div>
+                                <div className={`text-lg font-inter font-bold text-amber-700 ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>{isPrivacyMode ? '****' : formatMoney(estimatedMonthlyDebtInterest)}</div>
+                                <div className="text-[10px] text-slate-400 mt-1">若本月中途調整利率，會依日期自動切分</div>
+                            </div>
+                            <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+                                <div className="text-[10px] text-slate-400 uppercase tracking-wider font-inter mb-1">本月利率調整</div>
+                                <div className="text-lg font-inter font-bold text-orange-600">{debtEventStats.rateChanges}</div>
+                                <div className="text-[10px] text-slate-400 mt-1">已納入股票質押利息估算</div>
+                            </div>
+                        </div>
                         {monthlyDebtSnapshots.length > 0 && (
                             <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
                                 <div className="px-4 py-3 border-b border-slate-100 flex justify-between items-center">
@@ -3465,7 +3683,7 @@ const DetailView = ({ monthKey, data, onBack, onUpdateData, assetNames, isPrivac
                                         <div className="flex justify-between gap-4">
                                             <div className="min-w-0">
                                                 <div className="flex items-center gap-2 mb-1">
-                                                    <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${item.type === 'borrow' ? 'bg-emerald-50 text-emerald-600' : item.type === 'repay' ? 'bg-blue-50 text-blue-600' : 'bg-rose-50 text-rose-500'}`}>
+                                                    <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${item.type === 'borrow' ? 'bg-emerald-50 text-emerald-600' : item.type === 'repay' ? 'bg-blue-50 text-blue-600' : item.type === 'rate_change' ? 'bg-amber-50 text-amber-700' : 'bg-rose-50 text-rose-500'}`}>
                                                         {getDebtEventLabel(item.type)}
                                                     </span>
                                                     <span className="text-xs text-slate-400 font-inter">{item.date}</span>
@@ -3479,11 +3697,18 @@ const DetailView = ({ monthKey, data, onBack, onUpdateData, assetNames, isPrivac
                                                         ))}
                                                     </div>
                                                 )}
+                                                {item.pledgeStocks?.length > 0 && (
+                                                    <div className="mt-2 flex flex-wrap gap-1">
+                                                        {item.pledgeStocks.map((stock, idx) => (
+                                                            <span key={`${stock.symbol}-${idx}`} className="text-[10px] px-2 py-0.5 bg-amber-50 text-amber-700 rounded-full">{stock.symbol}{stock.shares ? ` · ${formatMoney(Math.trunc(Number(stock.shares)))} 股` : ''}{stock.rate ? ` · ${stock.rate}%` : ''}</span>
+                                                        ))}
+                                                    </div>
+                                                )}
                                                 {item.memo && <div className="text-[10px] text-slate-400 mt-2">{item.memo}</div>}
                                             </div>
                                             <div className="flex flex-col items-end gap-2">
-                                                <span className={`font-inter font-bold ${isCostOnly ? 'text-rose-500' : impact >= 0 ? 'text-emerald-600' : 'text-blue-600'} ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>
-                                                    {isPrivacyMode ? '****' : isCostOnly ? `-${formatMoney(item.amount)}` : `${impact >= 0 ? '+' : ''}${formatMoney(impact)}`}
+                                                <span className={`font-inter font-bold ${item.type === 'rate_change' ? 'text-amber-700' : isCostOnly ? 'text-rose-500' : impact >= 0 ? 'text-emerald-600' : 'text-blue-600'} ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>
+                                                    {isPrivacyMode ? '****' : item.type === 'rate_change' ? '依新利率重算' : isCostOnly ? `-${formatMoney(item.amount)}` : `${impact >= 0 ? '+' : ''}${formatMoney(impact)}`}
                                                 </span>
                                                 <button onClick={() => handleDeleteDebtEvent(item.id)} className="p-1.5 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors" title="刪除異動"><Trash2 size={14} /></button>
                                             </div>
@@ -4284,7 +4509,7 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
     }, [selectedSnapshot, marketFilteredTransactions]);
 
     const stockDebtStats = useMemo(() => {
-        const latestDebtItems = getLatestSnapshotItems(data.debts, stockStatsTargetDate);
+        const latestDebtItems = getEffectiveDebtSnapshotAtDate(data.debts, data.debtEvents, stockStatsTargetDate);
         const debtSnapshotDate = Object.keys(data.debts || {})
             .filter((date) => date <= stockStatsTargetDate)
             .sort()
@@ -4319,7 +4544,7 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
             marketEstimatedMonthlyInterest: marketEstimatedAnnualInterest / 12,
             netPnlAfterDebt: stockStats.totalPnl - marketPledgeDebt
         };
-    }, [data.debts, marketFilter, stockStats.totalPnl, stockStatsTargetDate]);
+    }, [data.debts, data.debtEvents, marketFilter, stockStats.totalPnl, stockStatsTargetDate]);
 
     useEffect(() => {
         if (marketFilter !== 'US' || typeof fetch === 'undefined') return;

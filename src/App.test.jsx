@@ -707,6 +707,26 @@ describe('App Integration Tests', () => {
         expect(screen.getByText('0050 · 2 股 · 2.75%')).toBeInTheDocument();
         expect(screen.getByText('月息估算 · 206')).toBeInTheDocument();
         expect(screen.getByText('年息估算 · 2,475')).toBeInTheDocument();
+
+        await user.click(screen.getByText('新增異動'));
+        await waitFor(() => expect(screen.getByText('新增負債異動')).toBeInTheDocument());
+        const eventComboboxes = screen.getAllByRole('combobox');
+        await user.selectOptions(eventComboboxes[0], 'rate_change');
+        await waitFor(() => expect(screen.getByText('調整對象')).toBeInTheDocument());
+        const targetSelect = screen.getAllByRole('combobox')[1];
+        const targetValue = targetSelect.querySelectorAll('option')[1].value;
+        await user.selectOptions(targetSelect, targetValue);
+        fireEvent.change(document.querySelector('.fixed.inset-0 input[type="date"]'), { target: { value: '2026-04-20' } });
+        const rateInput = screen.getByDisplayValue('2.75');
+        fireEvent.change(rateInput, { target: { value: '3.1' } });
+        await user.click(screen.getByText('確認新增'));
+        await waitFor(() => expect(screen.getByText('已新增一筆利率調整異動')).toBeInTheDocument());
+        await user.click(screen.getByText('知道了'));
+        expect(screen.getAllByText('0050 · 2 股 · 3.1%').length).toBeGreaterThan(0);
+        expect(screen.getByText('月息估算 · 233')).toBeInTheDocument();
+        expect(screen.getByText('年息估算 · 2,790')).toBeInTheDocument();
+        expect(screen.getByText('本月預估利息')).toBeInTheDocument();
+        expect(screen.getByText('利率調整')).toBeInTheDocument();
     });
 
     test('Dashboard asset growth uses first and latest recorded asset dates only', async () => {
