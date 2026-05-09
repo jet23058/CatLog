@@ -1526,6 +1526,8 @@ describe('App Integration Tests', () => {
 
         await user.click(screen.getByText('最新估值'));
         await waitFor(() => expect(screen.getByText('最新價')).toBeInTheDocument());
+        expect(screen.getByText('若未賣出試算')).toBeInTheDocument();
+        expect(screen.getByText('+13,000')).toBeInTheDocument();
         expect(screen.getAllByText('最新估值').find((item) => item.parentElement?.textContent?.includes('13,000')).parentElement).toHaveTextContent('13,000');
         expect(screen.getByText('差異').parentElement).toHaveTextContent('+1,000');
         expect(screen.getByText(/最新估值只是試算，不會改寫快照/)).toBeInTheDocument();
@@ -1772,6 +1774,57 @@ describe('App Integration Tests', () => {
         expect(within(leaderboardModal).getByText('2330')).toBeInTheDocument();
         expect(within(leaderboardModal).getByText('0050')).toBeInTheDocument();
         expect(within(leaderboardModal).queryByText('2454')).not.toBeInTheDocument();
+    });
+
+    test('Stock Analysis: filters stock performance by date range', async () => {
+        const user = userEvent.setup();
+        const mockData = {
+            records: {},
+            memos: {},
+            incomes: {},
+            expenses: {},
+            debts: {},
+            debtEvents: {},
+            stockTransactions: [
+                { id: 'range-buy-old', market: 'TW', currency: 'TWD', date: '2026-03-20', type: 'buy', symbol: '2330', name: '台積電', amount: 1000 },
+                { id: 'range-sell', market: 'TW', currency: 'TWD', date: '2026-04-10', type: 'sell', symbol: '2330', name: '台積電', amount: 1200 },
+                { id: 'range-dividend', market: 'TW', currency: 'TWD', date: '2026-04-15', type: 'dividend', symbol: '2330', name: '台積電', amount: 50 },
+                { id: 'range-buy-new', market: 'TW', currency: 'TWD', date: '2026-05-01', type: 'buy', symbol: '0050', name: '元大台灣50', amount: 500 }
+            ],
+            stockHoldingSnapshots: {
+                '2026-04': [{
+                    id: 'range-snapshot',
+                    version: 1,
+                    note: '月底',
+                    importedAt: '2026-04-30T10:00:00.000Z',
+                    holdings: [
+                        { id: 'range-hold', month: '2026-04', market: 'TW', symbol: '2330', name: '台積電', shares: 1, marketPrice: 1300, marketValue: 1300 }
+                    ]
+                }]
+            },
+            fireSettings: { withdrawalRate: 4 }
+        };
+
+        getDocs.mockResolvedValue(createMockSnapshot(mockData));
+        render(<App />);
+        await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
+
+        const advancedBtn = document.querySelector('.lucide-layout-grid').closest('button');
+        await user.click(advancedBtn);
+        await waitFor(() => expect(screen.getByText('Advanced')).toBeInTheDocument());
+        await user.click(screen.getByText('個股績效'));
+
+        await waitFor(() => expect(screen.getByText('股票總損益')).toBeInTheDocument());
+        const summarySection = screen.getByText('股票總損益').closest('section');
+        expect(within(summarySection).getAllByText('+1,050').length).toBeGreaterThan(0);
+
+        fireEvent.change(screen.getByLabelText('區間開始'), { target: { value: '2026-04-01' } });
+        fireEvent.change(screen.getByLabelText('區間結束'), { target: { value: '2026-04-30' } });
+
+        expect(within(summarySection).getAllByText('+1,250').length).toBeGreaterThan(0);
+        expect(screen.getByText('正在查看2026-04-01 至 2026-04-30 的區間績效；此模式不納入持倉快照市值。')).toBeInTheDocument();
+        expect(screen.getAllByText('2330').length).toBeGreaterThan(0);
+        expect(screen.queryByText('0050')).not.toBeInTheDocument();
     });
 
     test('Stock Analysis: separates stock pledge debt from gross pnl by market', async () => {

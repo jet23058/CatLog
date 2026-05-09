@@ -4377,6 +4377,8 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
     const [selectedStockDetailKey, setSelectedStockDetailKey] = useState('');
     const [leaderboardModalType, setLeaderboardModalType] = useState('');
     const [stockSearch, setStockSearch] = useState('');
+    const [stockRangeStart, setStockRangeStart] = useState('');
+    const [stockRangeEnd, setStockRangeEnd] = useState('');
     const [marketFilter, setMarketFilter] = useState('TW');
     const [usdToTwdRate, setUsdToTwdRate] = useState(DEFAULT_EXCHANGE_RATES.USD);
     const [usPnlCurrency, setUsPnlCurrency] = useState('USD');
@@ -4445,9 +4447,24 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
         return map;
     }, [selectedSnapshot, selectedSnapshotHoldings]);
 
+    const hasStockRange = Boolean(stockRangeStart || stockRangeEnd);
+
+    const activeStockTransactions = useMemo(() => (
+        (data.stockTransactions || []).filter((trade) => {
+            if (!hasStockRange) return true;
+            const date = trade.date || '';
+            if (!date) return false;
+            if (stockRangeStart && date < stockRangeStart) return false;
+            if (stockRangeEnd && date > stockRangeEnd) return false;
+            return true;
+        })
+    ), [data.stockTransactions, hasStockRange, stockRangeStart, stockRangeEnd]);
+
+    const activeHoldingMap = useMemo(() => hasStockRange ? {} : holdingMap, [hasStockRange, holdingMap]);
+
     const stockRows = useMemo(() => {
         const bySymbol = {};
-        (data.stockTransactions || []).forEach((trade) => {
+        activeStockTransactions.forEach((trade) => {
             if (!trade.symbol || trade.type === 'deposit' || trade.unassigned) return;
             const symbol = trade.symbol;
             const market = trade.market || 'TW';
@@ -4465,7 +4482,7 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
             if (trade.type === 'fee') row.fees += Number(trade.amount) || 0;
         });
 
-        Object.values(holdingMap).forEach((snapshot) => {
+        Object.values(activeHoldingMap).forEach((snapshot) => {
             const holding = snapshot.holding;
             const symbol = holding.symbol || holding.name;
             const market = holding.market || 'TW';
@@ -4475,21 +4492,25 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
         });
 
         return Object.values(bySymbol).map((row) => {
-            const snapshot = holdingMap[`${row.market}:${row.symbol}`] || holdingMap[`${row.market}:${row.name}`];
+            const snapshot = activeHoldingMap[`${row.market}:${row.symbol}`] || activeHoldingMap[`${row.market}:${row.name}`];
             const marketValue = snapshot?.value || 0;
             const pnlMarketValue = row.realizedOnly ? 0 : marketValue;
             const totalPnl = pnlMarketValue + row.sellAmount + row.dividends - row.buyAmount - row.fees;
             return { ...row, marketValue, snapshotDate: snapshot?.date || null, totalPnl, roi: row.buyAmount > 0 ? totalPnl / row.buyAmount : 0, hasSnapshot: Boolean(snapshot) };
         }).sort((a, b) => b.totalPnl - a.totalPnl);
-    }, [data.stockTransactions, holdingMap, selectedSnapshot]);
+    }, [activeHoldingMap, activeStockTransactions, selectedSnapshot]);
 
     const marketFilteredStockRows = useMemo(() => (
         stockRows.filter((item) => item.market === marketFilter)
     ), [stockRows, marketFilter]);
 
-    const marketFilteredTransactions = useMemo(() => (
+    const allMarketTransactions = useMemo(() => (
         (data.stockTransactions || []).filter((trade) => (trade.market || 'TW') === marketFilter)
     ), [data.stockTransactions, marketFilter]);
+
+    const marketFilteredTransactions = useMemo(() => (
+        activeStockTransactions.filter((trade) => (trade.market || 'TW') === marketFilter)
+    ), [activeStockTransactions, marketFilter]);
 
     const stockStats = useMemo(() => ({
         totalBuy: marketFilteredStockRows.reduce((sum, item) => sum + item.buyAmount, 0),
@@ -4502,11 +4523,12 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
     }), [marketFilteredStockRows, marketFilteredTransactions]);
 
     const stockStatsTargetDate = useMemo(() => {
-        if (selectedSnapshot?.month) return getMonthEndDateKey(selectedSnapshot.month);
+        if (!hasStockRange && selectedSnapshot?.month) return getMonthEndDateKey(selectedSnapshot.month);
+        if (stockRangeEnd) return stockRangeEnd;
         const latestTradeDate = [...marketFilteredTransactions]
             .sort((a, b) => new Date(b.date) - new Date(a.date))[0]?.date;
         return latestTradeDate || new Date().toISOString().slice(0, 10);
-    }, [selectedSnapshot, marketFilteredTransactions]);
+    }, [hasStockRange, selectedSnapshot, stockRangeEnd, marketFilteredTransactions]);
 
     const stockDebtStats = useMemo(() => {
         const latestDebtItems = getEffectiveDebtSnapshotAtDate(data.debts, data.debtEvents, stockStatsTargetDate);
@@ -4546,6 +4568,49 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
         };
     }, [data.debts, data.debtEvents, marketFilter, stockStats.totalPnl, stockStatsTargetDate]);
 
+    const latestSnapshotEstimate = useMemo(() => {
+        const rowMap = new Map();
+        marketFilteredStockRows.forEach((row) => {
+            rowMap.set(`${row.market}:${row.symbol}`, row);
+            rowMap.set(`${row.market}:${row.name}`, row);
+        });
+
+        let quotedCount = 0;
+        let eligibleQuoteCount = 0;
+        let marketValueDiff = 0;
+        let latestMarketValue = 0;
+
+        selectedSnapshotHoldings.forEach((holding) => {
+            const market = holding.market || 'TW';
+            const quote = latestHoldingQuotes[holding.id];
+            const shares = Number(holding.shares) || 0;
+            const snapshotValue = Number(holding.marketValue) || 0;
+            const latestValue = quote ? (Number(quote.price) || 0) * shares : snapshotValue;
+            latestMarketValue += latestValue;
+
+            if (!quote) return;
+            quotedCount += 1;
+
+            const row = rowMap.get(`${market}:${holding.symbol}`) || rowMap.get(`${market}:${holding.name}`);
+            if (row?.realizedOnly) return;
+
+            eligibleQuoteCount += 1;
+            marketValueDiff += latestValue - snapshotValue;
+        });
+
+        const estimatedTotalPnl = stockStats.totalPnl + marketValueDiff;
+        return {
+            hasEstimate: quotedCount > 0,
+            quotedCount,
+            eligibleQuoteCount,
+            holdingCount: selectedSnapshotHoldings.length,
+            latestMarketValue,
+            marketValueDiff,
+            estimatedTotalPnl,
+            estimatedNetPnlAfterDebt: estimatedTotalPnl - stockDebtStats.marketPledgeDebt
+        };
+    }, [latestHoldingQuotes, marketFilteredStockRows, selectedSnapshotHoldings, stockDebtStats.marketPledgeDebt, stockStats.totalPnl]);
+
     useEffect(() => {
         if (marketFilter !== 'US' || typeof fetch === 'undefined') return;
         let isCancelled = false;
@@ -4579,6 +4644,16 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
         return `(USD) ${sign}${formatMoneyByMarket(stockDebtStats.netPnlAfterDebt, 'US')}`;
     }, [isPrivacyMode, marketFilter, stockDebtStats.netPnlAfterDebt, usdToTwdRate, usPnlCurrency]);
 
+    const latestEstimatePnlLabel = useMemo(() => {
+        if (isPrivacyMode) return '****';
+        const amount = latestSnapshotEstimate.estimatedTotalPnl;
+        const sign = amount >= 0 ? '+' : '';
+        if (marketFilter !== 'US') return `${sign}${formatMoney(amount)}`;
+        const twdAmount = amount * usdToTwdRate;
+        if (usPnlCurrency === 'TWD') return `NT$${sign}${formatMoney(twdAmount)}`;
+        return `(USD) ${sign}${formatMoneyByMarket(amount, 'US')}`;
+    }, [isPrivacyMode, latestSnapshotEstimate.estimatedTotalPnl, marketFilter, usdToTwdRate, usPnlCurrency]);
+
     const filteredStockRows = useMemo(() => {
         const keyword = stockSearch.trim().toLowerCase();
         if (!keyword) return marketFilteredStockRows;
@@ -4591,10 +4666,10 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
 
     const selectedStockTrades = useMemo(() => {
         if (!selectedStockDetail) return [];
-        return (data.stockTransactions || [])
+        return activeStockTransactions
             .filter((trade) => (trade.market || 'TW') === selectedStockDetail.market && trade.symbol === selectedStockDetail.symbol)
             .sort((a, b) => new Date(b.date) - new Date(a.date));
-    }, [data.stockTransactions, selectedStockDetail]);
+    }, [activeStockTransactions, selectedStockDetail]);
 
     const stockChartRows = useMemo(() => {
         const rows = [...filteredStockRows]
@@ -4796,6 +4871,31 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
                         {marketFilter === 'US' && !isPrivacyMode && (
                             <div className="text-[10px] text-slate-500 mt-1">匯率 USD/TWD {formatExchangeRate(usdToTwdRate)}</div>
                         )}
+                        {latestSnapshotEstimate.hasEstimate && !hasStockRange && (
+                            <div className="mt-3 rounded-xl bg-teal-400/10 border border-teal-300/20 px-4 py-3">
+                                <div className="flex items-start justify-between gap-3">
+                                    <div>
+                                        <div className="text-[10px] uppercase tracking-wider text-teal-200 font-bold">若未賣出試算</div>
+                                        <div className={`text-lg font-inter font-bold mt-1 ${latestSnapshotEstimate.estimatedTotalPnl >= 0 ? 'text-emerald-200' : 'text-rose-200'} ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>{latestEstimatePnlLabel}</div>
+                                    </div>
+                                    <div className="text-right shrink-0">
+                                        <div className="text-[10px] text-slate-500">最新估值</div>
+                                        <div className={`font-inter font-bold text-teal-100 ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>{summaryMoney(latestSnapshotEstimate.latestMarketValue)}</div>
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-2 gap-2 mt-2 text-[10px]">
+                                    <div className="rounded-lg bg-white/5 px-3 py-2">
+                                        <div className="text-slate-500">較快照市值</div>
+                                        <div className={`font-inter font-bold ${latestSnapshotEstimate.marketValueDiff >= 0 ? 'text-emerald-200' : 'text-rose-200'} ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>{isPrivacyMode ? '****' : `${latestSnapshotEstimate.marketValueDiff >= 0 ? '+' : ''}${formatMoneyByMarket(latestSnapshotEstimate.marketValueDiff, marketFilter)}`}</div>
+                                    </div>
+                                    <div className="rounded-lg bg-white/5 px-3 py-2">
+                                        <div className="text-slate-500">已更新持倉</div>
+                                        <div className="font-inter font-bold text-slate-200">{latestSnapshotEstimate.quotedCount}/{latestSnapshotEstimate.holdingCount}</div>
+                                    </div>
+                                </div>
+                                <div className="text-[10px] text-slate-500 mt-2">用 {selectedSnapshot?.month} 持倉與最新價試算，僅更新畫面顯示，不會改寫快照。</div>
+                            </div>
+                        )}
                         <div className="mt-3 rounded-xl bg-white/5 border border-white/10 px-4 py-3">
                             <div className="flex items-start justify-between gap-3">
                                 <div>
@@ -4838,7 +4938,11 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
                                 <div className="bg-white/5 rounded-xl p-3"><div className="text-slate-400 mb-1">匯款淨額</div><div className="font-inter font-bold text-blue-200">{summaryMoney(remittanceNet, 'US', remittancePrefix)}</div></div>
                             </div>
                         )}
-                        <p className="text-[10px] text-slate-500 mt-3">目前市值會以選定的持倉快照版本計算；質押負債則會對齊同時間點以前最近一次的股票質押快照。</p>
+                        <p className="text-[10px] text-slate-500 mt-3">
+                            {hasStockRange
+                                ? '區間績效只計算日期內交易、股息與費用，不納入持倉快照市值；質押負債仍會對齊區間終點以前最近一次快照。'
+                                : '目前市值會以選定的持倉快照版本計算；質押負債則會對齊同時間點以前最近一次的股票質押快照。'}
+                        </p>
                     </div>
                 </section>
 
@@ -4952,9 +5056,9 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
                     <div className="flex items-start justify-between gap-4">
                         <div>
                             <h3 className="text-base font-serif-tc font-bold text-slate-800 flex items-center gap-2"><Trash2 size={16} /> 股票交易資料</h3>
-                            <p className="text-xs text-slate-400 mt-1">目前{getStockMarketLabel(marketFilter)}已有 {marketFilteredTransactions.length} 筆。若剛剛重複匯入或想重新整理，可以只清空目前市場再匯入。</p>
+                            <p className="text-xs text-slate-400 mt-1">目前{getStockMarketLabel(marketFilter)}已有 {allMarketTransactions.length} 筆。若剛剛重複匯入或想重新整理，可以只清空目前市場再匯入。</p>
                         </div>
-                        <button onClick={() => setConfirmClear(true)} disabled={marketFilteredTransactions.length === 0} className="px-3 py-2 rounded-xl bg-rose-50 text-rose-500 text-xs font-bold hover:bg-rose-100 disabled:bg-slate-50 disabled:text-slate-300 transition-colors">刪除{getStockMarketLabel(marketFilter)}</button>
+                        <button onClick={() => setConfirmClear(true)} disabled={allMarketTransactions.length === 0} className="px-3 py-2 rounded-xl bg-rose-50 text-rose-500 text-xs font-bold hover:bg-rose-100 disabled:bg-slate-50 disabled:text-slate-300 transition-colors">刪除{getStockMarketLabel(marketFilter)}</button>
                     </div>
                 </section>
 
@@ -4981,13 +5085,29 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
 
                 <section className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
                     <div className="px-4 py-3 border-b border-slate-100 space-y-3">
-                        <div className="flex items-center justify-between"><h3 className="text-sm font-serif-tc font-bold text-slate-700">個股損益表</h3><span className="text-[10px] text-slate-400">{getStockMarketLabel(marketFilter)} · {filteredStockRows.length} / {marketFilteredStockRows.length} 檔</span></div>
+                        <div className="flex items-center justify-between"><h3 className="text-sm font-serif-tc font-bold text-slate-700">個股損益表</h3><span className="text-[10px] text-slate-400">{getStockMarketLabel(marketFilter)} · {filteredStockRows.length} / {marketFilteredStockRows.length} 檔{hasStockRange ? ' · 區間' : ''}</span></div>
                         <div className="relative">
                             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" />
                             <input value={stockSearch} onChange={(e) => setStockSearch(e.target.value)} className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 outline-none text-sm" placeholder="搜尋股票名稱或代號" />
                         </div>
+                        <div className="grid grid-cols-[1fr_1fr_auto] gap-2 items-end">
+                            <label className="block">
+                                <span className="block text-[10px] text-slate-400 font-bold mb-1">區間開始</span>
+                                <input aria-label="區間開始" type="date" value={stockRangeStart} onChange={(e) => setStockRangeStart(e.target.value)} className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 outline-none text-xs font-inter text-slate-700" />
+                            </label>
+                            <label className="block">
+                                <span className="block text-[10px] text-slate-400 font-bold mb-1">區間結束</span>
+                                <input aria-label="區間結束" type="date" value={stockRangeEnd} onChange={(e) => setStockRangeEnd(e.target.value)} className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 outline-none text-xs font-inter text-slate-700" />
+                            </label>
+                            <button type="button" onClick={() => { setStockRangeStart(''); setStockRangeEnd(''); }} disabled={!hasStockRange} className="px-3 py-2 rounded-xl bg-slate-100 text-slate-500 text-xs font-bold hover:bg-slate-200 disabled:text-slate-300 disabled:hover:bg-slate-100 transition-colors">清除</button>
+                        </div>
+                        {hasStockRange && (
+                            <div className="rounded-xl bg-blue-50 text-blue-600 px-3 py-2 text-[10px] leading-relaxed">
+                                正在查看{stockRangeStart || '最早'} 至 {stockRangeEnd || '最新'} 的區間績效；此模式不納入持倉快照市值。
+                            </div>
+                        )}
                     </div>
-                    {stockRows.length > 0 && (
+                    {marketFilteredStockRows.length > 0 && (
                         <div className="p-4 border-b border-slate-100 bg-slate-50/60">
                             <div className="flex items-center justify-between mb-3">
                                 <h4 className="text-xs font-bold text-slate-500 flex items-center gap-1"><Activity size={13} /> 個股損益圖表</h4>
@@ -5026,7 +5146,7 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
                                 <div className="bg-slate-50 rounded-lg p-2"><div className="text-slate-400">股息</div><div className="font-inter text-amber-600">{stockMoney(item.dividends, item.market, '+')}</div></div>
                             </div>
                         </button>
-                    ))}</div> : <div className="p-8 text-center text-slate-300 text-sm">找不到符合搜尋的股票</div>) : <div className="p-8 text-center text-slate-300 text-sm">尚無{getStockMarketLabel(marketFilter)}股票交易資料</div>}
+                    ))}</div> : <div className="p-8 text-center text-slate-300 text-sm">找不到符合搜尋的股票</div>) : <div className="p-8 text-center text-slate-300 text-sm">{hasStockRange ? `區間內尚無${getStockMarketLabel(marketFilter)}股票交易資料` : `尚無${getStockMarketLabel(marketFilter)}股票交易資料`}</div>}
                 </section>
 
                 <section className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
