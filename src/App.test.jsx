@@ -1840,8 +1840,8 @@ describe('App Integration Tests', () => {
                         id: 'debt-tw',
                         category: 'stock_pledge',
                         name: '股票質押',
-                        amount: 200,
-                        pledgeStocks: [{ symbol: '台積電', shares: 1, rate: 12 }]
+                        amount: 280,
+                        pledgeStocks: [{ symbol: '台積電', shares: 1, rate: 12 }, { symbol: '00981A', shares: 1, rate: 12 }]
                     },
                     {
                         id: 'debt-us',
@@ -1886,12 +1886,12 @@ describe('App Integration Tests', () => {
         expect(within(summarySection).getByText('扣除質押後淨損益')).toBeInTheDocument();
         expect(within(summarySection).getByText('最新質押負債')).toBeInTheDocument();
         expect(within(summarySection).getByText('+500')).toBeInTheDocument();
-        expect(within(summarySection).getByText('+300')).toBeInTheDocument();
-        expect(within(summarySection).getByText('-200')).toBeInTheDocument();
+        expect(within(summarySection).getByText('+220')).toBeInTheDocument();
+        expect(within(summarySection).getByText('-280')).toBeInTheDocument();
         expect(within(summarySection).getByText('預估月息')).toBeInTheDocument();
-        expect(within(summarySection).getByText('-2')).toBeInTheDocument();
+        expect(within(summarySection).getByText('-3')).toBeInTheDocument();
         expect(within(summarySection).getByText('預估年息')).toBeInTheDocument();
-        expect(within(summarySection).getByText('-24')).toBeInTheDocument();
+        expect(within(summarySection).getByText('-34')).toBeInTheDocument();
         expect(screen.getByText('依 2026-04-30 的股票質押快照估算。')).toBeInTheDocument();
     });
 

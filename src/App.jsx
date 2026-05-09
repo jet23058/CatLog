@@ -156,7 +156,7 @@ const inferPledgeStockMarket = (value = '') => {
     const text = String(value || '').trim().toUpperCase();
     if (!text) return null;
     if (/[\u4e00-\u9fff]/.test(text)) return 'TW';
-    if (/^\d{4,6}$/.test(text)) return 'TW';
+    if (/^\d{4,6}[A-Z]*$/.test(text)) return 'TW';
     if (/^[A-Z.\-]+$/.test(text)) return 'US';
     return null;
 };
