@@ -340,6 +340,22 @@ const getLatestSnapshotItems = (records = {}, targetDateStr) => {
     return latestItems;
 };
 
+const getLatestSnapshotDate = (records = {}, targetDateStr) => {
+    const targetDate = new Date(targetDateStr);
+    let latestDateStr = null;
+    let latestDate = null;
+
+    Object.keys(records || {}).forEach((dateStr) => {
+        const date = new Date(dateStr);
+        if (date <= targetDate && (!latestDate || date > latestDate)) {
+            latestDate = date;
+            latestDateStr = dateStr;
+        }
+    });
+
+    return latestDateStr;
+};
+
 const detectDelimitedTextSeparator = (text = '') => {
     const sample = text
         .replace(/\r\n/g, '\n')
@@ -419,6 +435,22 @@ const normalizeUSDate = (value) => {
     return `${year.padStart(4, '0')}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
 };
 
+const normalizeUSBrokerDate = (value, format = 'auto') => {
+    if (!value) return '';
+    const parts = String(value).trim().replace(/\//g, '-').split('-');
+    if (parts.length !== 3) return String(value).trim();
+
+    const normalizedFormat = format === 'ymd' || format === 'mdy' ? format : 'auto';
+    const shouldUseYmd = normalizedFormat === 'ymd' || (normalizedFormat === 'auto' && /^\d{4}$/.test(parts[0]));
+    if (shouldUseYmd) {
+        const [year, month, day] = parts;
+        return `${year.padStart(4, '0')}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+    }
+
+    const [month, day, year] = parts;
+    return `${year.padStart(4, '0')}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+};
+
 const getStockSymbolFromItem = (item = '') => {
     const normalized = item.trim();
     if (!normalized) return '';
@@ -491,7 +523,7 @@ const isUSBrokerTransactionCSVHeaders = (headers) => (
 );
 
 const looksLikeUSBrokerPastedRows = (rows = []) => (
-    rows.some((row) => /^\d{1,2}[/-]\d{1,2}[/-]\d{4}$/.test((row?.[0] || '').trim()) && (row?.[1] || '').trim())
+    rows.some((row) => /^(\d{1,2}[/-]\d{1,2}[/-]\d{4}|\d{4}[/-]\d{1,2}[/-]\d{1,2})$/.test((row?.[0] || '').trim()) && (row?.[1] || '').trim())
 );
 
 const getUSBrokerTradeType = (typeText = '', amount = 0, description = '') => {
@@ -522,13 +554,14 @@ const processUSBrokerTransactionRows = (rows, fieldMap, options = {}) => {
         idxAmount
     } = fieldMap;
     const rowNumberOffset = options.rowNumberOffset ?? 1;
+    const usDateFormat = options.usDateFormat || 'auto';
 
     const transactions = [];
     const skippedRows = [];
 
     rows.forEach((row, index) => {
         const csvRow = index + rowNumberOffset;
-        const date = normalizeUSDate(row[idxDate]);
+        const date = normalizeUSBrokerDate(row[idxDate], usDateFormat);
         const typeText = row[idxType]?.trim() || '';
         const symbol = row[idxSymbol]?.trim() || '';
         const description = row[idxDescription]?.trim() || symbol || typeText;
@@ -582,7 +615,7 @@ const processUSBrokerTransactionRows = (rows, fieldMap, options = {}) => {
     return { market: 'US', importMode: 'us-broker-transactions', transactions, skippedRows };
 };
 
-const processUSBrokerTransactionCSVRows = (rows, headers) => processUSBrokerTransactionRows(rows.slice(1), {
+const processUSBrokerTransactionCSVRows = (rows, headers, options = {}) => processUSBrokerTransactionRows(rows.slice(1), {
     idxDate: headers.indexOf('日期'),
     idxType: headers.indexOf('交易類別'),
     idxQuantity: headers.indexOf('數量'),
@@ -591,9 +624,9 @@ const processUSBrokerTransactionCSVRows = (rows, headers) => processUSBrokerTran
     idxAccount: headers.indexOf('賬戶類別'),
     idxPrice: headers.indexOf('價格'),
     idxAmount: headers.indexOf('金額')
-}, { rowNumberOffset: 2 });
+}, { rowNumberOffset: 2, usDateFormat: options.usDateFormat });
 
-const processUSBrokerTransactionPastedRows = (rows) => processUSBrokerTransactionRows(rows, {
+const processUSBrokerTransactionPastedRows = (rows, options = {}) => processUSBrokerTransactionRows(rows, {
     idxDate: 0,
     idxType: 1,
     idxQuantity: 2,
@@ -602,13 +635,13 @@ const processUSBrokerTransactionPastedRows = (rows) => processUSBrokerTransactio
     idxAccount: 5,
     idxPrice: 6,
     idxAmount: 7
-}, { rowNumberOffset: 1 });
+}, { rowNumberOffset: 1, usDateFormat: options.usDateFormat });
 
 const isArchivedUSRealizedCSVHeaders = (headers) => (
     headers.includes('代號') && headers.includes('調整後成本') && headers.includes('賣出收入')
 );
 
-const processArchivedUSRealizedCSVRows = (rows, headers) => {
+const processArchivedUSRealizedCSVRows = (rows, headers, options = {}) => {
     const idxSymbol = headers.indexOf('代號');
     const idxName = headers.indexOf('詳細資訊');
     const idxQuantity = headers.indexOf('數量');
@@ -629,8 +662,8 @@ const processArchivedUSRealizedCSVRows = (rows, headers) => {
         const symbol = row[idxSymbol]?.trim() || '';
         const name = idxName >= 0 ? row[idxName]?.trim() || symbol : symbol;
         const quantity = idxQuantity >= 0 ? parseAmount(row[idxQuantity]) : 0;
-        const openDate = normalizeUSDate(row[idxOpenDate]);
-        const closeDate = normalizeUSDate(row[idxCloseDate]);
+        const openDate = normalizeUSBrokerDate(row[idxOpenDate], options.usDateFormat);
+        const closeDate = normalizeUSBrokerDate(row[idxCloseDate], options.usDateFormat);
         const proceeds = parseAmount(row[idxProceeds]);
         const cost = parseAmount(row[idxCost]);
         const washSaleLoss = idxWashSaleLoss >= 0 ? parseAmount(row[idxWashSaleLoss]) : 0;
@@ -693,18 +726,18 @@ const processStockCSVText = (csvText, options = {}) => {
 
     const headers = rows[0].map((header) => header.trim());
     if (isUSBrokerTransactionCSVHeaders(headers)) {
-        return processUSBrokerTransactionCSVRows(rows, headers);
+        return processUSBrokerTransactionCSVRows(rows, headers, options);
     }
 
     if (looksLikeUSBrokerPastedRows(rows)) {
-        return processUSBrokerTransactionPastedRows(rows);
+        return processUSBrokerTransactionPastedRows(rows, options);
     }
 
     if (isArchivedUSRealizedCSVHeaders(headers)) {
         if (!options.allowArchivedUSRealized) {
             throw new Error("美股已平倉損益 v1 匯入格式已封存。新的美股匯入會改走完整券商交易明細；若只是要補救舊資料，請使用下方「封存 v1 格式預覽」。");
         }
-        return processArchivedUSRealizedCSVRows(rows, headers);
+        return processArchivedUSRealizedCSVRows(rows, headers, options);
     }
 
     const hasTWHeaders = headers.includes('日期') && headers.includes('項目');
@@ -3138,10 +3171,15 @@ const DetailView = ({ monthKey, data, onBack, onUpdateData, assetNames, isPrivac
             .pop() || null;
     };
 
+    const monthEndDate = useMemo(() => getMonthEndDateKey(monthKey), [monthKey]);
     const assetDate = useMemo(() => getLatestDateInMonth(data.records, monthKey), [data.records, monthKey]);
     const debtDate = useMemo(() => getLatestDateInMonth(data.debts, monthKey), [data.debts, monthKey]);
+    const effectiveDebtSnapshotDate = useMemo(() => (
+        monthEndDate ? getLatestSnapshotDate(data.debts, monthEndDate) : null
+    ), [data.debts, monthEndDate]);
     const memoDate = useMemo(() => getLatestDateInMonth(data.memos, monthKey), [data.memos, monthKey]);
     const writeDate = assetDate || debtDate || memoDate || `${monthKey}-01`;
+    const isDebtCarriedForward = Boolean(effectiveDebtSnapshotDate && effectiveDebtSnapshotDate.substring(0, 7) !== monthKey);
     const monthlyDebtSnapshots = useMemo(() => {
         return Object.entries(data.debts || {})
             .filter(([date]) => date.startsWith(monthKey))
@@ -3160,8 +3198,8 @@ const DetailView = ({ monthKey, data, onBack, onUpdateData, assetNames, isPrivac
             .pop() || ''
     ), [data.debtEvents, monthKey]);
     const baseDebtSnapshotItems = useMemo(() => (
-        debtDate ? (data.debts?.[debtDate] || []) : []
-    ), [data.debts, debtDate]);
+        effectiveDebtSnapshotDate ? (data.debts?.[effectiveDebtSnapshotDate] || []) : []
+    ), [data.debts, effectiveDebtSnapshotDate]);
 
     useEffect(() => {
         if (assetDate && data.records[assetDate]) {
@@ -3174,10 +3212,10 @@ const DetailView = ({ monthKey, data, onBack, onUpdateData, assetNames, isPrivac
         setLocalMemo(memoContent);
         const incomes = data.incomes[monthKey]?.sources || [];
         setLocalIncomes(incomes.map((item, idx) => ({ ...item, _tempId: idx })));
-        const effectiveDebtDate = debtDate && currentMonthDebtEventLatestDate && currentMonthDebtEventLatestDate > debtDate ? currentMonthDebtEventLatestDate : debtDate;
+        const effectiveDebtDate = effectiveDebtSnapshotDate && currentMonthDebtEventLatestDate && currentMonthDebtEventLatestDate > effectiveDebtSnapshotDate ? currentMonthDebtEventLatestDate : effectiveDebtSnapshotDate;
         const debts = effectiveDebtDate ? getEffectiveDebtSnapshotAtDate(data.debts, data.debtEvents, effectiveDebtDate) : [];
         setLocalDebts(debts.map((item, idx) => ({ ...item, _tempId: item.id || idx })));
-    }, [assetDate, debtDate, memoDate, monthKey, data, currentMonthDebtEventLatestDate]);
+    }, [assetDate, effectiveDebtSnapshotDate, memoDate, monthKey, data, currentMonthDebtEventLatestDate]);
 
     const sortedMonths = useMemo(() => {
         const months = new Set();
@@ -3193,7 +3231,7 @@ const DetailView = ({ monthKey, data, onBack, onUpdateData, assetNames, isPrivac
     const prevMonth = currentIndex > 0 ? sortedMonths[currentIndex - 1] : null;
     const nextMonth = currentIndex < sortedMonths.length - 1 ? sortedMonths[currentIndex + 1] : null;
     const prevAssetDate = prevMonth ? getLatestDateInMonth(data.records, prevMonth) : null;
-    const prevDebtDate = prevMonth ? getLatestDateInMonth(data.debts, prevMonth) : null;
+    const prevDebtDate = prevMonth ? getLatestSnapshotDate(data.debts, getMonthEndDateKey(prevMonth)) : null;
 
     const prevMonthAssetsMap = useMemo(() => {
         if (!prevAssetDate) return {};
@@ -3212,8 +3250,8 @@ const DetailView = ({ monthKey, data, onBack, onUpdateData, assetNames, isPrivac
 
     const prevTotalDebts = useMemo(() => {
         if (!prevDebtDate) return 0;
-        return getDebtTotal(data.debts?.[prevDebtDate] || []);
-    }, [prevDebtDate, data.debts]);
+        return getDebtTotal(getEffectiveDebtSnapshotAtDate(data.debts, data.debtEvents, prevDebtDate));
+    }, [prevDebtDate, data.debts, data.debtEvents]);
 
     const currentMonthExpenses = useMemo(() => {
         return data.expenses?.[monthKey] || [];
@@ -3611,9 +3649,17 @@ const DetailView = ({ monthKey, data, onBack, onUpdateData, assetNames, isPrivac
                         )}
                         <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
                             <div className="px-4 py-3 border-b border-slate-100 flex justify-between items-center">
-                                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">最新負債快照</span>
-                                <span className="text-[10px] text-slate-400">{debtDate || '尚未記錄'}</span>
+                                <div>
+                                    <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">最新負債快照</span>
+                                    {isDebtCarriedForward && <span className="text-[10px] text-rose-500 ml-2 font-bold">沿用前期</span>}
+                                </div>
+                                <span className="text-[10px] text-slate-400">{effectiveDebtSnapshotDate || '尚未記錄'}</span>
                             </div>
+                            {isDebtCarriedForward && (
+                                <div className="px-4 py-2 bg-rose-50/60 border-b border-rose-100 text-[10px] text-rose-600">
+                                    本月尚未建立負債快照，以下沿用 {effectiveDebtSnapshotDate} 的未還款負債，並已套用截至本月底的利率調整。
+                                </div>
+                            )}
                             {localDebts.length > 0 ? localDebts.map((item, idx) => (
                                 <div key={item._tempId || idx} className={`p-4 ${idx !== localDebts.length - 1 ? 'border-b border-slate-100' : ''}`}>
                                     {isEditing ? (
@@ -3662,7 +3708,7 @@ const DetailView = ({ monthKey, data, onBack, onUpdateData, assetNames, isPrivac
                                         </div>
                                     )}
                                 </div>
-                            )) : <div className="p-8 flex flex-col items-center justify-center text-slate-300"><ArrowDownRight size={32} className="mb-2 opacity-50" /><span className="text-sm">本月尚無負債快照</span></div>}
+                            )) : <div className="p-8 flex flex-col items-center justify-center text-slate-300"><ArrowDownRight size={32} className="mb-2 opacity-50" /><span className="text-sm">截至本月底尚無負債快照</span></div>}
                         </div>
 
                         <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
@@ -4361,6 +4407,7 @@ const FIREModal = ({ fireStats, yearlyStats = [], onRateChange, onClose }) => {
 
 const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransactions, onImportHoldingSnapshot, onDeleteHoldingSnapshot, isPrivacyMode }) => {
     const [inputText, setInputText] = useState('');
+    const [usImportDateFormat, setUsImportDateFormat] = useState('auto');
     const [holdingRows, setHoldingRows] = useState([createHoldingRow()]);
     const [holdingMonth, setHoldingMonth] = useState(() => {
         const today = new Date();
@@ -4694,7 +4741,7 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
         const file = event.target.files?.[0];
         if (!file) return;
         const reader = new FileReader();
-        reader.onload = (e) => parseImportText(e.target.result);
+        reader.onload = (e) => parseImportText(e.target.result, { usDateFormat: usImportDateFormat });
         reader.onerror = () => setErrorMsg('讀取檔案失敗');
         reader.readAsText(file);
         event.target.value = '';
@@ -5185,8 +5232,15 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
                         <div className="mt-4">
                             <label className="text-xs text-slate-400 font-bold mb-1 block">或直接貼上交易內容</label>
                             <textarea value={inputText} onChange={(e) => setInputText(e.target.value)} className="w-full min-h-[160px] p-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 outline-none text-xs font-inter text-slate-700" placeholder={"台股可直接貼上：\n\t2026/04/01\t台積電\t89,576\t\t479,138\n匯款\t2026/04/02\t行動轉出\t33,000\t\t625,503\n\t2026/04/09\t現金股息-台積電\t\t2,251\t275,126\n\n美股仍可貼上券商明細：\n日期,交易類別,數量,說明,代號,賬戶類別,價格,金額\n06/03/2025,買進,5.1051,TAIWAN SEMICONDUCTOR,TSM,現金,195.8825,-1000"} />
-                            <button onClick={() => parseImportText(inputText)} disabled={!inputText.trim()} className="mt-3 w-full py-2.5 rounded-xl bg-blue-600 text-white font-bold text-sm hover:bg-blue-700 disabled:bg-slate-200 disabled:text-slate-400 transition-colors">預覽匯入明細</button>
-                            <button onClick={() => parseImportText(inputText, { allowArchivedUSRealized: true })} disabled={!inputText.trim()} className="mt-2 w-full py-2.5 rounded-xl bg-amber-50 text-amber-700 font-bold text-sm hover:bg-amber-100 disabled:bg-slate-50 disabled:text-slate-300 transition-colors">封存 v1 格式預覽</button>
+                            <label className="text-xs text-slate-400 font-bold mt-3 mb-1 block" htmlFor="us-import-date-format">美股日期格式</label>
+                            <select id="us-import-date-format" aria-label="美股日期格式" value={usImportDateFormat} onChange={(e) => setUsImportDateFormat(e.target.value)} className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 outline-none text-xs text-slate-700">
+                                <option value="auto">自動判斷</option>
+                                <option value="mdy">月/日/年，例如 06/03/2025</option>
+                                <option value="ymd">年/月/日，例如 2025/06/03</option>
+                            </select>
+                            <div className="text-[10px] text-slate-400 mt-1">若券商格式改版或預覽日期不對，可在這裡手動指定美股日期格式；台股日期不受影響。</div>
+                            <button onClick={() => parseImportText(inputText, { usDateFormat: usImportDateFormat })} disabled={!inputText.trim()} className="mt-3 w-full py-2.5 rounded-xl bg-blue-600 text-white font-bold text-sm hover:bg-blue-700 disabled:bg-slate-200 disabled:text-slate-400 transition-colors">預覽匯入明細</button>
+                            <button onClick={() => parseImportText(inputText, { allowArchivedUSRealized: true, usDateFormat: usImportDateFormat })} disabled={!inputText.trim()} className="mt-2 w-full py-2.5 rounded-xl bg-amber-50 text-amber-700 font-bold text-sm hover:bg-amber-100 disabled:bg-slate-50 disabled:text-slate-300 transition-colors">封存 v1 格式預覽</button>
                         </div>
                     </div>
                 </div>

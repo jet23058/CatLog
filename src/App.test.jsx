@@ -893,6 +893,44 @@ describe('App Integration Tests', () => {
         expect(screen.getAllByText('質押借貸').length).toBeGreaterThan(1);
     });
 
+    test('Detail View carries unpaid debt snapshot into following month', async () => {
+        const user = userEvent.setup();
+        const currentYear = new Date().getFullYear();
+        const mockData = {
+            records: {
+                [`${currentYear}-04-30`]: [{ id: 'asset-apr', name: '資產', amount: 400000, type: 'stock' }],
+                [`${currentYear}-05-31`]: [{ id: 'asset-may', name: '資產', amount: 500000, type: 'stock' }]
+            },
+            memos: {},
+            incomes: {},
+            expenses: {},
+            debts: {
+                [`${currentYear}-04-15`]: [
+                    { id: 'debt-1', name: '股票質押', lender: '元大證券', amount: 90000, category: 'stock_pledge', pledgeStocks: [{ symbol: '0050', shares: 2, rate: 2.85 }] },
+                    { id: 'debt-2', name: '股票質押', lender: '元大證券', amount: 150000, category: 'stock_pledge', pledgeStocks: [{ symbol: '00981A', shares: 5, rate: 2.85 }] }
+                ]
+            },
+            debtEvents: {},
+            fireSettings: { withdrawalRate: 4 }
+        };
+
+        getDocs.mockResolvedValue(createMockSnapshot(mockData));
+        render(<App />);
+
+        await waitFor(() => expect(screen.getByText('年度資產淨值')).toBeInTheDocument());
+        await user.click(screen.getByText('05'));
+        await waitFor(() => expect(screen.getByText('淨資產')).toBeInTheDocument());
+        await user.click(screen.getByText('總負債'));
+
+        expect(screen.queryByText('本月負債快照版本')).not.toBeInTheDocument();
+        expect(screen.getByText('沿用前期')).toBeInTheDocument();
+        expect(screen.getByText(`本月尚未建立負債快照，以下沿用 ${currentYear}-04-15 的未還款負債，並已套用截至本月底的利率調整。`)).toBeInTheDocument();
+        expect(screen.getAllByText(`${currentYear}-04-15`).length).toBeGreaterThan(0);
+        expect(screen.getAllByText('股票質押').length).toBeGreaterThan(1);
+        expect(screen.getByText('-150,000')).toBeInTheDocument();
+        expect(screen.getByText('-90,000')).toBeInTheDocument();
+    });
+
 
     test('Data Operations: Export and Import', async () => {
         const user = userEvent.setup();
@@ -1201,16 +1239,17 @@ describe('App Integration Tests', () => {
 
         await waitFor(() => expect(screen.getByText('匯入股票交易')).toBeInTheDocument());
         await user.click(screen.getByRole('button', { name: /匯入股票交易/ }));
+        expect(screen.getByLabelText('美股日期格式')).toHaveValue('auto');
 
         const brokerCsv = [
             '日期,交易類別,數量,說明,代號,賬戶類別,價格,金額',
-            '06/03/2025,買進,5.1051,TAIWAN SEMICONDUCTOR,TSM,現金,195.8825,"-1,000.00"',
-            '06/05/2025,賣出,-2.88675,TESLA INC,TSLA,現金,316.9,914.81',
-            '06/30/2025,股息,0,NVIDIA CORP,NVDA,現金,0,12.34',
-            '06/30/2025,利息,0,USD CREDIT INTEREST,,現金,0,1.23',
-            '07/01/2025,匯款,0,ACH DEPOSIT,,現金,0,500',
-            '07/02/2025,存款,0,Wire Funds Received FedRef xxxxx SEN(xxxxxx),,現金,0,1000',
-            '07/03/2025,其他,0,REBATE FOR WIRE 2025-06-09,,現金,0,25'
+            '2025/06/03,買進,5.1051,TAIWAN SEMICONDUCTOR,TSM,現金,195.8825,"-1,000.00"',
+            '2025/06/05,賣出,-2.88675,TESLA INC,TSLA,現金,316.9,914.81',
+            '2025/06/30,股息,0,NVIDIA CORP,NVDA,現金,0,12.34',
+            '2025/06/30,利息,0,USD CREDIT INTEREST,,現金,0,1.23',
+            '2025/07/01,匯款,0,ACH DEPOSIT,,現金,0,500',
+            '2025/07/02,存款,0,Wire Funds Received FedRef xxxxx SEN(xxxxxx),,現金,0,1000',
+            '2025/07/03,其他,0,REBATE FOR WIRE 2025-06-09,,現金,0,25'
         ].join('\n');
 
         await user.type(screen.getByPlaceholderText(/日期,交易類別,數量/), brokerCsv);
@@ -1236,6 +1275,7 @@ describe('App Integration Tests', () => {
         expect(screen.getByText('匯款淨額').parentElement).toHaveTextContent('+1,525.00');
         expect(screen.getAllByText('USD CREDIT INTEREST').length).toBeGreaterThan(0);
         expect(screen.getAllByText(/REBATE FOR WIRE/).length).toBeGreaterThan(0);
+        expect(screen.getByText('2025-07-03 · 美股 · 入金')).toBeInTheDocument();
 
         await user.click(screen.getByText('轉台幣'));
         expect(screen.getByText('累計買入').parentElement).not.toHaveTextContent('1,000.00');
@@ -1261,10 +1301,10 @@ describe('App Integration Tests', () => {
         await user.click(screen.getByRole('button', { name: /匯入股票交易/ }));
 
         const pastedUsRows = [
-            '04/01/2026\t股息\t\tNVIDIA CORP CASH DIV ON 20 SHS REC 03/11/26 PAY 04/01/26 NON-RES TAX WITHHELD $0.06000\tNVDA\t現金\t\t0.2',
-            '04/08/2026\t賣出\t-10\tHIMS & HERS HEALTH INC CLASS A COMMON STOCK UNSOLICITED\tHIMS\t現金\t19.875\t198.74',
-            '04/09/2026\t買進\t5\tAPPLIED OPTOELECTRONICS INC COM UNSOLICITED\tAAOI\t現金\t139.7999\t-699',
-            '04/16/2026\t利息收入\t\tINTEREST ON CREDIT BALANCE AT 0.150% 03/16 THRU 04/15\t\t現金\t\t0.08'
+            '2026/04/01\t股息\t\tNVIDIA CORP CASH DIV ON 20 SHS REC 03/11/26 PAY 04/01/26 NON-RES TAX WITHHELD $0.06000\tNVDA\t現金\t\t0.2',
+            '2026/04/08\t賣出\t-10\tHIMS & HERS HEALTH INC CLASS A COMMON STOCK UNSOLICITED\tHIMS\t現金\t19.875\t198.74',
+            '2026/04/09\t買進\t5\tAPPLIED OPTOELECTRONICS INC COM UNSOLICITED\tAAOI\t現金\t139.7999\t-699',
+            '2026/04/16\t利息收入\t\tINTEREST ON CREDIT BALANCE AT 0.150% 03/16 THRU 04/15\t\t現金\t\t0.08'
         ].join('\n');
 
         await user.type(screen.getByPlaceholderText(/台股可直接貼上/), pastedUsRows);
@@ -1283,6 +1323,7 @@ describe('App Integration Tests', () => {
 
         await user.click(screen.getByRole('button', { name: /美股/ }));
         expect(screen.getAllByText('NVDA').length).toBeGreaterThan(0);
+        expect(screen.getByText('2026-04-16 · 美股 · 利息')).toBeInTheDocument();
         expect(screen.getAllByText('HIMS').length).toBeGreaterThan(0);
         expect(screen.getAllByText('AAOI').length).toBeGreaterThan(0);
         expect(screen.getByText('利息').parentElement).toHaveTextContent('+0.08');
