@@ -4116,6 +4116,23 @@ const RangeStatsModal = ({ data, onClose }) => {
         };
     }, [data.records, startDate, endDate]);
 
+    const debtStats = useMemo(() => {
+        const startDebtDate = getLatestSnapshotDate(data.debts, startDate);
+        const endDebtDate = getLatestSnapshotDate(data.debts, endDate);
+        const startDebts = startDebtDate ? getEffectiveDebtSnapshotAtDate(data.debts, data.debtEvents, startDate) : [];
+        const endDebts = endDebtDate ? getEffectiveDebtSnapshotAtDate(data.debts, data.debtEvents, endDate) : [];
+        const startTotal = getDebtTotal(startDebts);
+        const endTotal = getDebtTotal(endDebts);
+
+        return {
+            startDate: startDebtDate,
+            endDate: endDebtDate,
+            startDebts: startTotal,
+            endDebts: endTotal,
+            change: endTotal - startTotal
+        };
+    }, [data.debts, data.debtEvents, startDate, endDate]);
+
     // Calculate Expenses within range
     const expenseStats = useMemo(() => {
         const start = new Date(startDate);
@@ -4144,6 +4161,24 @@ const RangeStatsModal = ({ data, onClose }) => {
 
         return { total, count, topCategories };
     }, [data.expenses, startDate, endDate]);
+
+    const financeStats = useMemo(() => {
+        const cashFlow = incomeStats.total - expenseStats.total;
+        const startNetWorth = assetStats.startAssets - debtStats.startDebts;
+        const endNetWorth = assetStats.endAssets - debtStats.endDebts;
+        const netWorthChange = endNetWorth - startNetWorth;
+        const totalCreated = netWorthChange + expenseStats.total;
+        const nonIncomeChange = totalCreated - incomeStats.total;
+
+        return {
+            cashFlow,
+            startNetWorth,
+            endNetWorth,
+            netWorthChange,
+            totalCreated,
+            nonIncomeChange
+        };
+    }, [assetStats.startAssets, assetStats.endAssets, debtStats.startDebts, debtStats.endDebts, incomeStats.total, expenseStats.total]);
 
     return (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-6 animate-[fadeIn_0.2s]">
@@ -4198,57 +4233,104 @@ const RangeStatsModal = ({ data, onClose }) => {
 
                 {/* Stats Cards */}
                 <div className="flex-1 overflow-y-auto hide-scrollbar space-y-4">
-                    {/* Income Card */}
+                    {/* Cash Flow Card */}
                     <div className="bg-gradient-to-br from-emerald-50 to-teal-50 p-4 rounded-xl border border-emerald-100">
                         <div className="flex items-center gap-2 mb-3">
                             <div className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-600 flex items-center justify-center">
                                 <DollarSign size={16} />
                             </div>
-                            <span className="font-bold text-slate-700">收入統計</span>
-                            <span className="text-xs text-slate-400 ml-auto">{incomeStats.count} 筆</span>
+                            <span className="font-bold text-slate-700">現金流</span>
+                            <span className="text-xs text-slate-400 ml-auto">收入 {incomeStats.count} 筆 / 花費 {expenseStats.count} 筆</span>
                         </div>
-                        <div className="text-2xl font-inter font-bold text-emerald-600 mb-2">
-                            +{formatMoney(incomeStats.total)} <span className="text-sm font-normal text-slate-400">TWD</span>
+                        <div className={`text-2xl font-inter font-bold mb-2 ${financeStats.cashFlow >= 0 ? 'text-emerald-600' : 'text-rose-500'}`}>
+                            {financeStats.cashFlow >= 0 ? '+' : ''}{formatMoney(financeStats.cashFlow)} <span className="text-sm font-normal text-slate-400">TWD</span>
                         </div>
-                        {incomeStats.sources.length > 0 && (
-                            <div className="text-xs text-slate-500 space-y-1 pt-2 border-t border-emerald-100">
-                                {incomeStats.sources.slice(0, 3).map((src, idx) => (
+                        <div className="grid grid-cols-3 gap-2 pt-2 border-t border-emerald-100 text-xs">
+                            <div>
+                                <div className="text-slate-400 mb-0.5">總收入</div>
+                                <div className="font-inter font-bold text-emerald-600">+{formatMoney(incomeStats.total)}</div>
+                            </div>
+                            <div>
+                                <div className="text-slate-400 mb-0.5">總花費</div>
+                                <div className="font-inter font-bold text-rose-500">-{formatMoney(expenseStats.total)}</div>
+                            </div>
+                            <div className="text-right">
+                                <div className="text-slate-400 mb-0.5">收支結餘</div>
+                                <div className={`font-inter font-bold ${financeStats.cashFlow >= 0 ? 'text-emerald-600' : 'text-rose-500'}`}>{financeStats.cashFlow >= 0 ? '+' : ''}{formatMoney(financeStats.cashFlow)}</div>
+                            </div>
+                        </div>
+                        {expenseStats.topCategories.length > 0 && (
+                            <div className="text-xs text-slate-500 space-y-1 pt-3 mt-3 border-t border-emerald-100">
+                                <div className="text-slate-400 mb-1">花費前五大類別</div>
+                                {expenseStats.topCategories.map(([cat, amt], idx) => (
                                     <div key={idx} className="flex justify-between">
-                                        <span>{src.company}</span>
-                                        <span className="font-inter">{formatMoney(src.amount)}</span>
+                                        <span>{cat}</span>
+                                        <span className="font-inter">{formatMoney(amt)}</span>
                                     </div>
                                 ))}
-                                {incomeStats.sources.length > 3 && (
-                                    <div className="text-slate-400">...還有 {incomeStats.sources.length - 3} 筆</div>
-                                )}
                             </div>
                         )}
                     </div>
 
-                    {/* Asset Change Card */}
+                    {/* Asset & Debt Change Card */}
                     <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-4 rounded-xl border border-blue-100">
                         <div className="flex items-center gap-2 mb-3">
                             <div className="w-8 h-8 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center">
                                 <TrendingUp size={16} />
                             </div>
-                            <span className="font-bold text-slate-700">資產變化</span>
+                            <span className="font-bold text-slate-700">資產負債變化</span>
                         </div>
-                        <div className={`text-2xl font-inter font-bold mb-2 ${assetStats.change >= 0 ? 'text-emerald-600' : 'text-rose-500'}`}>
-                            {assetStats.change >= 0 ? '+' : ''}{formatMoney(assetStats.change)} <span className="text-sm font-normal text-slate-400">TWD</span>
+                        <div className={`text-2xl font-inter font-bold mb-2 ${financeStats.netWorthChange >= 0 ? 'text-emerald-600' : 'text-rose-500'}`}>
+                            {financeStats.netWorthChange >= 0 ? '+' : ''}{formatMoney(financeStats.netWorthChange)} <span className="text-sm font-normal text-slate-400">TWD</span>
                         </div>
                         <div className="grid grid-cols-2 gap-2 pt-2 border-t border-blue-100 text-xs">
                             <div>
                                 <div className="text-slate-400 mb-0.5">期初資產 {assetStats.startDate && `(${assetStats.startDate})`}</div>
                                 <div className="font-inter font-bold text-slate-600">{formatMoney(assetStats.startAssets)}</div>
+                                <div className="text-slate-400 mt-2 mb-0.5">期初負債 {debtStats.startDate && `(${debtStats.startDate})`}</div>
+                                <div className="font-inter font-bold text-rose-500">-{formatMoney(debtStats.startDebts)}</div>
+                                <div className="text-slate-400 mt-2 mb-0.5">期初淨資產</div>
+                                <div className="font-inter font-bold text-slate-700">{formatMoney(financeStats.startNetWorth)}</div>
                             </div>
                             <div className="text-right">
                                 <div className="text-slate-400 mb-0.5">期末資產 {assetStats.endDate && `(${assetStats.endDate})`}</div>
                                 <div className="font-inter font-bold text-slate-600">{formatMoney(assetStats.endAssets)}</div>
+                                <div className="text-slate-400 mt-2 mb-0.5">期末負債 {debtStats.endDate && `(${debtStats.endDate})`}</div>
+                                <div className="font-inter font-bold text-rose-500">-{formatMoney(debtStats.endDebts)}</div>
+                                <div className="text-slate-400 mt-2 mb-0.5">期末淨資產</div>
+                                <div className="font-inter font-bold text-slate-700">{formatMoney(financeStats.endNetWorth)}</div>
                             </div>
                         </div>
 
                         {/* Fixed vs Floating Breakdown */}
                         <div className="mt-3 pt-3 border-t border-blue-100 space-y-2 text-xs">
+                            <div className="flex justify-between items-center">
+                                <div className="flex items-center gap-2">
+                                    <TrendingUp size={12} className="text-slate-400" />
+                                    <span className="text-slate-600 font-medium">資產變化</span>
+                                </div>
+                                <span className={`font-inter font-bold ${assetStats.change >= 0 ? 'text-emerald-600' : 'text-rose-500'}`}>
+                                    {assetStats.change >= 0 ? '+' : ''}{formatMoney(assetStats.change)}
+                                </span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                                <div className="flex items-center gap-2">
+                                    <ArrowDownRight size={12} className="text-slate-400" />
+                                    <span className="text-slate-600 font-medium">負債變化</span>
+                                </div>
+                                <span className={`font-inter font-bold ${debtStats.change <= 0 ? 'text-emerald-600' : 'text-rose-500'}`}>
+                                    {debtStats.change >= 0 ? '+' : ''}{formatMoney(debtStats.change)}
+                                </span>
+                            </div>
+                            <div className="flex justify-between items-center pt-2 border-t border-blue-100">
+                                <div className="flex items-center gap-2">
+                                    <Sparkles size={12} className="text-blue-500" />
+                                    <span className="text-slate-700 font-bold">淨資產變化</span>
+                                </div>
+                                <span className={`font-inter font-bold ${financeStats.netWorthChange >= 0 ? 'text-emerald-600' : 'text-rose-500'}`}>
+                                    {financeStats.netWorthChange >= 0 ? '+' : ''}{formatMoney(financeStats.netWorthChange)}
+                                </span>
+                            </div>
                             {/* Fixed Assets Row */}
                             <div className="flex justify-between items-center">
                                 <div className="flex items-center gap-2">
@@ -4287,38 +4369,29 @@ const RangeStatsModal = ({ data, onClose }) => {
                         </div>
                     </div>
 
-                    {/* Expense Card */}
-                    <div className="bg-gradient-to-br from-rose-50 to-orange-50 p-4 rounded-xl border border-rose-100">
+                    {/* Finance Estimate Card */}
+                    <div className="bg-gradient-to-br from-slate-900 to-slate-800 text-white p-4 rounded-xl border border-slate-700">
                         <div className="flex items-center gap-2 mb-3">
-                            <div className="w-8 h-8 rounded-lg bg-rose-100 text-rose-600 flex items-center justify-center">
-                                <ShoppingBag size={16} />
+                            <div className="w-8 h-8 rounded-lg bg-white/10 text-amber-200 flex items-center justify-center">
+                                <PieChartIcon size={16} />
                             </div>
-                            <span className="font-bold text-slate-700">花費統計</span>
-                            <span className="text-xs text-slate-400 ml-auto">{expenseStats.count} 筆</span>
+                            <span className="font-bold text-slate-100">區間財務推估</span>
                         </div>
-                        <div className="text-2xl font-inter font-bold text-rose-500 mb-2">
-                            -{formatMoney(expenseStats.total)} <span className="text-sm font-normal text-slate-400">TWD</span>
+                        <div className={`text-2xl font-inter font-bold mb-2 ${financeStats.totalCreated >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
+                            {financeStats.totalCreated >= 0 ? '+' : ''}{formatMoney(financeStats.totalCreated)} <span className="text-sm font-normal text-slate-500">TWD</span>
                         </div>
-                        {expenseStats.topCategories.length > 0 && (
-                            <div className="text-xs text-slate-500 space-y-1 pt-2 border-t border-rose-100">
-                                <div className="text-slate-400 mb-1">前五大類別</div>
-                                {expenseStats.topCategories.map(([cat, amt], idx) => (
-                                    <div key={idx} className="flex justify-between">
-                                        <span>{cat}</span>
-                                        <span className="font-inter">{formatMoney(amt)}</span>
-                                    </div>
-                                ))}
+                        <div className="space-y-2 text-xs pt-2 border-t border-white/10">
+                            <div className="flex justify-between gap-3">
+                                <span className="text-slate-400">總創造金額 = 淨資產變化 + 花費</span>
+                                <span className={`font-inter font-bold ${financeStats.totalCreated >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>{financeStats.totalCreated >= 0 ? '+' : ''}{formatMoney(financeStats.totalCreated)}</span>
                             </div>
-                        )}
-                    </div>
-
-                    {/* Summary */}
-                    <div className="bg-slate-800 text-white p-4 rounded-xl">
-                        <div className="flex justify-between items-center">
-                            <span className="text-slate-400 text-sm">淨收支 (收入 - 花費)</span>
-                            <span className={`text-xl font-inter font-bold ${(incomeStats.total - expenseStats.total) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                                {(incomeStats.total - expenseStats.total) >= 0 ? '+' : ''}{formatMoney(incomeStats.total - expenseStats.total)}
-                            </span>
+                            <div className="flex justify-between gap-3">
+                                <span className="text-slate-400">非收入變化 = 總創造金額 - 收入</span>
+                                <span className={`font-inter font-bold ${financeStats.nonIncomeChange >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>{financeStats.nonIncomeChange >= 0 ? '+' : ''}{formatMoney(financeStats.nonIncomeChange)}</span>
+                            </div>
+                            <div className="text-[10px] leading-relaxed text-slate-500 pt-2">
+                                非收入變化可能包含投資漲跌、匯率、股息未列入收入、漏記現金流或估值變化。
+                            </div>
                         </div>
                     </div>
                 </div>

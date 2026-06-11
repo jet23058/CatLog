@@ -1957,6 +1957,67 @@ describe('App Integration Tests', () => {
         expect(screen.getByText('開始日期')).toBeInTheDocument();
     });
 
+    test('Range Statistics includes debt and finance estimate sections', async () => {
+        const user = userEvent.setup();
+        const mockData = {
+            records: {
+                '2026-04-30': [{ id: 'asset-start', name: '資產', amount: 500000, type: 'stock' }],
+                '2026-05-31': [{ id: 'asset-end', name: '資產', amount: 650000, type: 'stock' }]
+            },
+            memos: {},
+            incomes: {
+                '2026-05': {
+                    totalAmount: 100000,
+                    sources: [{ company: '薪資', amount: 100000 }]
+                }
+            },
+            expenses: {
+                '2026-05': [
+                    { id: 'exp-1', date: '2026-05-10', category: '餐飲', amount: 20000 },
+                    { id: 'exp-2', date: '2026-05-20', category: '交通', amount: 10000 }
+                ]
+            },
+            debts: {
+                '2026-04-30': [{ id: 'debt-start', name: '股票質押', amount: 100000, category: 'stock_pledge' }],
+                '2026-05-31': [{ id: 'debt-end', name: '股票質押', amount: 180000, category: 'stock_pledge' }]
+            },
+            debtEvents: {},
+            fireSettings: { withdrawalRate: 4 }
+        };
+
+        getDocs.mockResolvedValue(createMockSnapshot(mockData));
+        render(<App />);
+        await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
+
+        const advancedBtn = document.querySelector('.lucide-layout-grid').closest('button');
+        await user.click(advancedBtn);
+        await waitFor(() => expect(screen.getByText('Advanced')).toBeInTheDocument());
+        await user.click(screen.getByText('區間統計'));
+
+        await waitFor(() => expect(screen.getByText('區間統計 Report', { selector: 'h3' })).toBeInTheDocument());
+        const dateInputs = document.querySelectorAll('.fixed.inset-0 input[type="date"]');
+        fireEvent.change(dateInputs[0], { target: { value: '2026-04-30' } });
+        fireEvent.change(dateInputs[1], { target: { value: '2026-05-31' } });
+
+        const cashFlowCard = screen.getByText('現金流').closest('.bg-gradient-to-br');
+        expect(within(cashFlowCard).getAllByText('+70,000').length).toBeGreaterThan(0);
+        expect(within(cashFlowCard).getByText('總收入')).toBeInTheDocument();
+        expect(within(cashFlowCard).getByText('總花費')).toBeInTheDocument();
+
+        const balanceCard = screen.getByText('資產負債變化').closest('.bg-gradient-to-br');
+        expect(within(balanceCard).getByText('期初負債 (2026-04-30)')).toBeInTheDocument();
+        expect(within(balanceCard).getByText('期末負債 (2026-05-31)')).toBeInTheDocument();
+        expect(within(balanceCard).getByText('負債變化')).toBeInTheDocument();
+        expect(within(balanceCard).getByText('+80,000')).toBeInTheDocument();
+        expect(within(balanceCard).getAllByText('+70,000').length).toBeGreaterThan(0);
+
+        const financeCard = screen.getByText('區間財務推估').closest('.bg-gradient-to-br');
+        expect(within(financeCard).getAllByText('+100,000').length).toBeGreaterThan(0);
+        expect(within(financeCard).getByText('總創造金額 = 淨資產變化 + 花費')).toBeInTheDocument();
+        expect(within(financeCard).getByText('非收入變化 = 總創造金額 - 收入')).toBeInTheDocument();
+        expect(within(financeCard).getByText('+0')).toBeInTheDocument();
+    });
+
     test.skip('Detail Page Components: Edit, Delete, Navigation', async () => {
         const user = userEvent.setup();
         const currentYear = new Date().getFullYear();
