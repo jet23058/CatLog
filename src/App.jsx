@@ -72,6 +72,22 @@ const normalizeAppData = (source = {}) => ({
     stockHoldingSnapshots: source.stockHoldingSnapshots || {}
 });
 
+const BACKUP_FORMAT = 'meow-assets-backup';
+const BACKUP_VERSION = 2;
+const createBackupFile = (data) => ({
+    format: BACKUP_FORMAT,
+    version: BACKUP_VERSION,
+    exportedAt: new Date().toISOString(),
+    data: normalizeAppData(data)
+});
+const extractBackupData = (source = {}) => {
+    if (source?.format === BACKUP_FORMAT) {
+        if (!source.data || typeof source.data !== 'object') throw new Error('備份檔缺少 data 欄位');
+        return source.data;
+    }
+    return source;
+};
+
 const getDebtIdentity = (debt = {}) => debt.id || [
     debt.name,
     debt.lender,
@@ -1274,6 +1290,35 @@ const renderIncomeRow = (item, tone = 'default') => {
         );
     };
 
+    const renderStockTransactionRow = (item, tone = 'default') => {
+        const toneClasses = { added: 'bg-emerald-50/70', removed: 'bg-rose-50/70', default: '' };
+        return (
+            <tr key={`${item.id || `${item.date}-${item.symbol}`}-${tone}`} className={toneClasses[tone] || ''}>
+                <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{item.date || '未指定'}</td>
+                <td className="px-2 py-2">
+                    <div className="text-slate-700 font-bold truncate max-w-[100px]">{item.symbol || item.name || '未命名'}</div>
+                    <div className="text-slate-400 scale-90 origin-left">{getStockMarketLabel(item.market || 'TW')} / {getStockTradeLabel(item.type)}</div>
+                </td>
+                <td className="px-3 py-2 text-right font-mono font-bold text-slate-600">{formatMoneyByMarket(item.amount || 0, item.market || 'TW')}</td>
+            </tr>
+        );
+    };
+
+    const renderStockSnapshotRow = (item, tone = 'default') => {
+        const toneClasses = { added: 'bg-emerald-50/70', removed: 'bg-rose-50/70', default: '' };
+        const holdings = item.holdings || [];
+        const markets = [...new Set(holdings.map((holding) => getStockMarketLabel(holding.market || 'TW')))];
+        return (
+            <tr key={`${item.id || `${item.month}-${item.version}`}-${tone}`} className={toneClasses[tone] || ''}>
+                <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{item.month || '未指定'}</td>
+                <td className="px-2 py-2">
+                    <div className="text-slate-700 font-bold">v{item.version || 1} · {holdings.length} 檔</div>
+                    <div className="text-slate-400 scale-90 origin-left">{markets.join('、') || '未指定市場'}{item.note ? ` / ${item.note}` : ''}</div>
+                </td>
+            </tr>
+        );
+    };
+
     const renderGenericDiffBlock = (title, diff, renderRow, columns) => {
         if (!diff?.hasChanges) return null;
 
@@ -1347,6 +1392,11 @@ const renderIncomeRow = (item, tone = 'default') => {
                             <p className="font-bold text-slate-700 border-b border-slate-200 pb-2 mb-2">
                                 即將覆蓋現有資料庫：
                             </p>
+                            {!summary.hasChanges && (
+                                <div className="rounded-lg border border-blue-100 bg-blue-50 p-3 text-xs text-blue-700 leading-relaxed">
+                                    備份內容與目前資料相同；仍可確認匯入，用這份備份重新覆蓋還原。
+                                </div>
+                            )}
                             <div className="space-y-3 text-xs">
                                 <div className="bg-white rounded-lg border border-slate-100 overflow-hidden">
                                     <div className="p-3 flex justify-between items-center cursor-pointer hover:bg-slate-50" onClick={() => setExpandedJsonSection(expandedJsonSection === 'json-records' ? null : 'json-records')}>
@@ -1549,6 +1599,56 @@ const renderIncomeRow = (item, tone = 'default') => {
                                                     <th className="px-2 py-1.5 font-normal">異動</th>
                                                     <th className="px-3 py-1.5 font-normal text-right">金額</th>
                                                 </>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="bg-white rounded-lg border border-slate-100 overflow-hidden">
+                                    <div className="p-3 flex justify-between items-center cursor-pointer hover:bg-slate-50" onClick={() => setExpandedJsonSection(expandedJsonSection === 'json-stock-transactions' ? null : 'json-stock-transactions')}>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-slate-500">個股交易明細</span>
+                                            <ChevronDown size={12} className={`transition-transform duration-200 ${expandedJsonSection === 'json-stock-transactions' ? 'rotate-180' : ''}`} />
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <span className="line-through text-slate-400">{jsonSections.stockTransactions?.currentCount ?? 0}</span>
+                                            <ArrowRight size={12} className="text-slate-300" />
+                                            <span className="font-bold text-indigo-600">{summary.stockTransactions ?? 0}</span>
+                                            {renderDiffBadge(jsonSections.stockTransactions?.changed)}
+                                        </div>
+                                    </div>
+                                    {expandedJsonSection === 'json-stock-transactions' && jsonSections.stockTransactions?.changed && (
+                                        <div className="bg-slate-50 border-t border-slate-100 p-3">
+                                            {renderGenericDiffBlock(
+                                                'stockTransactions',
+                                                jsonSections.stockTransactions?.diff,
+                                                renderStockTransactionRow,
+                                                <><th className="px-3 py-1.5 font-normal">日期</th><th className="px-2 py-1.5 font-normal">個股</th><th className="px-3 py-1.5 font-normal text-right">金額</th></>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="bg-white rounded-lg border border-slate-100 overflow-hidden">
+                                    <div className="p-3 flex justify-between items-center cursor-pointer hover:bg-slate-50" onClick={() => setExpandedJsonSection(expandedJsonSection === 'json-stock-holdings' ? null : 'json-stock-holdings')}>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-slate-500">持倉庫存版本</span>
+                                            <ChevronDown size={12} className={`transition-transform duration-200 ${expandedJsonSection === 'json-stock-holdings' ? 'rotate-180' : ''}`} />
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <span className="line-through text-slate-400">{jsonSections.stockHoldingSnapshots?.currentCount ?? 0}</span>
+                                            <ArrowRight size={12} className="text-slate-300" />
+                                            <span className="font-bold text-indigo-600">{summary.stockHoldingSnapshots ?? 0}</span>
+                                            {renderDiffBadge(jsonSections.stockHoldingSnapshots?.changed)}
+                                        </div>
+                                    </div>
+                                    {expandedJsonSection === 'json-stock-holdings' && jsonSections.stockHoldingSnapshots?.changed && (
+                                        <div className="bg-slate-50 border-t border-slate-100 p-3">
+                                            {renderGenericDiffBlock(
+                                                'stockHoldingSnapshots',
+                                                jsonSections.stockHoldingSnapshots?.diff,
+                                                renderStockSnapshotRow,
+                                                <><th className="px-3 py-1.5 font-normal">月份</th><th className="px-2 py-1.5 font-normal">庫存版本</th></>
                                             )}
                                         </div>
                                     )}
@@ -2024,6 +2124,9 @@ const flattenDebts = (debts = {}) => Object.entries(debts).flatMap(([date, items
 const flattenDebtEvents = (debtEvents = {}) => Object.entries(debtEvents).flatMap(([month, items]) =>
     (items || []).map((item) => ({ ...item, month }))
 );
+const flattenStockHoldingSnapshots = (snapshots = {}) => Object.entries(snapshots).flatMap(([month, versions]) =>
+    (versions || []).map((snapshot) => ({ ...snapshot, month }))
+);
 
 const getRecordIdentityKey = (item) => [item.date || '', item.type || '', item.name || '', item.currency || 'TWD'].join('|');
 const getRecordFullKey = (item) => [getRecordIdentityKey(item), Number(item.amount) || 0, Number(item.originalAmount) || 0, Number(item.exchangeRate) || 0].join('|');
@@ -2037,6 +2140,10 @@ const getDebtIdentityKey = (item) => [item.date || '', item.name || '', item.len
 const getDebtFullKey = (item) => [getDebtIdentityKey(item), Number(item.amount) || 0, item.memo || ''].join('|');
 const getDebtEventIdentityKey = (item) => [item.month || '', item.date || '', item.type || '', item.name || '', item.lender || '', item.memo || ''].join('|');
 const getDebtEventFullKey = (item) => [getDebtEventIdentityKey(item), Number(item.amount) || 0, JSON.stringify(getSortedValue(item.collateral || []))].join('|');
+const getStockTransactionIdentityKey = (item) => item.id || [item.market || 'TW', item.date || '', item.type || '', item.symbol || '', item.name || ''].join('|');
+const getStockTransactionFullKey = (item) => [getStockTransactionIdentityKey(item), JSON.stringify(getSortedValue(item))].join('|');
+const getStockSnapshotIdentityKey = (item) => item.id || [item.month || '', Number(item.version) || 0, item.importedAt || ''].join('|');
+const getStockSnapshotFullKey = (item) => [getStockSnapshotIdentityKey(item), JSON.stringify(getSortedValue(item))].join('|');
 
 const getJsonImportSummary = (currentData = {}, parsedData = {}) => {
     const currentRecords = currentData.records || {};
@@ -2045,6 +2152,8 @@ const getJsonImportSummary = (currentData = {}, parsedData = {}) => {
     const currentMemos = currentData.memos || {};
     const currentDebts = currentData.debts || {};
     const currentDebtEvents = currentData.debtEvents || {};
+    const currentStockTransactions = currentData.stockTransactions || [];
+    const currentStockSnapshots = currentData.stockHoldingSnapshots || {};
 
     const nextRecords = parsedData.records || {};
     const nextIncomes = parsedData.incomes || {};
@@ -2052,12 +2161,16 @@ const getJsonImportSummary = (currentData = {}, parsedData = {}) => {
     const nextMemos = parsedData.memos || {};
     const nextDebts = parsedData.debts || {};
     const nextDebtEvents = parsedData.debtEvents || {};
+    const nextStockTransactions = parsedData.stockTransactions || [];
+    const nextStockSnapshots = parsedData.stockHoldingSnapshots || {};
 
     const recordDiff = buildCollectionDiff(flattenRecords(currentRecords), flattenRecords(nextRecords), getRecordIdentityKey, getRecordFullKey);
     const incomeDiff = buildCollectionDiff(flattenIncomeSources(currentIncomes), flattenIncomeSources(nextIncomes), getIncomeIdentityKey, getIncomeFullKey);
     const memoDiff = buildCollectionDiff(flattenMemos(currentMemos), flattenMemos(nextMemos), getMemoIdentityKey, getMemoFullKey);
     const debtDiff = buildCollectionDiff(flattenDebts(currentDebts), flattenDebts(nextDebts), getDebtIdentityKey, getDebtFullKey);
     const debtEventDiff = buildCollectionDiff(flattenDebtEvents(currentDebtEvents), flattenDebtEvents(nextDebtEvents), getDebtEventIdentityKey, getDebtEventFullKey);
+    const stockTransactionDiff = buildCollectionDiff(currentStockTransactions, nextStockTransactions, getStockTransactionIdentityKey, getStockTransactionFullKey);
+    const stockSnapshotDiff = buildCollectionDiff(flattenStockHoldingSnapshots(currentStockSnapshots), flattenStockHoldingSnapshots(nextStockSnapshots), getStockSnapshotIdentityKey, getStockSnapshotFullKey);
     const expenseSummary = getExpenseImportSummary(currentExpenses, nextExpenses);
 
     const sections = {
@@ -2096,6 +2209,18 @@ const getJsonImportSummary = (currentData = {}, parsedData = {}) => {
             nextCount: Object.values(nextDebtEvents).flat().length,
             changed: debtEventDiff.hasChanges,
             diff: debtEventDiff
+        },
+        stockTransactions: {
+            currentCount: currentStockTransactions.length,
+            nextCount: nextStockTransactions.length,
+            changed: stockTransactionDiff.hasChanges,
+            diff: stockTransactionDiff
+        },
+        stockHoldingSnapshots: {
+            currentCount: flattenStockHoldingSnapshots(currentStockSnapshots).length,
+            nextCount: flattenStockHoldingSnapshots(nextStockSnapshots).length,
+            changed: stockSnapshotDiff.hasChanges,
+            diff: stockSnapshotDiff
         }
     };
 
@@ -2106,6 +2231,8 @@ const getJsonImportSummary = (currentData = {}, parsedData = {}) => {
         memos: sections.memos.nextCount,
         debts: sections.debts.nextCount,
         debtEvents: sections.debtEvents.nextCount,
+        stockTransactions: sections.stockTransactions.nextCount,
+        stockHoldingSnapshots: sections.stockHoldingSnapshots.nextCount,
         sections,
         hasChanges: Object.values(sections).some((section) => section.changed)
     };
@@ -6314,7 +6441,7 @@ const AuthenticatedApp = () => {
     const handleShowAlert = (title, message) => setAlertInfo({ show: true, title, message });
 
     const handleExportData = () => {
-        const jsonString = JSON.stringify(data, null, 2);
+        const jsonString = JSON.stringify(createBackupFile(data), null, 2);
         const blob = new Blob([jsonString], { type: "application/json" });
         const href = URL.createObjectURL(blob);
         const link = document.createElement('a');
@@ -6325,7 +6452,7 @@ const AuthenticatedApp = () => {
         link.click();
         document.body.removeChild(link);
         URL.revokeObjectURL(href);
-        handleShowAlert("匯出成功", "資料已成功下載");
+        handleShowAlert("匯出成功", "完整備份已包含個股交易明細與持倉庫存");
     };
 
 
@@ -6395,22 +6522,16 @@ const AuthenticatedApp = () => {
         reader.onload = async (e) => {
             try {
                 const parsed = JSON.parse(e.target.result);
-                if (!parsed.records) throw new Error("缺少 records 欄位");
+                const backupData = extractBackupData(parsed);
+                if (!backupData.records) throw new Error("缺少 records 欄位");
 
-                const summary = getJsonImportSummary(data, parsed);
-
-                if (!summary.hasChanges) {
-                    setShowImportModal(false);
-                    handleShowAlert("無需匯入", "備份內容和目前資料完全一致");
-                    if (fileInputRef.current) fileInputRef.current.value = "";
-                    return;
-                }
+                const summary = getJsonImportSummary(data, backupData);
 
                 setImportConfirmation({
                     show: true,
                     type: 'json',
                     summary,
-                    pendingData: parsed
+                    pendingData: backupData
                 });
                 setShowImportModal(false);
                 if (fileInputRef.current) fileInputRef.current.value = "";
@@ -6440,9 +6561,10 @@ const AuthenticatedApp = () => {
         reader.onload = async (e) => {
             try {
                 const parsed = JSON.parse(e.target.result);
-                if (!parsed.records) throw new Error("缺少 records 欄位");
+                const backupData = extractBackupData(parsed);
+                if (!backupData.records) throw new Error("缺少 records 欄位");
 
-                const normalizedData = normalizeAppData(parsed);
+                const normalizedData = normalizeAppData(backupData);
 
                 setIsSaving(true);
                 await writeFirestoreChunks(normalizedData);

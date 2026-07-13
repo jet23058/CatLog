@@ -985,6 +985,132 @@ describe('App Integration Tests', () => {
         await waitFor(() => expect(screen.getByText('匯入成功')).toBeInTheDocument());
     });
 
+    test('Data Operations: exports and restores stock transactions and holding inventory', async () => {
+        const user = userEvent.setup();
+        const stockData = {
+            records: {},
+            incomes: {},
+            expenses: {},
+            memos: {},
+            debts: {},
+            debtEvents: {},
+            stockTransactions: [
+                { id: 'trade-tsm', market: 'US', date: '2026-04-01', type: 'buy', symbol: 'TSM', name: 'TSM', amount: 391.47 }
+            ],
+            stockHoldingSnapshots: {
+                '2026-04': [{
+                    id: 'snapshot-us-v1',
+                    version: 1,
+                    importedAt: '2026-04-30T10:00:00.000Z',
+                    holdings: [{ id: 'holding-tsm', market: 'US', symbol: 'TSM', name: 'TSM', shares: 1, marketPrice: 391.47, marketValue: 391.47 }]
+                }]
+            },
+            fireSettings: { withdrawalRate: 4 }
+        };
+        getDocs.mockResolvedValue(createMockSnapshot(stockData));
+
+        const OriginalBlob = global.Blob;
+        let exportedContent = '';
+        global.Blob = class extends OriginalBlob {
+            constructor(parts, options) {
+                super(parts, options);
+                exportedContent = parts.join('');
+            }
+        };
+
+        render(<App />);
+        await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
+        await user.click(document.querySelector('button.fixed.bottom-8.right-6'));
+        await user.click(screen.getByText('匯出備份'));
+
+        const exportedFile = JSON.parse(exportedContent);
+        expect(exportedFile).toEqual(expect.objectContaining({
+            format: 'meow-assets-backup',
+            version: 2,
+            exportedAt: expect.any(String)
+        }));
+        expect(exportedFile.data.stockTransactions).toEqual(stockData.stockTransactions);
+        expect(exportedFile.data.stockHoldingSnapshots).toEqual(stockData.stockHoldingSnapshots);
+        expect(screen.getByText('完整備份已包含個股交易明細與持倉庫存')).toBeInTheDocument();
+
+        global.Blob = OriginalBlob;
+    });
+
+    test('Data Operations: accepts an identical versioned backup for restore', async () => {
+        const user = userEvent.setup();
+        render(<App />);
+        await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
+
+        await user.click(document.querySelector('button.fixed.bottom-8.right-6'));
+        await user.click(screen.getByText('匯入資料'));
+
+        const identicalBackup = {
+            format: 'meow-assets-backup',
+            version: 2,
+            exportedAt: '2026-07-13T00:00:00.000Z',
+            data: {
+                records: {},
+                incomes: {},
+                expenses: {},
+                memos: {},
+                debts: {},
+                debtEvents: {},
+                stockTransactions: [],
+                stockHoldingSnapshots: {},
+                fireSettings: { withdrawalRate: 4 }
+            }
+        };
+        const file = new File([JSON.stringify(identicalBackup)], 'same-backup.json', { type: 'application/json' });
+        file.mockContent = JSON.stringify(identicalBackup);
+        await user.upload(document.querySelector('input[accept=".json"]'), file);
+
+        await waitFor(() => expect(screen.getByText('確認匯入備份')).toBeInTheDocument());
+        expect(screen.getByText(/備份內容與目前資料相同/)).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: '確認匯入' })).toBeEnabled();
+        await user.click(screen.getByRole('button', { name: '確認匯入' }));
+        await waitFor(() => expect(screen.getByText('匯入成功')).toBeInTheDocument());
+        expect(setDoc).toHaveBeenCalled();
+    });
+
+    test('Data Operations: detects stock-only changes in a JSON backup', async () => {
+        const user = userEvent.setup();
+        render(<App />);
+        await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
+
+        await user.click(document.querySelector('button.fixed.bottom-8.right-6'));
+        await user.click(screen.getByText('匯入資料'));
+
+        const stockOnlyBackup = {
+            records: {},
+            incomes: {},
+            expenses: {},
+            memos: {},
+            debts: {},
+            debtEvents: {},
+            stockTransactions: [
+                { id: 'trade-2330', market: 'TW', date: '2026-04-01', type: 'buy', symbol: '2330', name: '台積電', amount: 1000 }
+            ],
+            stockHoldingSnapshots: {
+                '2026-04': [{
+                    id: 'snapshot-tw-v1',
+                    version: 1,
+                    importedAt: '2026-04-30T10:00:00.000Z',
+                    holdings: [{ id: 'holding-2330', market: 'TW', symbol: '2330', name: '台積電', shares: 1, marketPrice: 1000, marketValue: 1000 }]
+                }]
+            },
+            fireSettings: { withdrawalRate: 4 }
+        };
+        const file = new File([JSON.stringify(stockOnlyBackup)], 'stock-backup.json', { type: 'application/json' });
+        file.mockContent = JSON.stringify(stockOnlyBackup);
+        await user.upload(document.querySelector('input[accept=".json"]'), file);
+
+        await waitFor(() => expect(screen.getByText('確認匯入備份')).toBeInTheDocument());
+        expect(screen.getByText('個股交易明細').parentElement.parentElement).toHaveTextContent('0');
+        expect(screen.getByText('個股交易明細').parentElement.parentElement).toHaveTextContent('1');
+        expect(screen.getByText('持倉庫存版本').parentElement.parentElement).toHaveTextContent('1');
+        expect(screen.queryByText('無需匯入')).not.toBeInTheDocument();
+    });
+
     test('Data Operations: Import Expenses CSV', async () => {
         const user = userEvent.setup();
         render(<App />);
