@@ -4,7 +4,8 @@ services:
   web:
     build: .
     ports:
-      - "3002:3002"
+      # Localhost only: keep the dev server off the LAN.
+      - "127.0.0.1:3002:3002"
     volumes:
       # Live-edit source from the host; Vite also reads .env from here.
       - .:/app
