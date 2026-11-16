@@ -923,7 +923,10 @@ const fetchLatestStockQuote = async (market = 'TW', rawSymbol = '') => {
     if (typeof fetch === 'undefined') throw new Error('目前環境無法抓取股價');
 
     const params = new URLSearchParams({ market, symbol });
-    const response = await fetch(`/api/stock-quote?${params.toString()}`);
+    const headers = {};
+    const idToken = await auth?.currentUser?.getIdToken?.().catch(() => '');
+    if (idToken) headers.Authorization = `Bearer ${idToken}`;
+    const response = await fetch(`/api/stock-quote?${params.toString()}`, { headers });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload?.error || '股價來源暫時無法使用');
     const price = Number(payload?.price);
@@ -1041,6 +1044,37 @@ const DiffBadge = ({ current, prev }) => {
     );
 };
 
+const formatSyncTime = (timestamp) => {
+    if (!timestamp) return '';
+    const date = new Date(timestamp);
+    return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+};
+
+const SyncStatusBadge = ({ isSaving, syncState, onRetry, onResolveConflict }) => {
+    const base = "text-[11px] px-2 py-1 rounded-full border font-sans font-normal";
+    if (isSaving) {
+        return <span role="status" className={`${base} bg-amber-50 text-amber-600 border-amber-200 animate-pulse`}>儲存中...</span>;
+    }
+    if (syncState.status === 'error') {
+        return (
+            <button onClick={onRetry} className={`${base} bg-rose-50 text-rose-600 border-rose-200 hover:bg-rose-100`} title={syncState.message || '儲存失敗'}>
+                儲存失敗・重試
+            </button>
+        );
+    }
+    if (syncState.status === 'conflict') {
+        return (
+            <button onClick={onResolveConflict} className={`${base} bg-amber-50 text-amber-700 border-amber-300 hover:bg-amber-100`}>
+                版本衝突・處理
+            </button>
+        );
+    }
+    if (syncState.status === 'saved') {
+        return <span role="status" className={`${base} bg-teal-50 text-teal-700 border-teal-200`}>已同步 {formatSyncTime(syncState.lastSavedAt)}</span>;
+    }
+    return null;
+};
+
 const AlertModal = ({ title, message, onClose }) => (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-[fadeIn_0.2s]">
         <div className="bg-white w-full max-w-xs rounded-2xl p-6 shadow-2xl relative flex flex-col items-center text-center">
@@ -1056,7 +1090,7 @@ const AlertModal = ({ title, message, onClose }) => (
     </div>
 );
 
-const ConfirmModal = ({ title, message, onConfirm, onCancel }) => (
+const ConfirmModal = ({ title, message, onConfirm, onCancel, confirmLabel = '刪除' }) => (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-[fadeIn_0.2s]">
         <div className="bg-white w-full max-w-xs rounded-2xl p-6 shadow-2xl relative flex flex-col items-center text-center">
             <div className="w-12 h-12 bg-rose-50 rounded-full flex items-center justify-center mb-4 text-rose-500">
@@ -1069,7 +1103,7 @@ const ConfirmModal = ({ title, message, onConfirm, onCancel }) => (
                     取消
                 </button>
                 <button onClick={onConfirm} className="flex-1 py-2.5 bg-rose-500 text-white rounded-xl font-bold text-sm hover:bg-rose-600 transition-colors">
-                    刪除
+                    {confirmLabel}
                 </button>
             </div>
         </div>
@@ -1081,7 +1115,7 @@ const YearSelectorModal = ({ currentYear, availableYears, yearlyTrendData, onSel
     return (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-[fadeIn_0.2s]">
             <div className="bg-white w-full max-w-sm rounded-2xl p-6 shadow-2xl relative flex flex-col">
-                <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"><X size={20} /></button>
+                <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600" aria-label="關閉"><X size={20} /></button>
                 <h3 className="text-lg font-serif-tc font-bold text-slate-800 mb-4 flex items-center gap-2">
                     <Calendar size={20} className="text-teal-600" />
                     選擇年份
@@ -2440,7 +2474,7 @@ const AddIncomeModal = ({ onClose, onSave, assetNames, exchangeRateCache }) => {
     return (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-6 animate-[fadeIn_0.2s]">
             <div className="bg-white w-full max-w-sm rounded-2xl p-6 shadow-2xl relative">
-                <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"><X size={20} /></button>
+                <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600" aria-label="關閉"><X size={20} /></button>
                 <h3 className="text-xl font-serif-tc font-bold text-slate-800 mb-4 flex items-center gap-2">
                     <div className="bg-teal-100 p-2 rounded-lg"><DollarSign size={20} className="text-teal-700" /></div> 新增收入
                 </h3>
@@ -2746,7 +2780,7 @@ const AddAssetModal = ({ onClose, onSave, historyRecords, exchangeRateCache }) =
     return (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-6 animate-[fadeIn_0.2s]">
             <div className="bg-white w-full max-w-sm rounded-2xl p-6 shadow-2xl relative">
-                <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"><X size={20} /></button>
+                <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600" aria-label="關閉"><X size={20} /></button>
                 <h3 className="text-xl font-serif-tc font-bold text-slate-800 mb-4 flex items-center gap-2">
                     <div className="bg-teal-100 p-2 rounded-lg"><Wallet size={20} className="text-teal-700" /></div> 新增資產
                 </h3>
@@ -2995,7 +3029,7 @@ const AddDebtModal = ({ onClose, onSave, debtNames = [], accountOptions = [], as
     return (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-6 animate-[fadeIn_0.2s]">
             <div className="bg-white w-full max-w-md rounded-2xl p-6 shadow-2xl relative">
-                <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"><X size={20} /></button>
+                <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600" aria-label="關閉"><X size={20} /></button>
                 <h3 className="text-xl font-serif-tc font-bold text-slate-800 mb-4 flex items-center gap-2">
                     <div className="bg-rose-100 p-2 rounded-lg"><ArrowDownRight size={20} className="text-rose-700" /></div> 新增負債
                 </h3>
@@ -3181,7 +3215,7 @@ const AddDebtEventModal = ({ monthKey, onClose, onSave, debtNames = [], debtTarg
     return (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[60] flex items-center justify-center p-6 animate-[fadeIn_0.2s]">
             <div className="bg-white w-full max-w-sm rounded-2xl p-6 shadow-2xl relative">
-                <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"><X size={20} /></button>
+                <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600" aria-label="關閉"><X size={20} /></button>
                 <h3 className="text-xl font-serif-tc font-bold text-slate-800 mb-4 flex items-center gap-2">
                     <div className="bg-orange-100 p-2 rounded-lg"><ClipboardCheck size={20} className="text-orange-700" /></div> 新增負債異動
                 </h3>
@@ -4066,7 +4100,7 @@ const StatementModal = ({ data, onClose }) => {
     return (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-6 animate-[fadeIn_0.2s]">
             <div className="bg-white w-full max-w-lg rounded-2xl p-6 shadow-2xl relative flex flex-col max-h-[85vh]">
-                <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"><X size={20} /></button>
+                <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600" aria-label="關閉"><X size={20} /></button>
                 <h3 className="text-xl font-serif-tc font-bold text-slate-800 mb-6 flex items-center gap-2">
                     <div className="bg-teal-100 p-2 rounded-lg"><ClipboardCheck size={20} className="text-teal-700" /></div> 對帳單 Check
                 </h3>
@@ -4310,7 +4344,7 @@ const RangeStatsModal = ({ data, onClose }) => {
     return (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-6 animate-[fadeIn_0.2s]">
             <div className="bg-white w-full max-w-lg rounded-2xl p-6 shadow-2xl relative flex flex-col max-h-[85vh]">
-                <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"><X size={20} /></button>
+                <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600" aria-label="關閉"><X size={20} /></button>
                 <h3 className="text-xl font-serif-tc font-bold text-slate-800 mb-6 flex items-center gap-2">
                     <div className="bg-purple-100 p-2 rounded-lg"><PieChartIcon size={20} className="text-purple-700" /></div> 區間統計 Report
                 </h3>
@@ -4535,7 +4569,7 @@ const FIREModal = ({ fireStats, yearlyStats = [], onRateChange, onClose }) => {
     return (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-6 animate-[fadeIn_0.2s]">
             <div className="bg-white w-full max-w-sm rounded-2xl p-6 shadow-2xl relative max-h-[85vh] flex flex-col">
-                <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"><X size={20} /></button>
+                <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600" aria-label="關閉"><X size={20} /></button>
                 <h3 className="text-xl font-serif-tc font-bold text-slate-800 mb-6 flex items-center gap-2 flex-shrink-0">
                     <div className="bg-amber-100 p-2 rounded-lg"><Mountain size={20} className="text-amber-700" /></div> FIRE 目標
                 </h3>
@@ -5096,7 +5130,7 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
         <div className="min-h-screen bg-[#F9F9F7] text-slate-800 font-sans animate-[fadeIn_0.2s]">
             <header className="sticky top-0 z-30 bg-[#F9F9F7]/95 backdrop-blur-md border-b border-slate-200/70 px-6 py-5">
                 <div className="flex items-center justify-between">
-                    <button onClick={onBack} className="p-2 -ml-2 text-slate-400 hover:text-slate-700 rounded-full hover:bg-white transition-colors"><ArrowLeft size={22} /></button>
+                    <button onClick={onBack} className="p-2 -ml-2 text-slate-400 hover:text-slate-700 rounded-full hover:bg-white transition-colors" aria-label="返回"><ArrowLeft size={22} /></button>
                     <div className="text-right">
                         <div className="text-[10px] uppercase tracking-[0.2em] text-blue-400 font-inter">Stock Lab</div>
                         <h2 className="text-xl font-serif-tc font-bold text-slate-800">個股績效</h2>
@@ -5414,7 +5448,7 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
             {showTransactionImportModal && (
                 <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-6">
                     <div className="bg-white w-full max-w-md rounded-2xl p-6 shadow-2xl max-h-[85vh] overflow-y-auto relative">
-                        <button onClick={() => setShowTransactionImportModal(false)} className="absolute top-4 right-4 text-slate-300 hover:text-slate-600"><X size={18} /></button>
+                        <button onClick={() => setShowTransactionImportModal(false)} className="absolute top-4 right-4 text-slate-300 hover:text-slate-600" aria-label="關閉"><X size={18} /></button>
                         <div className="mb-4 pr-8">
                             <h3 className="text-xl font-serif-tc font-bold text-slate-800 flex items-center gap-2"><Upload size={18} /> 匯入股票交易</h3>
                             <p className="text-sm text-slate-400 mt-1">支援上傳交易檔案，或直接貼上你整理過的台股 / 美股交易內容。匯入採 append，不會覆蓋既有資料。</p>
@@ -5449,7 +5483,7 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
             {showHoldingImportModal && (
                 <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-6">
                     <div className="bg-white w-full max-w-lg rounded-2xl p-6 shadow-2xl max-h-[85vh] overflow-y-auto relative">
-                        <button onClick={() => setShowHoldingImportModal(false)} className="absolute top-4 right-4 text-slate-300 hover:text-slate-600"><X size={18} /></button>
+                        <button onClick={() => setShowHoldingImportModal(false)} className="absolute top-4 right-4 text-slate-300 hover:text-slate-600" aria-label="關閉"><X size={18} /></button>
                         <div className="mb-4 pr-8">
                             <h3 className="text-xl font-serif-tc font-bold text-slate-800 flex items-center gap-2"><Package size={18} /> 匯入持倉快照</h3>
                             <p className="text-sm text-slate-400 mt-1">用來記錄月底持股市值。每次寫入都會新增版本。</p>
@@ -5530,7 +5564,7 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
                 <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-6">
                     <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl max-h-[85vh] overflow-hidden flex flex-col">
                         <div className="sticky top-0 z-10 bg-white px-6 pt-6 pb-4 border-b border-slate-100 relative">
-                            <button onClick={() => setSelectedStockDetailKey('')} className="absolute top-6 right-6 text-slate-300 hover:text-slate-600"><X size={18} /></button>
+                            <button onClick={() => setSelectedStockDetailKey('')} className="absolute top-6 right-6 text-slate-300 hover:text-slate-600" aria-label="關閉"><X size={18} /></button>
                             <div className="pr-8">
                                 <div className="flex items-center gap-2">
                                     <h3 className="text-xl font-serif-tc font-bold text-slate-800">{selectedStockDetail.symbol}</h3>
@@ -5571,7 +5605,7 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
                 <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-6">
                     <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl max-h-[85vh] overflow-hidden flex flex-col">
                         <div className="sticky top-0 z-10 bg-white px-6 pt-6 pb-4 border-b border-slate-100 relative">
-                            <button onClick={() => setLeaderboardModalType('')} className="absolute top-6 right-6 text-slate-300 hover:text-slate-600"><X size={18} /></button>
+                            <button onClick={() => setLeaderboardModalType('')} className="absolute top-6 right-6 text-slate-300 hover:text-slate-600" aria-label="關閉"><X size={18} /></button>
                             <div className="pr-8">
                                 <h3 className="text-xl font-serif-tc font-bold text-slate-800">{leaderboardModalTitle}</h3>
                                 <p className="text-sm text-slate-400 mt-1">{getStockMarketLabel(marketFilter)} · 共 {leaderboardModalRows.length} 檔</p>
@@ -5708,8 +5742,9 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
 
 import { AuthProvider, useAuth } from './AuthContext';
 import LoginPage from './LoginPage';
-import { db } from './firebase';
-import { collection, doc, writeBatch, getDocs, query, orderBy, where, setDoc } from 'firebase/firestore';
+import { auth, db } from './firebase';
+import { collection, getDocs, query, orderBy, onSnapshot } from 'firebase/firestore';
+import { readCloudData, writeCloudData, getMetaRef, CloudConflictError } from './cloudStorage';
 
 const AuthenticatedApp = () => {
     const { user, loading, logout } = useAuth();
@@ -5724,6 +5759,21 @@ const AuthenticatedApp = () => {
 
     if (!user) return <LoginPage />;
 
+    return <MainApp user={user} logout={logout} />;
+};
+
+const AUTO_LOCK_BACKGROUND_MS = 30 * 1000;
+const AUTO_LOCK_IDLE_MS = 5 * 60 * 1000;
+
+const readBiometricEnabled = () => {
+    try {
+        return localStorage.getItem(BIOMETRIC_STORAGE_KEY) === 'true';
+    } catch {
+        return false;
+    }
+};
+
+const MainApp = ({ user, logout }) => {
     const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
     const [data, setData] = useState(INITIAL_DATA);
     const [isDataLoaded, setIsDataLoaded] = useState(false);
@@ -5740,20 +5790,43 @@ const AuthenticatedApp = () => {
     const isLocalDiagnosticEnabled = import.meta.env.DEV;
 
     // --- Biometric Lock State ---
-    const [isAppLocked, setIsAppLocked] = useState(false);
-    const [biometricEnabled, setBiometricEnabled] = useState(() => localStorage.getItem(BIOMETRIC_STORAGE_KEY) === 'true');
+    const [isAppLocked, setIsAppLocked] = useState(readBiometricEnabled);
+    const [biometricEnabled, setBiometricEnabled] = useState(readBiometricEnabled);
     const [biometricError, setBiometricError] = useState("");
 
     useEffect(() => {
         localStorage.setItem('isPrivacyMode', isPrivacyMode);
     }, [isPrivacyMode]);
 
-    // Check Lock State on Startup
+    // 啟用鎖定時：切到背景超過 30 秒或閒置 5 分鐘，自動重新上鎖。
     useEffect(() => {
-        if (biometricEnabled) {
-            setIsAppLocked(true);
-        }
-    }, []); // Only run once on mount
+        if (!biometricEnabled) return undefined;
+        let hiddenAt = null;
+        let idleTimer = null;
+        const lock = () => setIsAppLocked(true);
+        const resetIdleTimer = () => {
+            clearTimeout(idleTimer);
+            idleTimer = setTimeout(lock, AUTO_LOCK_IDLE_MS);
+        };
+        const handleVisibilityChange = () => {
+            if (document.visibilityState === 'hidden') {
+                hiddenAt = Date.now();
+                return;
+            }
+            if (hiddenAt && Date.now() - hiddenAt >= AUTO_LOCK_BACKGROUND_MS) lock();
+            hiddenAt = null;
+            resetIdleTimer();
+        };
+        const activityEvents = ['pointerdown', 'keydown', 'touchstart', 'scroll'];
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+        activityEvents.forEach((name) => window.addEventListener(name, resetIdleTimer, { passive: true }));
+        resetIdleTimer();
+        return () => {
+            clearTimeout(idleTimer);
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+            activityEvents.forEach((name) => window.removeEventListener(name, resetIdleTimer));
+        };
+    }, [biometricEnabled]);
 
     // Handle Unlock
     const handleUnlockApp = async () => {
@@ -5788,37 +5861,28 @@ const AuthenticatedApp = () => {
 
     const [importConfirmation, setImportConfirmation] = useState({ show: false, type: null, summary: null, pendingData: null });
 
-    // --- Helper Functions for Chunking ---
-    // --- Helper Functions for Chunking ---
-    const writeFirestoreChunks = async (userData) => {
-        const jsonString = JSON.stringify(userData);
-        // Reduced chunk size to avoid 1MB limit with multi-byte chars
-        const CHUNK_SIZE = 250000;
-        const totalChunks = Math.ceil(jsonString.length / CHUNK_SIZE);
+    // --- Cloud storage (versioned + atomic, see cloudStorage.js) ---
+    const cloudRevisionRef = useRef(0);
+    const cloudChunkIdsRef = useRef([]);
+    const deviceIdRef = useRef(`d${Math.random().toString(36).slice(2, 10)}`);
+    const lastFailedSaveRef = useRef(null);
+    const [syncState, setSyncState] = useState({ status: 'idle', lastSavedAt: null, message: '' });
+    const [syncConflict, setSyncConflict] = useState(null);
+    const [remoteUpdateAvailable, setRemoteUpdateAvailable] = useState(false);
+    const [pendingRepairFile, setPendingRepairFile] = useState(null);
 
-        const chunksRef = collection(db, "users", user.uid, "chunks");
-
-        // 1. Write new chunks sequentially for progress updates
-        for (let i = 0; i < totalChunks; i++) {
-            const chunkContent = jsonString.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
-            const docRef = doc(chunksRef, i.toString());
-            // Use setDoc directly instead of batch to update progress in real-time
-            await setDoc(docRef, { index: i, content: chunkContent });
-
-            // Update progress
-            setUploadProgress(Math.round(((i + 1) / totalChunks) * 100));
-        }
-
-        // 2. Delete excess chunks (if previous save had more)
-        const batch = writeBatch(db); // Use batch for deletion as it's fast and doesn't need progress
-        const q = query(chunksRef, where("index", ">=", totalChunks));
-        const snapshot = await getDocs(q);
-        if (!snapshot.empty) {
-            snapshot.forEach(doc => {
-                batch.delete(doc.ref);
-            });
-            await batch.commit();
-        }
+    const writeFirestoreChunks = async (userData, { force = false } = {}) => {
+        const result = await writeCloudData(db, user.uid, userData, {
+            expectedRevision: cloudRevisionRef.current,
+            force,
+            previousChunkIds: cloudChunkIdsRef.current,
+            deviceId: deviceIdRef.current,
+            onProgress: setUploadProgress
+        });
+        cloudRevisionRef.current = result.revision;
+        cloudChunkIdsRef.current = result.chunkIds;
+        setRemoteUpdateAvailable(false);
+        return result;
     };
 
     const saveToFirestoreChunks = async (userData) => {
@@ -5827,23 +5891,38 @@ const AuthenticatedApp = () => {
             handleShowAlert("儲存已暫停", "雲端資料目前無法解析。為避免覆蓋既有資料，請先修復雲端資料或匯入備份。");
             return false;
         }
+        if (syncConflict) {
+            setSyncConflict((prev) => ({ ...prev, pendingData: userData }));
+            return false;
+        }
         if (isSavingRef.current) {
             pendingSaveRef.current = userData;
             return true;
         }
         isSavingRef.current = true;
         setIsSaving(true);
+        setSyncState((prev) => ({ ...prev, status: 'saving', message: '' }));
+        let dataToSave = userData;
         try {
-            let dataToSave = userData;
             while (dataToSave) {
                 pendingSaveRef.current = null;
                 await writeFirestoreChunks(dataToSave);
+                lastFailedSaveRef.current = null;
                 dataToSave = pendingSaveRef.current;
             }
+            setSyncState({ status: 'saved', lastSavedAt: Date.now(), message: '' });
             return true;
         } catch (error) {
+            const latestData = pendingSaveRef.current || dataToSave;
+            if (error instanceof CloudConflictError) {
+                setSyncConflict({ remoteRevision: error.remoteRevision, pendingData: latestData });
+                setSyncState((prev) => ({ ...prev, status: 'conflict', message: error.message }));
+                return false;
+            }
             console.error("Save failed:", error);
-            handleShowAlert("儲存失敗", "無法同步至雲端，請檢查網路連線。");
+            lastFailedSaveRef.current = latestData;
+            setSyncState((prev) => ({ ...prev, status: 'error', message: error.message || '' }));
+            handleShowAlert("儲存失敗", "無法同步至雲端，請檢查網路連線後按上方的「重試」。");
             return false;
         } finally {
             isSavingRef.current = false;
@@ -5853,39 +5932,56 @@ const AuthenticatedApp = () => {
         }
     };
 
+    const handleRetrySave = () => {
+        if (lastFailedSaveRef.current) saveToFirestoreChunks(lastFailedSaveRef.current);
+    };
+
     const loadFromFirestoreChunks = async () => {
         if (!user) return null;
-        const chunksRef = collection(db, "users", user.uid, "chunks");
-        const q = query(chunksRef, orderBy("index"));
-        const snapshot = await getDocs(q);
+        const result = await readCloudData(db, user.uid);
+        cloudRevisionRef.current = result.revision;
+        cloudChunkIdsRef.current = result.chunkIds;
+        return result.data;
+    };
 
-        if (snapshot.empty) return null;
+    const handleResolveConflictReload = async () => {
+        setSyncConflict(null);
+        setSyncState((prev) => ({ ...prev, status: 'idle', message: '' }));
+        await handleManualSync();
+    };
 
-        const chunks = snapshot.docs.map(doc => doc.data().content || "");
-        const fullString = chunks.join('');
-
+    const handleResolveConflictOverwrite = async () => {
+        const pendingData = syncConflict?.pendingData || data;
+        setSyncConflict(null);
+        setIsSaving(true);
+        setSyncState((prev) => ({ ...prev, status: 'saving', message: '' }));
         try {
-            return JSON.parse(fullString);
+            await writeFirestoreChunks(pendingData, { force: true });
+            setSyncState({ status: 'saved', lastSavedAt: Date.now(), message: '' });
+            handleShowAlert("已覆蓋雲端", "已用這台裝置的資料覆蓋雲端版本。");
         } catch (error) {
-            console.warn("JSON parse failed, attempting chunk recovery strategy...", error);
-            // Heuristic: Ghost chunks might exist if the previous save was larger and the new data size 
-            // is an exact multiple of CHUNK_SIZE, causing the 'break' logic (based on size < CHUNK_SIZE) to fail.
-            // We try removing chunks from the end one by one to find the valid JSON boundary.
-            let currentString = fullString;
-            for (let i = chunks.length - 1; i > 0; i--) {
-                const lastChunkLen = chunks[i].length;
-                currentString = currentString.slice(0, -lastChunkLen);
-                try {
-                    const result = JSON.parse(currentString);
-                    console.log(`Recovered data by trimming ${chunks.length - i} tail chunk(s).`);
-                    return result;
-                } catch (e) {
-                    continue;
-                }
-            }
-            throw error; // If all retries fail, rethrow original error
+            console.error(error);
+            lastFailedSaveRef.current = pendingData;
+            setSyncState((prev) => ({ ...prev, status: 'error', message: error.message || '' }));
+            handleShowAlert("覆蓋失敗", "無法寫入雲端，請稍後重試。");
+        } finally {
+            setIsSaving(false);
+            setUploadProgress(0);
         }
     };
+
+    // 監看雲端版本，其他裝置或分頁存檔後提示重新載入。
+    useEffect(() => {
+        if (!user || !isDataLoaded) return undefined;
+        const unsubscribe = onSnapshot(getMetaRef(db, user.uid), (snapshot) => {
+            const meta = snapshot && typeof snapshot.exists === 'function' && snapshot.exists() ? snapshot.data() : null;
+            if (!meta) return;
+            if ((meta.revision || 0) > cloudRevisionRef.current && meta.deviceId !== deviceIdRef.current) {
+                setRemoteUpdateAvailable(true);
+            }
+        }, (error) => console.warn('Cloud meta listener failed', error));
+        return () => { if (typeof unsubscribe === 'function') unsubscribe(); };
+    }, [user, isDataLoaded]);
 
     // --- Sync Logic ---
     // 1. Load Data on Mount
@@ -6205,8 +6301,9 @@ const AuthenticatedApp = () => {
             // Pull from cloud
             const cloudData = await loadFromFirestoreChunks();
             if (cloudData) {
-                setData(cloudData);
+                setData(normalizeAppData(cloudData));
                 setCloudLoadError('');
+                setRemoteUpdateAvailable(false);
                 handleShowAlert("同步成功", "已從雲端更新最新資料");
             } else {
                 setCloudLoadError('');
@@ -6549,12 +6646,18 @@ const AuthenticatedApp = () => {
     const handleRepairBackupUpload = (event) => {
         const file = event.target.files[0];
         if (!file) return;
+        setPendingRepairFile(file);
+    };
 
-        const shouldRepair = window.confirm("這會用你選擇的 JSON 備份覆蓋目前 Firebase chunks。建議確認這份備份是最近且可用的版本後再繼續。");
-        if (!shouldRepair) {
-            if (repairFileInputRef.current) repairFileInputRef.current.value = "";
-            return;
-        }
+    const handleCancelRepair = () => {
+        setPendingRepairFile(null);
+        if (repairFileInputRef.current) repairFileInputRef.current.value = "";
+    };
+
+    const handleConfirmRepair = () => {
+        const file = pendingRepairFile;
+        setPendingRepairFile(null);
+        if (!file) return;
 
         setIsImporting(true);
         const reader = new FileReader();
@@ -6567,9 +6670,10 @@ const AuthenticatedApp = () => {
                 const normalizedData = normalizeAppData(backupData);
 
                 setIsSaving(true);
-                await writeFirestoreChunks(normalizedData);
+                await writeFirestoreChunks(normalizedData, { force: true });
                 setData(normalizedData);
                 setCloudLoadError('');
+                setSyncConflict(null);
                 setDiagnostics({ show: false, loading: false, error: '', result: null });
                 setCurrentYear(new Date().getFullYear());
                 handleShowAlert("修復完成", "已用 JSON 備份重建 Firebase chunks。");
@@ -6815,10 +6919,59 @@ const AuthenticatedApp = () => {
         handleShowAlert("刪除成功", "已刪除持倉快照版本");
     };
 
+    // 鎖定時只渲染鎖定畫面，避免資產資料留在 DOM 中。
+    if (isAppLocked) {
+        return (
+            <>
+                <GlobalStyles />
+                <BiometricLockScreen onUnlock={handleUnlockApp} errorMsg={biometricError} />
+            </>
+        );
+    }
+
     return (
         <div className="min-h-screen max-w-md mx-auto bg-white text-slate-800 relative font-sans shadow-2xl overflow-hidden">
+            {remoteUpdateAvailable && !syncConflict && (
+                <div role="status" className="fixed top-3 left-1/2 -translate-x-1/2 z-[70] w-[calc(100%-2rem)] max-w-sm bg-slate-800 text-white rounded-2xl shadow-2xl px-4 py-3 flex items-center gap-3">
+                    <RefreshCw size={16} className="text-teal-300 shrink-0" aria-hidden="true" />
+                    <span className="text-sm flex-1">另一台裝置已更新雲端資料</span>
+                    <button onClick={handleManualSync} className="text-sm font-bold text-teal-300 hover:text-teal-200">重新載入</button>
+                </div>
+            )}
+            {syncConflict && (
+                <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-[85] flex items-center justify-center p-6" role="dialog" aria-modal="true" aria-labelledby="sync-conflict-title">
+                    <div className="bg-white w-full max-w-sm rounded-3xl p-6 shadow-2xl text-center">
+                        <div className="w-12 h-12 rounded-full bg-amber-50 text-amber-500 flex items-center justify-center mx-auto mb-4">
+                            <AlertTriangle size={22} aria-hidden="true" />
+                        </div>
+                        <h3 id="sync-conflict-title" className="text-xl font-serif-tc font-bold text-slate-800 mb-2">雲端有較新的資料</h3>
+                        <p className="text-sm text-slate-500 leading-relaxed mb-5">
+                            另一台裝置或分頁已經更新過雲端資料，這次的變更還沒有儲存。為了避免互相覆蓋，請選擇要保留哪一份。
+                        </p>
+                        <div className="space-y-2">
+                            <button onClick={handleResolveConflictReload} className="w-full py-2.5 rounded-xl bg-teal-600 text-white font-bold text-sm hover:bg-teal-700 transition-colors">
+                                載入雲端版本（捨棄這次變更）
+                            </button>
+                            <button onClick={handleResolveConflictOverwrite} className="w-full py-2.5 rounded-xl bg-slate-100 text-slate-700 font-bold text-sm hover:bg-slate-200 transition-colors">
+                                用這台裝置的資料覆蓋雲端
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {pendingRepairFile && (
+                // 需疊在「雲端資料讀取失敗」遮罩 (z-80) 之上。
+                <div className="relative z-[90]">
+                    <ConfirmModal
+                        title="用備份修復雲端資料？"
+                        message={"這會用你選擇的 JSON 備份覆蓋目前的雲端資料。\n請確認這份備份是最近且可用的版本。"}
+                        confirmLabel="覆蓋"
+                        onConfirm={handleConfirmRepair}
+                        onCancel={handleCancelRepair}
+                    />
+                </div>
+            )}
             <GlobalStyles />
-            {isAppLocked && <BiometricLockScreen onUnlock={handleUnlockApp} errorMsg={biometricError} />}
             {alertInfo.show && <AlertModal title={alertInfo.title} message={alertInfo.message} onClose={() => setAlertInfo({ ...alertInfo, show: false })} />}
             {cloudLoadError && (
                 <div className="fixed inset-0 bg-slate-950/75 backdrop-blur-sm z-[80] flex items-center justify-center p-6">
@@ -6860,7 +7013,7 @@ const AuthenticatedApp = () => {
             {isLocalDiagnosticEnabled && diagnostics.show && (
                 <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[90] flex items-center justify-center p-6">
                     <div className="bg-white w-full max-w-sm rounded-2xl p-6 shadow-2xl relative max-h-[85vh] overflow-y-auto">
-                        <button onClick={() => setDiagnostics(prev => ({ ...prev, show: false }))} className="absolute top-4 right-4 text-slate-300 hover:text-slate-600"><X size={18} /></button>
+                        <button onClick={() => setDiagnostics(prev => ({ ...prev, show: false }))} className="absolute top-4 right-4 text-slate-300 hover:text-slate-600" aria-label="關閉"><X size={18} /></button>
                         <h3 className="text-xl font-serif-tc font-bold text-slate-800 mb-2 flex items-center gap-2"><Activity size={18} /> 本機資料診斷</h3>
                         <p className="text-xs text-slate-400 mb-4">只在 local/dev 環境顯示。此面板只讀取 Firestore chunks，不會寫入資料。</p>
                         {diagnostics.loading && <div className="p-4 rounded-xl bg-slate-50 text-slate-400 text-sm text-center">讀取 Firebase chunks 中...</div>}
@@ -6963,7 +7116,7 @@ const AuthenticatedApp = () => {
                             <h1 className="text-2xl font-serif-tc font-bold text-slate-800 flex items-center gap-2">
                                 <img src="/favicon.png" alt="極簡貓資產 Logo" className="w-[30px] h-[30px] object-contain" />
                                 極簡貓資產
-                                {isSaving && <span className="text-[10px] bg-amber-50 text-amber-500 px-2 py-1 rounded-full animate-pulse border border-amber-200">儲存中...</span>}
+                                <SyncStatusBadge isSaving={isSaving} syncState={syncState} onRetry={handleRetrySave} onResolveConflict={() => setSyncConflict((prev) => prev || { pendingData: data })} />
                             </h1>
                         </div>
                         <div className="flex gap-2 items-center relative">
@@ -7268,7 +7421,7 @@ const AuthenticatedApp = () => {
                     <div className="fixed inset-0 bg-slate-900/30 backdrop-blur-sm z-50 flex items-center justify-center p-6 transition-all duration-300">
                         <div className="bg-white w-full max-w-md rounded-2xl p-8 shadow-2xl relative animate-[fadeIn_0.2s_ease-out]">
                             {!isImporting && (
-                                <button onClick={() => setShowImportModal(false)} className="absolute top-6 right-6 text-slate-300 hover:text-slate-600 transition-colors">
+                                <button onClick={() => setShowImportModal(false)} className="absolute top-6 right-6 text-slate-300 hover:text-slate-600 transition-colors" aria-label="關閉">
                                     <X size={20} />
                                 </button>
                             )}
@@ -7335,7 +7488,7 @@ const AuthenticatedApp = () => {
                 {showAddModal && (
                     <div className="fixed inset-0 bg-slate-900/30 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center sm:p-6">
                         <div className="bg-white w-full sm:max-w-xs rounded-t-2xl sm:rounded-2xl p-8 shadow-2xl relative animate-[slideUp_0.3s_ease-out]">
-                            <div className="flex justify-between items-center mb-6"><h3 className="text-lg font-serif-tc font-bold text-slate-800">新增紀錄</h3><button onClick={() => setShowAddModal(false)} className="text-slate-300 hover:text-slate-600"><X size={20} /></button></div>
+                            <div className="flex justify-between items-center mb-6"><h3 className="text-lg font-serif-tc font-bold text-slate-800">新增紀錄</h3><button onClick={() => setShowAddModal(false)} className="text-slate-300 hover:text-slate-600" aria-label="關閉"><X size={20} /></button></div>
                             <div className="grid grid-cols-2 gap-4">
                                 <button onClick={() => { setShowAddModal(false); setShowAddAssetModal(true); }} className="col-span-2 flex flex-col items-center justify-center p-4 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-teal-200 hover:text-teal-700 transition-all group">
                                     <div className="w-10 h-10 rounded-full bg-teal-50 flex items-center justify-center mb-3 group-hover:bg-teal-100 transition-colors"><Wallet size={20} strokeWidth={1.5} className="text-teal-600" /></div><span className="text-sm font-serif-tc font-bold">新增資產</span>

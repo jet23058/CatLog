@@ -15,12 +15,27 @@ vi.mock('firebase/auth', () => ({
     GoogleAuthProvider: vi.fn(),
 }));
 
+// In-memory stand-in for users/{uid}/meta/storage so revision checks behave like Firestore.
+const firestoreMeta = vi.hoisted(() => ({ current: null }));
+const metaSnapshot = () => ({
+    exists: () => Boolean(firestoreMeta.current),
+    data: () => firestoreMeta.current
+});
+
 vi.mock('firebase/firestore', () => ({
     getFirestore: vi.fn(),
     collection: vi.fn(),
     doc: vi.fn(),
     setDoc: vi.fn(),
+    getDoc: vi.fn(async () => metaSnapshot()),
     getDocs: vi.fn(),
+    onSnapshot: vi.fn(() => vi.fn()),
+    runTransaction: vi.fn(async (_db, updateFn) => updateFn({
+        get: async () => metaSnapshot(),
+        // Keep revision tracking but drop the generation pointer, so loads keep reading the
+        // legacy-shaped chunk snapshots these tests mock with getDocs.
+        set: (_ref, value) => { firestoreMeta.current = { ...value, generation: undefined }; }
+    })),
     writeBatch: vi.fn(() => ({
         delete: vi.fn(),
         commit: vi.fn()
@@ -29,6 +44,10 @@ vi.mock('firebase/firestore', () => ({
     orderBy: vi.fn(),
     where: vi.fn(),
 }));
+
+beforeEach(() => {
+    firestoreMeta.current = null;
+});
 
 vi.mock('./firebase', () => ({
     auth: {},
@@ -201,7 +220,6 @@ describe('App Integration Tests', () => {
         };
         const file = new File([JSON.stringify(backupData)], 'backup.json', { type: 'application/json' });
         file.mockContent = JSON.stringify(backupData);
-        const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
 
         getDocs.mockResolvedValue({
             empty: false,
@@ -215,11 +233,14 @@ describe('App Integration Tests', () => {
         await waitFor(() => expect(screen.getByText('雲端資料讀取失敗')).toBeInTheDocument());
         fireEvent.change(screen.getByLabelText('選擇修復備份 JSON'), { target: { files: [file] } });
 
+        // In-app confirm dialog replaces window.confirm; nothing is written before confirming.
+        await waitFor(() => expect(screen.getByText('用備份修復雲端資料？')).toBeInTheDocument());
+        expect(setDoc).not.toHaveBeenCalled();
+        fireEvent.click(screen.getByRole('button', { name: '覆蓋' }));
+
         await waitFor(() => expect(screen.getByText('修復完成')).toBeInTheDocument());
         expect(setDoc).toHaveBeenCalled();
         expect(screen.queryByText('雲端資料讀取失敗')).not.toBeInTheDocument();
-
-        confirmSpy.mockRestore();
     });
 
     test('opens and closes Add Modal', async () => {
@@ -1686,7 +1707,7 @@ describe('App Integration Tests', () => {
         fireEvent.change(screen.getByPlaceholderText(/台積電/), { target: { value: '2330' } });
         await user.click(screen.getByText('抓價'));
         await waitFor(() => expect(document.querySelectorAll('input[type="number"]')[0]).toHaveValue(1300));
-        expect(global.fetch).toHaveBeenCalledWith('/api/stock-quote?market=TW&symbol=2330');
+        expect(global.fetch).toHaveBeenCalledWith('/api/stock-quote?market=TW&symbol=2330', expect.objectContaining({ headers: expect.any(Object) }));
 
         await user.click(document.querySelector('.fixed.inset-0 button.absolute'));
         await waitFor(() => expect(screen.queryByText('抓價')).not.toBeInTheDocument());

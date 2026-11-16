@@ -3,7 +3,29 @@
 本專案的所有重大變更都將記錄於此文件中。
 
 
-## [Unreleased]
+## [3.0.0] - 2026-11-16
+
+v3.0.0 包含下方原本列在 Unreleased 的功能，再加上這次的安全性與資料保護強化。雲端儲存格式升級為 v3（舊格式可讀，第一次儲存時自動遷移），因此升為主版號。
+
+### 安全性與資料保護 (Security)
+- **原子存檔**：雲端資料改為「先寫完整份新資料塊，再用 transaction 切換指標」。存到一半斷線時，雲端仍保留上一份完整資料，不會出現新舊資料塊混雜。
+- **完整性檢查**：每次存檔記錄 checksum、長度與資料塊數量，讀取時驗證，不符時停止寫入並顯示修復畫面。
+- **多裝置衝突偵測**：每次存檔帶版本號，雲端版本較新時不再直接覆蓋，而是跳出選擇「載入雲端版本」或「用這台裝置覆蓋」。其他裝置或分頁存檔後，畫面上方會提示重新載入。
+- **Firestore Security Rules 納入版控**：新增 `firestore.rules`，限制只有本人能讀寫 `users/{uid}`、限制資料塊欄位與大小，且版本號只能遞增。
+- **抓價 API 需要登入**：`/api/stock-quote` 驗證 Firebase ID token，加上參數白名單、每位使用者每分鐘 60 次限流，以及 60 秒報價快取與 5 分鐘上市／上櫃清單快取。
+- **生物辨識鎖強化**：開啟 App 時第一個畫面就上鎖（不會先閃出資料）；切到背景超過 30 秒或閒置 5 分鐘自動重新上鎖；鎖定時不渲染任何資產資料。
+- **安全標頭**：新增 `vercel.json`，設定 HSTS、X-Frame-Options、nosniff、Referrer-Policy、Permissions-Policy，CSP 先以 Report-Only 上線。
+- **CI 與相依套件**：CI 改用 Node 20／22，新增 build 與 `npm audit` 步驟；新增 Dependabot。修補 protobufjs、websocket-driver、lodash 等正式環境相依套件的已知弱點；Firebase 內建的 `@grpc/grpc-js` 以 npm overrides 升到 1.14.x。
+
+### 修復 (Fixed)
+- 修正登入元件在 early return 之後才呼叫 hooks 的問題（登出時可能觸發 React hooks 數量錯誤）。
+- `.env.example` 的 `VITE_FIREBASE_MEASUREMENT_ID` 名稱錯誤且與 Dropbox 變數黏在同一行。
+
+### UI/UX
+- 移除 `user-scalable=no`，手機可以放大檢視。
+- 標題列新增同步狀態：儲存中、已同步（時間）、儲存失敗・重試、版本衝突・處理。
+- 「用備份修復」改用 App 內確認視窗，不再使用瀏覽器原生 `confirm`。
+- 只有圖示的按鈕補上 `aria-label`，讓讀螢幕軟體可以辨識。
 
 ### 新增 (Added)
 - **完整備份 v2**：

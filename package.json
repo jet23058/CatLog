@@ -1,7 +1,7 @@
 {
   "name": "meow-assets",
   "private": true,
-  "version": "2.10.0",
+  "version": "3.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite --port=3002",
@@ -19,6 +19,9 @@
     "react-dom": "^18.2.0",
     "recharts": "^2.12.0",
     "tailwind-merge": "^2.2.1"
+  },
+  "overrides": {
+    "@grpc/grpc-js": "^1.14.7"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.9.1",

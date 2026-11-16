@@ -1,0 +1,41 @@
+rules_version = '2';
+
+// 極簡貓資產：每位使用者只能讀寫自己的 users/{uid} 底下資料。
+// 部署：firebase deploy --only firestore:rules
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{userId} {
+      allow read, write: if isOwner(userId);
+
+      // 資料塊：{ index, content, generation }
+      match /chunks/{chunkId} {
+        allow read, delete: if isOwner(userId);
+        allow create, update: if isOwner(userId)
+          && request.resource.data.keys().hasOnly(['index', 'content', 'generation'])
+          && request.resource.data.index is int
+          && request.resource.data.content is string
+          && request.resource.data.content.size() <= 300000;
+      }
+
+      // 指標文件：revision 只能遞增 1，避免舊版本覆蓋新版本。
+      match /meta/{docId} {
+        allow read: if isOwner(userId);
+        allow delete: if false;
+        allow create: if isOwner(userId)
+          && request.resource.data.revision is int
+          && request.resource.data.revision >= 1;
+        allow update: if isOwner(userId)
+          && request.resource.data.revision == resource.data.revision + 1;
+      }
+    }
+
+    // 其他路徑一律拒絕。
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isOwner(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+  }
+}
