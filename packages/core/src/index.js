@@ -10,3 +10,4 @@ export * from './diff.js';
 export * from './dashboard.js';
 export * from './rangeStats.js';
 export * from './stockAnalysis.js';
+export * from './schema.js';

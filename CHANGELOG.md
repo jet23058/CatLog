@@ -20,6 +20,12 @@
 - [core] 新增 `calculations.test.js`，以手算範例驗證上述計算。
 - [web] `App.jsx` 改為呼叫 core（7,557 → 5,676 行）；移除未使用的 `yearlyGrowthStats`。
 
+### 資料保護 (Security)
+- [core] 新增 `schema.js`：資料加上 `schemaVersion`（目前為 1），`normalizeAppData` 會自動遷移舊資料，比 App 新的資料不會被降版。
+- [web] 存檔時在 `meta/storage` 寫入 `schemaVersion` 與 `minClientVersion`（只升不降）。
+- [web] 雲端資料比 App 新，或 App 低於 `minClientVersion` 時切成唯讀並提示更新，擋下所有寫入；其他裝置要求更新時，開著的畫面也會立即切換。
+- [web] 建置時把 `package.json` 的版本注入為 `__APP_VERSION__`。
+
 ### CI
 - CI 新增 core 測試與 JavaScriptCore 打包步驟。
 - 根目錄 `prepare` 在沒有安裝 husky 的環境（Vercel）會略過，不再讓安裝失敗。

@@ -10,6 +10,7 @@ import {
     where,
     writeBatch
 } from 'firebase/firestore';
+import { buildMetaVersionFields } from '@catlog/core';
 
 // Firestore 單一文件上限 1MB；中文字在 UTF-8 最多 3 bytes，因此每塊保留在 250k 字元。
 export const CHUNK_SIZE = 250000;
@@ -18,7 +19,8 @@ const MAX_BATCH_DELETES = 400;
 /**
  * 雲端儲存格式（v3）
  *
- * users/{uid}/meta/storage           指標文件：revision、generation、chunkCount、checksum、length
+ * users/{uid}/meta/storage           指標文件：revision、generation、chunkCount、checksum、length、
+ *                                     schemaVersion、minClientVersion（相容性，見 docs/DATA_FORMAT.md）
  * users/{uid}/chunks/{generation}_{i} 資料塊：{ index, content, generation }
  *
  * 寫入流程：先寫完新 generation 的所有資料塊，再用 transaction 檢查 revision 並切換指標。
@@ -103,7 +105,7 @@ const docsOf = (snapshot) => (snapshot?.docs || []);
 
 /**
  * 讀取雲端資料。
- * 回傳 { data, revision, chunkIds }；雲端沒有資料時 data 為 null。
+ * 回傳 { data, revision, chunkIds, meta }；雲端沒有資料時 data 為 null。
  * chunkIds 是目前這份資料使用的文件 ID，下次儲存成功後會被清除。
  */
 export const readCloudData = async (db, uid) => {
@@ -126,7 +128,8 @@ export const readCloudData = async (db, uid) => {
         return {
             data: JSON.parse(jsonString),
             revision: meta.revision || 0,
-            chunkIds: docs.map((d) => d.id)
+            chunkIds: docs.map((d) => d.id),
+            meta
         };
     }
 
@@ -134,12 +137,13 @@ export const readCloudData = async (db, uid) => {
     // 舊格式資料塊沒有 generation 欄位；有 generation 但沒有指標的是中斷寫入留下的孤兒資料塊。
     const legacyDocs = docsOf(snapshot).filter((d) => !d.data()?.generation);
     if (legacyDocs.length === 0) {
-        return { data: null, revision: meta?.revision || 0, chunkIds: [] };
+        return { data: null, revision: meta?.revision || 0, chunkIds: [], meta };
     }
     return {
         data: parseLegacyChunks(legacyDocs.map((d) => d.data().content || '')),
         revision: meta?.revision || 0,
-        chunkIds: legacyDocs.map((d) => d.id).filter(Boolean)
+        chunkIds: legacyDocs.map((d) => d.id).filter(Boolean),
+        meta
     };
 };
 
@@ -205,7 +209,8 @@ export const writeCloudData = async (db, uid, data, {
                 checksum,
                 length: jsonString.length,
                 updatedAt: Date.now(),
-                deviceId
+                deviceId,
+                ...buildMetaVersionFields(meta)
             });
             return nextRevision;
         });

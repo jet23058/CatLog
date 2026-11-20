@@ -2,6 +2,7 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, PieChart, Pie, Cell } from 'recharts';
 import { Cat, ChevronLeft, ChevronRight, Plus, Upload, Wallet, TrendingUp, DollarSign, Calendar, X, Save, FileJson, ArrowUpRight, ArrowDownRight, ArrowLeft, ArrowRight, Edit2, Trash2, Info, Check, TrendingDown, RefreshCw, FileText, Mountain, ArrowDown, AlertCircle, AlertTriangle, Building2, Lock, PieChart as PieChartIcon, Download, StickyNote, ShoppingBag, Filter, ChevronDown, PiggyBank, Activity, Sparkles, LogOut, Coins, ClipboardCheck, LayoutGrid, Package, Box, Footprints, Eye, EyeOff, ScanFace, ShieldCheck, ShieldAlert, Search } from 'lucide-react';
 import {
+    CURRENT_SCHEMA_VERSION,
     DEBT_CATEGORIES,
     DEFAULT_EXCHANGE_RATES,
     INITIAL_DATA,
@@ -9,8 +10,10 @@ import {
     addDebtAndCarryForward,
     buildHoldingMap,
     buildStockRows,
+    checkCompatibility,
     createBackupFile,
     createHoldingRow,
+    describeIncompatibility,
     extractBackupData,
     filterTransactionsByRange,
     formatExchangeRate,
@@ -47,6 +50,7 @@ import {
     getRangeExpenseStats,
     getRangeFinanceStats,
     getRangeIncomeStats,
+    getSchemaVersion,
     getStatementExpenses,
     getStockChartRows,
     getStockDebtStats,
@@ -60,12 +64,15 @@ import {
     getYearStats,
     getYearlyTrendData,
     mergeDebtMaps,
+    migrateData,
     normalizeAppData,
     normalizeMonthValue,
     parseAmount,
     processExpenseCSVText,
     processStockCSVText
 } from '@catlog/core';
+
+const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.0.0';
 
 // --- CSS 樣式與 Tailwind 設定模擬 ---
 // 原本 index.css 的內容與 tailwind.config.js 的動畫設定整合於此
@@ -4193,6 +4200,14 @@ const MainApp = ({ user, logout }) => {
     const [data, setData] = useState(INITIAL_DATA);
     const [isDataLoaded, setIsDataLoaded] = useState(false);
     const [cloudLoadError, setCloudLoadError] = useState('');
+    // 雲端資料需要較新版 App 時為相容性檢查結果，此時只能讀、不能寫。
+    const [writeBlock, setWriteBlock] = useState(null);
+    const writeBlockRef = useRef(null);
+    const applyCompatibility = (result) => {
+        const block = result?.canWrite === false ? result : null;
+        writeBlockRef.current = block;
+        setWriteBlock(block);
+    };
     const [isSaving, setIsSaving] = useState(false);
     const isSavingRef = useRef(false);
     const pendingSaveRef = useRef(null);
@@ -4287,7 +4302,12 @@ const MainApp = ({ user, logout }) => {
     const [pendingRepairFile, setPendingRepairFile] = useState(null);
 
     const writeFirestoreChunks = async (userData, { force = false } = {}) => {
-        const result = await writeCloudData(db, user.uid, userData, {
+        if (writeBlockRef.current) throw new Error(describeIncompatibility(writeBlockRef.current));
+        if (getSchemaVersion(userData) > CURRENT_SCHEMA_VERSION) {
+            throw new Error(`資料格式 v${getSchemaVersion(userData)} 比這個版本的 App 新，無法寫入。`);
+        }
+        // 寫入前一律升級到目前的 schemaVersion（新使用者的初始資料也會補上）。
+        const result = await writeCloudData(db, user.uid, migrateData(userData), {
             expectedRevision: cloudRevisionRef.current,
             force,
             previousChunkIds: cloudChunkIdsRef.current,
@@ -4304,6 +4324,14 @@ const MainApp = ({ user, logout }) => {
         if (!user) return false;
         if (cloudLoadError) {
             handleShowAlert("儲存已暫停", "雲端資料目前無法解析。為避免覆蓋既有資料，請先修復雲端資料或匯入備份。");
+            return false;
+        }
+        if (writeBlockRef.current) {
+            handleShowAlert("需要更新 App", describeIncompatibility(writeBlockRef.current));
+            return false;
+        }
+        if (getSchemaVersion(userData) > CURRENT_SCHEMA_VERSION) {
+            handleShowAlert("無法寫入", "這份資料是用較新版的 App 產生的，請更新後再匯入。");
             return false;
         }
         if (syncConflict) {
@@ -4356,6 +4384,7 @@ const MainApp = ({ user, logout }) => {
         const result = await readCloudData(db, user.uid);
         cloudRevisionRef.current = result.revision;
         cloudChunkIdsRef.current = result.chunkIds;
+        applyCompatibility(checkCompatibility({ appVersion: APP_VERSION, data: result.data, meta: result.meta }));
         return result.data;
     };
 
@@ -4391,6 +4420,8 @@ const MainApp = ({ user, logout }) => {
         const unsubscribe = onSnapshot(getMetaRef(db, user.uid), (snapshot) => {
             const meta = snapshot && typeof snapshot.exists === 'function' && snapshot.exists() ? snapshot.data() : null;
             if (!meta) return;
+            const compatibility = checkCompatibility({ appVersion: APP_VERSION, meta });
+            if (!compatibility.canWrite) applyCompatibility(compatibility);
             if ((meta.revision || 0) > cloudRevisionRef.current && meta.deviceId !== deviceIdRef.current) {
                 setRemoteUpdateAvailable(true);
             }
@@ -5050,6 +5081,18 @@ const MainApp = ({ user, logout }) => {
 
     return (
         <div className="min-h-screen max-w-md mx-auto bg-white text-slate-800 relative font-sans shadow-2xl overflow-hidden">
+            {writeBlock && (
+                <div role="alert" className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[75] w-[calc(100%-2rem)] max-w-sm bg-amber-50 border border-amber-200 text-amber-900 rounded-2xl shadow-2xl px-4 py-3">
+                    <div className="flex items-start gap-3">
+                        <AlertTriangle size={16} className="text-amber-500 shrink-0 mt-0.5" aria-hidden="true" />
+                        <div className="flex-1 text-sm">
+                            <p className="font-bold">需要更新 App，目前為唯讀模式</p>
+                            <p className="text-xs text-amber-800 mt-1 leading-relaxed">{describeIncompatibility(writeBlock)}（目前版本 {APP_VERSION}）</p>
+                        </div>
+                    </div>
+                    <button onClick={() => window.location.reload()} className="mt-3 w-full py-2 rounded-xl bg-amber-500 text-white text-sm font-bold hover:bg-amber-600 transition-colors">重新整理以更新</button>
+                </div>
+            )}
             {remoteUpdateAvailable && !syncConflict && (
                 <div role="status" className="fixed top-3 left-1/2 -translate-x-1/2 z-[70] w-[calc(100%-2rem)] max-w-sm bg-slate-800 text-white rounded-2xl shadow-2xl px-4 py-3 flex items-center gap-3">
                     <RefreshCw size={16} className="text-teal-300 shrink-0" aria-hidden="true" />
