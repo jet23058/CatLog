@@ -1,0 +1,20 @@
+{
+  "name": "@catlog/core",
+  "private": true,
+  "version": "3.0.0",
+  "type": "module",
+  "description": "CatLog 共用核心：資料格式、計算、匯入解析（web 與 iOS 共用，不可依賴 DOM / React / Firebase）",
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "scripts": {
+    "test": "vitest",
+    "test:run": "vitest run",
+    "build:jsc": "esbuild src/index.js --bundle --format=iife --global-name=CatLogCore --target=es2020 --outfile=dist/catlog-core.js"
+  },
+  "devDependencies": {
+    "vitest": "^4.0.16",
+    "esbuild": "^0.21.5"
+  }
+}

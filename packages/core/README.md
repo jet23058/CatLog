@@ -1,0 +1,30 @@
+# @catlog/core
+
+web 與 iOS 共用的計算核心：資料格式、負債與質押利息、持倉快照、CSV 與證券交易匯入、花費匯入、備份格式、差異比對、金額格式化。
+
+## 規則
+
+- 只放純函式：輸入資料、回傳結果。
+- 不可依賴 React、Firebase、瀏覽器 API（`window`、`document`、`localStorage`、`fetch`）或 `import.meta.env`。它會在 iOS 的 JavaScriptCore 裡執行，那裡沒有這些東西。
+- `src/core.test.js` 的純度檢查會擋下違規。
+
+## 模組
+
+| 檔案 | 內容 |
+|---|---|
+| `data.js` | 預設資料、`normalizeAppData`、匯率預設值、備份檔格式 |
+| `debts.js` | 負債快照、延續、股票質押利率與利息估算、利率調整事件 |
+| `snapshots.js` | 依日期取最近一次資產快照 |
+| `csv.js` | CSV / tab 解析、金額與日期正規化 |
+| `stocks.js` | 台股 / 美股交易匯入、持倉快照匯入 |
+| `expenses.js` | MOZE 花費 CSV 匯入、花費差異 |
+| `diff.js` | JSON 備份匯入差異比對 |
+| `format.js` | 金額、百分比、萬元格式 |
+| `index.js` | 公開入口 |
+
+## 指令
+
+```bash
+npm run test:run -w @catlog/core    # 測試
+npm run build:jsc -w @catlog/core   # 打包成 dist/catlog-core.js（iOS 用，全域名稱 CatLogCore）
+```
