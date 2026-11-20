@@ -23,7 +23,7 @@
 ### 資料保護 (Security)
 - [core] 新增 `schema.js`：資料加上 `schemaVersion`（目前為 1），`normalizeAppData` 會自動遷移舊資料，比 App 新的資料不會被降版。
 - [web] 存檔時在 `meta/storage` 寫入 `schemaVersion` 與 `minClientVersion`（只升不降）。
-- [web] 雲端資料比 App 新，或 App 低於 `minClientVersion` 時切成唯讀並提示更新，擋下所有寫入；其他裝置要求更新時，開著的畫面也會立即切換。
+- [web] 雲端資料比 App 新，或 App 低於 `minClientVersion` 時切成唯讀並提示更新，擋下所有寫入（在改動畫面資料之前就擋下，不會出現「新增成功」但沒有存檔）；其他裝置要求更新時，開著的畫面也會立即切換。
 - [web] 建置時把 `package.json` 的版本注入為 `__APP_VERSION__`。
 
 ### CI

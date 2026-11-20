@@ -242,6 +242,25 @@ describe('App Integration Tests', () => {
         await addOneAsset(user);
 
         await waitFor(() => expect(screen.getByText('需要更新 App', { selector: 'h3' })).toBeInTheDocument());
+        expect(screen.queryByText('新增成功')).not.toBeInTheDocument();
+        expect(setDoc).not.toHaveBeenCalled();
+    });
+
+    test('read-only mode does not apply or report unsaved income', async () => {
+        getDocs.mockResolvedValue(createMockSnapshot({ schemaVersion: 99, records: {} }));
+        const user = userEvent.setup();
+        render(<App />);
+        await waitFor(() => expect(screen.getByText('需要更新 App，目前為唯讀模式')).toBeInTheDocument());
+
+        await user.click(document.querySelector('button.fixed.bottom-8.right-6'));
+        await user.click(await screen.findByText('新增收入'));
+        fireEvent.change(document.querySelector('input[type="date"]'), { target: { value: '2026-03-15' } });
+        await user.type(screen.getByPlaceholderText('例如：Google, 永豐銀行...'), 'Test Company');
+        await user.type(screen.getAllByPlaceholderText('0.00')[0], '5000');
+        await user.click(screen.getByText('確認新增'));
+
+        await waitFor(() => expect(screen.getByText('需要更新 App', { selector: 'h3' })).toBeInTheDocument());
+        expect(screen.queryByText('新增成功')).not.toBeInTheDocument();
         expect(setDoc).not.toHaveBeenCalled();
     });
 

@@ -4375,6 +4375,19 @@ const MainApp = ({ user, logout }) => {
         }
     };
 
+    // 唯讀或雲端資料異常時，在改動畫面上的資料之前就擋下，避免顯示「新增成功」但其實沒有存檔。
+    const ensureWritable = () => {
+        if (writeBlockRef.current) {
+            handleShowAlert("需要更新 App", describeIncompatibility(writeBlockRef.current));
+            return false;
+        }
+        if (cloudLoadError) {
+            handleShowAlert("儲存已暫停", "雲端資料目前無法解析。為避免覆蓋既有資料，請先修復雲端資料或匯入備份。");
+            return false;
+        }
+        return true;
+    };
+
     const handleRetrySave = () => {
         if (lastFailedSaveRef.current) saveToFirestoreChunks(lastFailedSaveRef.current);
     };
@@ -4644,12 +4657,13 @@ const MainApp = ({ user, logout }) => {
 
 
     const handleConfirmImport = async () => {
+        if (!ensureWritable()) return;
         const { type, pendingData } = importConfirmation;
         setIsImporting(true);
         try {
             if (type === 'json') {
                 const normalizedData = normalizeAppData(pendingData);
-                if (user) await saveToFirestoreChunks(normalizedData);
+                if (user && !(await saveToFirestoreChunks(normalizedData))) return;
                 setData(normalizedData);
                 setCurrentYear(new Date().getFullYear());
                 handleShowAlert("匯入成功", "資料已同步至雲端");
@@ -4674,6 +4688,7 @@ const MainApp = ({ user, logout }) => {
     };
 
     const handleDataUpdate = (newData) => {
+        if (!ensureWritable()) return;
         setData(newData);
         saveToFirestoreChunks(newData);
     };
@@ -4877,6 +4892,7 @@ const MainApp = ({ user, logout }) => {
     };
 
     const handleDetailUpdate = (type, payload) => {
+        if (!ensureWritable()) return;
         if (type === 'NAVIGATE_MONTH') setSelectedDate(payload);
         else if (type === 'UPDATE_DETAILS') {
             const { month, assetDate, debtDate, memoDate, assets, memo, incomes, debts } = payload;
@@ -4962,6 +4978,7 @@ const MainApp = ({ user, logout }) => {
     };
 
     const handleSaveNewAsset = async (newAssets, dateKey) => {
+        if (!ensureWritable()) return;
         const assetsToAdd = (Array.isArray(newAssets) ? newAssets : [newAssets]).map(({ date, ...asset }) => asset);
         const existingDetails = data.records[dateKey] || [];
         const newData = {
@@ -4977,6 +4994,7 @@ const MainApp = ({ user, logout }) => {
     };
 
     const handleSaveNewIncome = (newIncomeSource, dateKey) => {
+        if (!ensureWritable()) return;
         const monthKey = dateKey.substring(0, 7);
         const existingMonthData = data.incomes[monthKey] || { totalAmount: 0, sources: [] };
         const existingSources = existingMonthData.sources || [];
@@ -4993,6 +5011,7 @@ const MainApp = ({ user, logout }) => {
     };
 
     const handleSaveNewDebt = async (newDebt, dateKey) => {
+        if (!ensureWritable()) return;
         try {
             const cloudData = await loadFromFirestoreChunks();
             const cloudBase = cloudData ? normalizeAppData(cloudData) : null;
@@ -5015,6 +5034,7 @@ const MainApp = ({ user, logout }) => {
     };
 
     const handleImportStockTransactions = (transactions) => {
+        if (!ensureWritable()) return;
         const newData = {
             ...data,
             stockTransactions: [...(data.stockTransactions || []), ...transactions]
@@ -5025,6 +5045,7 @@ const MainApp = ({ user, logout }) => {
     };
 
     const handleClearStockTransactions = (market) => {
+        if (!ensureWritable()) return;
         const targetMarket = market || 'TW';
         const newData = {
             ...data,
@@ -5036,6 +5057,7 @@ const MainApp = ({ user, logout }) => {
     };
 
     const handleImportHoldingSnapshot = (snapshotPreview) => {
+        if (!ensureWritable()) return;
         const month = snapshotPreview.month;
         const existingVersions = data.stockHoldingSnapshots?.[month] || [];
         const nextVersion = existingVersions.reduce((max, item) => Math.max(max, Number(item.version) || 0), 0) + 1;
@@ -5059,6 +5081,7 @@ const MainApp = ({ user, logout }) => {
     };
 
     const handleDeleteHoldingSnapshot = (month, snapshotId) => {
+        if (!ensureWritable()) return;
         const remaining = (data.stockHoldingSnapshots?.[month] || []).filter((snapshot) => snapshot.id !== snapshotId);
         const nextSnapshots = { ...(data.stockHoldingSnapshots || {}) };
         if (remaining.length > 0) nextSnapshots[month] = remaining;
