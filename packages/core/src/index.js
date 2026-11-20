@@ -7,3 +7,6 @@ export * from './csv.js';
 export * from './stocks.js';
 export * from './expenses.js';
 export * from './diff.js';
+export * from './dashboard.js';
+export * from './rangeStats.js';
+export * from './stockAnalysis.js';

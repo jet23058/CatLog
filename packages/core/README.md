@@ -7,6 +7,7 @@ web 與 iOS 共用的計算核心：資料格式、負債與質押利息、持�
 - 只放純函式：輸入資料、回傳結果。
 - 不可依賴 React、Firebase、瀏覽器 API（`window`、`document`、`localStorage`、`fetch`）或 `import.meta.env`。它會在 iOS 的 JavaScriptCore 裡執行，那裡沒有這些東西。
 - `src/core.test.js` 的純度檢查會擋下違規。
+- 需要「今天 / 今年」的函式，一律由呼叫端傳入日期，core 不自己讀時間。
 
 ## 模組
 
@@ -20,6 +21,9 @@ web 與 iOS 共用的計算核心：資料格式、負債與質押利息、持�
 | `expenses.js` | MOZE 花費 CSV 匯入、花費差異 |
 | `diff.js` | JSON 備份匯入差異比對 |
 | `format.js` | 金額、百分比、萬元格式 |
+| `dashboard.js` | 年度統計、每月資產趨勢、年度高低點、FIRE |
+| `rangeStats.js` | 區間統計（收入、資產、負債、花費、財務推估）、對帳單核對 |
+| `stockAnalysis.js` | 持倉快照、個股損益、市場統計、質押分攤、最新估值、損益標籤 |
 | `index.js` | 公開入口 |
 
 ## 指令
