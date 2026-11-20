@@ -137,6 +137,20 @@ describe('cloudStorage', () => {
     });
 
     test('returns empty state when nothing is stored', async () => {
-        expect(await readCloudData(db, uid)).toEqual({ data: null, revision: 0, chunkIds: [] });
+        expect(await readCloudData(db, uid)).toEqual({ data: null, revision: 0, chunkIds: [], meta: null });
+    });
+
+    test('writes schemaVersion and minClientVersion to meta and returns meta on read', async () => {
+        await writeCloudData(db, uid, { v: 1 }, { expectedRevision: 0 });
+        const { meta } = await readCloudData(db, uid);
+        expect(meta).toMatchObject({ revision: 1, schemaVersion: 1, minClientVersion: '3.0.0' });
+    });
+
+    test('keeps a manually raised minClientVersion on later saves', async () => {
+        await writeCloudData(db, uid, { v: 1 }, { expectedRevision: 0 });
+        const metaKey = `users/${uid}/meta/storage`;
+        store.docs.set(metaKey, { ...store.docs.get(metaKey), minClientVersion: '4.2.0' });
+        await writeCloudData(db, uid, { v: 2 }, { expectedRevision: 1 });
+        expect(store.docs.get(metaKey)).toMatchObject({ revision: 2, minClientVersion: '4.2.0' });
     });
 });
