@@ -1,0 +1,24 @@
+name: catlog
+
+services:
+  web:
+    build:
+      context: ../..
+      dockerfile: apps/web/Dockerfile
+    ports:
+      # Localhost only: keep the dev server off the LAN.
+      - "127.0.0.1:3002:3002"
+    volumes:
+      # Live-edit the whole monorepo from the host (web + packages/core); Vite reads apps/web/.env.
+      - ../..:/repo
+      # Keep the container's Linux node_modules separate from the host.
+      - node_modules:/repo/node_modules
+      - web_node_modules:/repo/apps/web/node_modules
+      - core_node_modules:/repo/packages/core/node_modules
+    environment:
+      HUSKY: "0"
+
+volumes:
+  node_modules:
+  web_node_modules:
+  core_node_modules:

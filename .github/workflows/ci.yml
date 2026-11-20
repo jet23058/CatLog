@@ -29,8 +29,11 @@ jobs:
     - name: Run tests
       run: npm run test:run
 
-    - name: Build
+    - name: Build web
       run: npm run build
+
+    - name: Build core bundle for iOS (JavaScriptCore)
+      run: npm run build:jsc -w @catlog/core
 
     - name: Audit production dependencies
       run: npm audit --omit=dev --audit-level=high

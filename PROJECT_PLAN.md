@@ -70,7 +70,7 @@
 ### 後端與服務 (Backend & Services)
 *   **Authentication**: Firebase Auth (Google Sign-In)
 *   **Database**: Firestore (NoSQL，支援離線快取)
-*   **Hosting**: Firebase Hosting
+*   **Hosting**: Vercel
 *   **Security**: Web Authentication API (WebAuthn)
 
 ### 測試 (Testing)
@@ -94,3 +94,17 @@
 *   [ ] **預算規劃**：簡單的月度預算提醒功能。
 *   [ ] **AI 財務助理**：整合 LLM 分析消費習慣並提供建議。
 *   [ ] **深色模式 (Dark Mode)**：提供夜間瀏覽選項。
+
+---
+
+## 7. iOS 原生版路線圖
+
+目標：iOS 用 SwiftUI 原生介面，與 web 功能一致、資料共用。架構見 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
+
+1. [x] 改成 monorepo（`apps/web`、`packages/core`、`firebase/`）
+2. [x] 抽出第一批純函式到 `packages/core`，確認可在 JavaScriptCore 執行
+3. [ ] 把 `App.jsx` 元件內的計算抽到 core：年度統計、FIRE、區間統計、個股損益彙總、對帳單核對
+4. [ ] 資料格式加入 `schemaVersion`、`minClientVersion`（[docs/DATA_FORMAT.md](docs/DATA_FORMAT.md)）
+5. [ ] `apps/ios` 骨架：Google 登入、Firestore 切塊讀寫、JSContext 呼叫 core、共用 fixtures 測試
+6. [ ] 依 README 功能對照表逐項移植到 iOS
+7. [ ] TestFlight 發布流程（tag `ios-v*` 觸發）

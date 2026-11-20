@@ -3,6 +3,27 @@
 本專案的所有重大變更都將記錄於此文件中。
 
 
+## [Unreleased]
+
+為 iOS 原生版做準備：改成 monorepo，並把計算邏輯抽成 web 與 iOS 共用的核心。web 的功能與行為不變。
+
+### 重構 (Refactor)
+- [core] 新增 `packages/core`（`@catlog/core`）：從 `App.jsx` 抽出 95 個純函式與常數（資料格式、負債與質押利息、持倉快照、CSV 與證券交易匯入、花費匯入、備份格式、差異比對、金額格式化），web 改為從 core import。
+- [core] 新增純度檢查測試，禁止 core 依賴 React、Firebase 與瀏覽器 API；新增 `build:jsc`，打包成可在 JavaScriptCore 執行的單一檔案。
+- [web] 網頁版搬到 `apps/web`；Firestore 規則搬到 `firebase/`；改用 npm workspaces。
+- [web] Docker 設定改為以 repo 根目錄為 build context，`packages/core` 一起掛載進容器。
+- [web] 測試補上記憶體版 `localStorage`，修正在 Node 25+ 執行測試時 `localStorage` 為 undefined 的問題。
+
+### CI
+- CI 新增 core 測試與 JavaScriptCore 打包步驟。
+
+### 文件 (Docs)
+- README 改為總覽，新增功能對照表、repo 結構與版本號規則；功能細節搬到 `docs/FEATURES.md`。
+- 新增 `docs/ARCHITECTURE.md`、`docs/DATA_FORMAT.md`、`CONTRIBUTING.md`、各子專案 README 與 PR template。
+
+### 部署注意
+- Vercel 專案的 Root Directory 需改為 `apps/web`。
+
 ## [3.0.0] - 2026-11-16
 
 v3.0.0 包含下方原本列在 Unreleased 的功能，再加上這次的安全性與資料保護強化。雲端儲存格式升級為 v3（舊格式可讀，第一次儲存時自動遷移），因此升為主版號。
