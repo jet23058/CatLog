@@ -16,6 +16,7 @@
 
 ### CI
 - CI 新增 core 測試與 JavaScriptCore 打包步驟。
+- 根目錄 `prepare` 在沒有安裝 husky 的環境（Vercel）會略過，不再讓安裝失敗。
 
 ### 文件 (Docs)
 - README 改為總覽，新增功能對照表、repo 結構與版本號規則；功能細節搬到 `docs/FEATURES.md`。
