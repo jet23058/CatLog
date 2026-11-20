@@ -18,8 +18,7 @@ let package = Package(
         ),
         .testTarget(
             name: "CatLogKitTests",
-            dependencies: ["CatLogKit"],
-            resources: [.copy("Fixtures")]
+            dependencies: ["CatLogKit"]
         ),
     ],
     swiftLanguageModes: [.v5]

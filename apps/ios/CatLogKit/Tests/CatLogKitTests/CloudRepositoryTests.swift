@@ -105,7 +105,11 @@ final class CloudRepositoryTests: XCTestCase {
 
     /// web 實際寫出的資料（packages/core/fixtures/cloud-storage-v3.json），iOS 必須讀得出一模一樣的內容。
     func testReadsDataWrittenByWeb() async throws {
-        let url = try XCTUnwrap(Bundle.module.url(forResource: "cloud-storage-v3", withExtension: "json", subdirectory: "Fixtures"))
+        // 直接讀 repo 內的 packages/core/fixtures（與 web 測試同一個檔案）。
+        let url = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .appendingPathComponent("../../../../../packages/core/fixtures/cloud-storage-v3.json")
+            .standardizedFileURL
         let fixture = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
         let docs = try XCTUnwrap(fixture["docs"] as? [String: [String: Any]])
 

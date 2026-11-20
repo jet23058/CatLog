@@ -57,7 +57,7 @@ xcodebuild build -project apps/ios/CatLog.xcodeproj -scheme CatLog \
   -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO
 ```
 
-`CatLogKitTests/Fixtures` 連到 `packages/core/fixtures`：`cloud-storage-v3.json` 由 web 的 `writeCloudData` 實際寫出，iOS 測試必須讀出相同內容，確保兩邊讀寫格式一致。
+`CloudRepositoryTests` 直接讀取 `packages/core/fixtures/cloud-storage-v3.json`：這個檔案 由 web 的 `writeCloudData` 實際寫出，iOS 測試必須讀出相同內容，確保兩邊讀寫格式一致。
 
 ## 版本號
 
