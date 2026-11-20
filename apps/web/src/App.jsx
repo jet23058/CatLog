@@ -7,39 +7,61 @@ import {
     INITIAL_DATA,
     STOCK_MARKETS,
     addDebtAndCarryForward,
+    buildHoldingMap,
+    buildStockRows,
     createBackupFile,
     createHoldingRow,
     extractBackupData,
+    filterTransactionsByRange,
     formatExchangeRate,
     formatMoney,
     formatMoneyByMarket,
     formatPercent,
     formatPriceUpToTwo,
     formatRate,
+    formatStockPnlLabel,
     formatWan,
+    getAssetExtremes,
+    getAvailableYears,
     getDebtCategoryLabel,
     getDebtEstimatedAnnualInterest,
     getDebtEstimatedMonthlyInterest,
     getDebtEventImpact,
     getDebtEventLabel,
-    getDebtMarketAllocation,
     getDebtTargetKey,
     getDebtTotal,
     getEffectiveDebtSnapshotAtDate,
+    getExpenseAccounts,
     getExpenseImportSummary,
+    getFireStats,
+    getFireYearlyStats,
+    getHoldingSnapshots,
     getJsonImportSummary,
     getLatestSnapshotDate,
-    getLatestSnapshotTotal,
+    getLatestSnapshotEstimate,
     getMonthEndDateKey,
     getMonthlyDebtInterestEstimate,
+    getMonthlyStats,
+    getRangeAssetStats,
+    getRangeDebtStats,
+    getRangeExpenseStats,
+    getRangeFinanceStats,
+    getRangeIncomeStats,
+    getStatementExpenses,
+    getStockChartRows,
+    getStockDebtStats,
+    getStockMarketCounts,
     getStockMarketLabel,
+    getStockStats,
+    getStockStatsTargetDate,
     getStockTradeDescription,
     getStockTradeLabel,
     getStockTradeTitle,
+    getYearStats,
+    getYearlyTrendData,
     mergeDebtMaps,
     normalizeAppData,
     normalizeMonthValue,
-    normalizeSnapshotVersions,
     parseAmount,
     processExpenseCSVText,
     processStockCSVText
@@ -2782,15 +2804,7 @@ const StatementModal = ({ data, onClose }) => {
     const [checkedItems, setCheckedItems] = useState(new Set());
 
     // Extract Unique Accounts
-    const accounts = useMemo(() => {
-        const accs = new Set();
-        Object.values(data.expenses || {}).forEach(list => {
-            list.forEach(item => {
-                if (item.account) accs.add(item.account);
-            });
-        });
-        return Array.from(accs).sort();
-    }, [data.expenses]);
+    const accounts = useMemo(() => getExpenseAccounts(data.expenses), [data.expenses]);
 
     // Set default account
     useEffect(() => {
@@ -2800,26 +2814,9 @@ const StatementModal = ({ data, onClose }) => {
     }, [accounts]);
 
     // Filter Expenses
-    const filteredExpenses = useMemo(() => {
-        if (!selectedAccount) return [];
-        const start = new Date(startDate);
-        const end = new Date(endDate);
-        // End date should be inclusive, set to end of day
-        end.setHours(23, 59, 59, 999);
-
-        const result = [];
-        Object.entries(data.expenses || {}).forEach(([month, list]) => {
-            // Optimization: Skip months clearly out of range (Optional, strictly checking dates is safer)
-            list.forEach(item => {
-                // Item date is YYYY/MM/DD or YYYY-MM-DD
-                const d = new Date(item.date.replace(/\//g, '-'));
-                if (item.account === selectedAccount && d >= start && d <= end) {
-                    result.push(item);
-                }
-            });
-        });
-        return result.sort((a, b) => new Date(b.date.replace(/\//g, '-')) - new Date(a.date.replace(/\//g, '-')));
-    }, [data.expenses, startDate, endDate, selectedAccount]);
+    const filteredExpenses = useMemo(() => (
+        getStatementExpenses(data.expenses, selectedAccount, startDate, endDate)
+    ), [data.expenses, startDate, endDate, selectedAccount]);
 
     const toggleCheck = (id) => {
         const newSet = new Set(checkedItems);
@@ -2911,169 +2908,21 @@ const RangeStatsModal = ({ data, onClose }) => {
     });
 
     // Calculate Income within range (based on month)
-    const incomeStats = useMemo(() => {
-        const startMonth = startDate.substring(0, 7);
-        const endMonth = endDate.substring(0, 7);
-        let total = 0;
-        const sources = [];
-
-        Object.entries(data.incomes || {}).forEach(([monthStr, incomeData]) => {
-            if (monthStr >= startMonth && monthStr <= endMonth) {
-                total += incomeData.totalAmount || 0;
-                (incomeData.sources || []).forEach(src => {
-                    sources.push({ ...src, month: monthStr });
-                });
-            }
-        });
-
-        return { total, sources, count: sources.length };
-    }, [data.incomes, startDate, endDate]);
+    const incomeStats = useMemo(() => getRangeIncomeStats(data.incomes, startDate, endDate), [data.incomes, startDate, endDate]);
 
     // Calculate Asset change within range
-    const assetStats = useMemo(() => {
-        const start = new Date(startDate);
-        const end = new Date(endDate);
-        end.setHours(23, 59, 59, 999);
+    const assetStats = useMemo(() => getRangeAssetStats(data.records, startDate, endDate), [data.records, startDate, endDate]);
 
-        const sortedDates = Object.keys(data.records || {}).sort((a, b) => new Date(a) - new Date(b));
-
-        // Find closest date at or before start
-        let startAssetDate = null;
-        let endAssetDate = null;
-
-        for (const d of sortedDates) {
-            const dateObj = new Date(d);
-            if (dateObj <= start) {
-                startAssetDate = d;
-            }
-            if (dateObj <= end) {
-                endAssetDate = d;
-            }
-        }
-
-        const startRecords = data.records[startAssetDate] || [];
-        const endRecords = data.records[endAssetDate] || [];
-
-        // Calculate totals by type
-        const calcByType = (records) => {
-            let fixed = 0, floating = 0;
-            const floatingItems = [];
-            records.forEach(item => {
-                if (item.type === 'floating') {
-                    floating += item.amount || 0;
-                    floatingItems.push({ name: item.name, amount: item.amount || 0 });
-                } else {
-                    fixed += item.amount || 0;
-                }
-            });
-            return { fixed, floating, floatingItems, total: fixed + floating };
-        };
-
-        const startStats = calcByType(startRecords);
-        const endStats = calcByType(endRecords);
-
-        // Calculate floating asset changes (compare by name)
-        const floatingChanges = [];
-        const startFloatingMap = new Map(startStats.floatingItems.map(i => [i.name, i.amount]));
-        const endFloatingMap = new Map(endStats.floatingItems.map(i => [i.name, i.amount]));
-
-        // All unique floating asset names
-        const allFloatingNames = new Set([...startFloatingMap.keys(), ...endFloatingMap.keys()]);
-        allFloatingNames.forEach(name => {
-            const startAmt = startFloatingMap.get(name) || 0;
-            const endAmt = endFloatingMap.get(name) || 0;
-            const change = endAmt - startAmt;
-            if (change !== 0) {
-                floatingChanges.push({ name, startAmt, endAmt, change });
-            }
-        });
-
-        // Sort by absolute change descending
-        floatingChanges.sort((a, b) => Math.abs(b.change) - Math.abs(a.change));
-
-        return {
-            startDate: startAssetDate,
-            endDate: endAssetDate,
-            startAssets: startStats.total,
-            endAssets: endStats.total,
-            change: endStats.total - startStats.total,
-            fixed: {
-                start: startStats.fixed,
-                end: endStats.fixed,
-                change: endStats.fixed - startStats.fixed
-            },
-            floating: {
-                start: startStats.floating,
-                end: endStats.floating,
-                change: endStats.floating - startStats.floating,
-                changes: floatingChanges
-            }
-        };
-    }, [data.records, startDate, endDate]);
-
-    const debtStats = useMemo(() => {
-        const startDebtDate = getLatestSnapshotDate(data.debts, startDate);
-        const endDebtDate = getLatestSnapshotDate(data.debts, endDate);
-        const startDebts = startDebtDate ? getEffectiveDebtSnapshotAtDate(data.debts, data.debtEvents, startDate) : [];
-        const endDebts = endDebtDate ? getEffectiveDebtSnapshotAtDate(data.debts, data.debtEvents, endDate) : [];
-        const startTotal = getDebtTotal(startDebts);
-        const endTotal = getDebtTotal(endDebts);
-
-        return {
-            startDate: startDebtDate,
-            endDate: endDebtDate,
-            startDebts: startTotal,
-            endDebts: endTotal,
-            change: endTotal - startTotal
-        };
-    }, [data.debts, data.debtEvents, startDate, endDate]);
+    const debtStats = useMemo(() => (
+        getRangeDebtStats(data.debts, data.debtEvents, startDate, endDate)
+    ), [data.debts, data.debtEvents, startDate, endDate]);
 
     // Calculate Expenses within range
-    const expenseStats = useMemo(() => {
-        const start = new Date(startDate);
-        const end = new Date(endDate);
-        end.setHours(23, 59, 59, 999);
+    const expenseStats = useMemo(() => getRangeExpenseStats(data.expenses, startDate, endDate), [data.expenses, startDate, endDate]);
 
-        let total = 0;
-        const categories = {};
-        let count = 0;
-
-        Object.entries(data.expenses || {}).forEach(([month, list]) => {
-            list.forEach(item => {
-                const d = new Date(item.date.replace(/\//g, '-'));
-                if (d >= start && d <= end) {
-                    total += item.amount || 0;
-                    count++;
-                    const cat = item.category || '未分類';
-                    categories[cat] = (categories[cat] || 0) + (item.amount || 0);
-                }
-            });
-        });
-
-        const topCategories = Object.entries(categories)
-            .sort((a, b) => b[1] - a[1])
-            .slice(0, 5);
-
-        return { total, count, topCategories };
-    }, [data.expenses, startDate, endDate]);
-
-    const financeStats = useMemo(() => {
-        const cashFlow = incomeStats.total - expenseStats.total;
-        const startNetWorth = assetStats.startAssets - debtStats.startDebts;
-        const endNetWorth = assetStats.endAssets - debtStats.endDebts;
-        const netWorthChange = endNetWorth - startNetWorth;
-        const totalCreated = netWorthChange + expenseStats.total;
-        const nonIncomeChange = totalCreated - incomeStats.total;
-
-        return {
-            cashFlow,
-            startNetWorth,
-            endNetWorth,
-            netWorthChange,
-            totalCreated,
-            nonIncomeChange
-        };
-    }, [assetStats.startAssets, assetStats.endAssets, debtStats.startDebts, debtStats.endDebts, incomeStats.total, expenseStats.total]);
+    const financeStats = useMemo(() => (
+        getRangeFinanceStats({ incomeStats, assetStats, debtStats, expenseStats })
+    ), [assetStats, debtStats, incomeStats, expenseStats]);
 
     return (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-6 animate-[fadeIn_0.2s]">
@@ -3402,9 +3251,7 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
     const [isFetchingSnapshotQuotes, setIsFetchingSnapshotQuotes] = useState(false);
     const [snapshotQuoteError, setSnapshotQuoteError] = useState('');
 
-    const holdingSnapshots = useMemo(() => Object.entries(data.stockHoldingSnapshots || {}).flatMap(([month, versions]) =>
-        normalizeSnapshotVersions(versions).map((snapshot) => ({ ...snapshot, month, holdings: Array.isArray(snapshot.holdings) ? snapshot.holdings : [] }))
-    ).sort((a, b) => new Date(b.importedAt || `${b.month}-01`).getTime() - new Date(a.importedAt || `${a.month}-01`).getTime()), [data.stockHoldingSnapshots]);
+    const holdingSnapshots = useMemo(() => getHoldingSnapshots(data.stockHoldingSnapshots), [data.stockHoldingSnapshots]);
 
     const [selectedSnapshotId, setSelectedSnapshotId] = useState('');
 
@@ -3422,98 +3269,25 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
         return (selectedSnapshot.holdings || []).filter((holding) => (holding.market || 'TW') === marketFilter);
     }, [selectedSnapshot, marketFilter]);
 
-    const stockMarketCounts = useMemo(() => {
-        const sets = { TW: new Set(), US: new Set() };
-        const addKey = (market, symbol) => {
-            if (!symbol) return;
-            const normalizedMarket = market || 'TW';
-            const key = `${normalizedMarket}:${symbol}`;
-            if (!sets[normalizedMarket]) sets[normalizedMarket] = new Set();
-            sets[normalizedMarket].add(key);
-        };
+    const stockMarketCounts = useMemo(() => (
+        getStockMarketCounts(data.stockTransactions, holdingSnapshots)
+    ), [data.stockTransactions, holdingSnapshots]);
 
-        (data.stockTransactions || []).forEach((trade) => {
-            if (!trade.symbol || trade.type === 'deposit' || trade.unassigned) return;
-            addKey(trade.market || 'TW', trade.symbol);
-        });
-        holdingSnapshots.forEach((snapshot) => {
-            (snapshot.holdings || []).forEach((holding) => addKey(holding.market || 'TW', holding.symbol || holding.name));
-        });
-
-        return Object.fromEntries(Object.entries(sets).map(([market, values]) => [market, values.size]));
-    }, [data.stockTransactions, holdingSnapshots]);
-
-    const holdingMap = useMemo(() => {
-        const map = {};
-        selectedSnapshotHoldings.forEach((holding) => {
-            const keys = [holding.symbol, holding.name].filter(Boolean);
-            keys.forEach((key) => {
-                const market = holding.market || 'TW';
-                const mapKey = `${market}:${key}`;
-                map[mapKey] = {
-                    value: (map[mapKey]?.value || 0) + (Number(holding.marketValue) || 0),
-                    costAmount: (map[mapKey]?.costAmount || 0) + (Number(holding.costAmount) || 0),
-                    shares: (map[mapKey]?.shares || 0) + (Number(holding.shares) || 0),
-                    date: selectedSnapshot.month,
-                    holding
-                };
-            });
-        });
-        return map;
-    }, [selectedSnapshot, selectedSnapshotHoldings]);
+    const holdingMap = useMemo(() => (
+        selectedSnapshot ? buildHoldingMap(selectedSnapshot, selectedSnapshotHoldings) : {}
+    ), [selectedSnapshot, selectedSnapshotHoldings]);
 
     const hasStockRange = Boolean(stockRangeStart || stockRangeEnd);
 
     const activeStockTransactions = useMemo(() => (
-        (data.stockTransactions || []).filter((trade) => {
-            if (!hasStockRange) return true;
-            const date = trade.date || '';
-            if (!date) return false;
-            if (stockRangeStart && date < stockRangeStart) return false;
-            if (stockRangeEnd && date > stockRangeEnd) return false;
-            return true;
-        })
-    ), [data.stockTransactions, hasStockRange, stockRangeStart, stockRangeEnd]);
+        filterTransactionsByRange(data.stockTransactions, stockRangeStart, stockRangeEnd)
+    ), [data.stockTransactions, stockRangeStart, stockRangeEnd]);
 
     const activeHoldingMap = useMemo(() => hasStockRange ? {} : holdingMap, [hasStockRange, holdingMap]);
 
-    const stockRows = useMemo(() => {
-        const bySymbol = {};
-        activeStockTransactions.forEach((trade) => {
-            if (!trade.symbol || trade.type === 'deposit' || trade.unassigned) return;
-            const symbol = trade.symbol;
-            const market = trade.market || 'TW';
-            const rowKey = `${market}:${symbol}`;
-            if (!bySymbol[rowKey]) {
-                bySymbol[rowKey] = { key: rowKey, symbol, name: trade.name || symbol, market, currency: trade.currency || (market === 'US' ? 'USD' : 'TWD'), buyAmount: 0, sellAmount: 0, dividends: 0, fees: 0, tradeCount: 0, latestTradeDate: trade.date, realizedOnly: false };
-            }
-            const row = bySymbol[rowKey];
-            row.tradeCount += 1;
-            if (trade.source === 'csv-us-realized') row.realizedOnly = true;
-            if (!row.latestTradeDate || new Date(trade.date) > new Date(row.latestTradeDate)) row.latestTradeDate = trade.date;
-            if (trade.type === 'buy') row.buyAmount += Number(trade.amount) || 0;
-            if (trade.type === 'sell') row.sellAmount += Number(trade.amount) || 0;
-            if (trade.type === 'dividend') row.dividends += Number(trade.amount) || 0;
-            if (trade.type === 'fee') row.fees += Number(trade.amount) || 0;
-        });
-
-        Object.values(activeHoldingMap).forEach((snapshot) => {
-            const holding = snapshot.holding;
-            const symbol = holding.symbol || holding.name;
-            const market = holding.market || 'TW';
-            const rowKey = `${market}:${symbol}`;
-            if (!symbol || bySymbol[rowKey]) return;
-            bySymbol[rowKey] = { key: rowKey, symbol, name: holding.name || symbol, market, currency: market === 'US' ? 'USD' : 'TWD', buyAmount: 0, sellAmount: 0, dividends: 0, fees: 0, tradeCount: 0, latestTradeDate: selectedSnapshot?.month || '', realizedOnly: false };
-        });
-
-        return Object.values(bySymbol).map((row) => {
-            const snapshot = activeHoldingMap[`${row.market}:${row.symbol}`] || activeHoldingMap[`${row.market}:${row.name}`];
-            const marketValue = snapshot?.value || 0;
-            const pnlMarketValue = row.realizedOnly ? 0 : marketValue;
-            const totalPnl = pnlMarketValue + row.sellAmount + row.dividends - row.buyAmount - row.fees;
-            return { ...row, marketValue, snapshotDate: snapshot?.date || null, totalPnl, roi: row.buyAmount > 0 ? totalPnl / row.buyAmount : 0, hasSnapshot: Boolean(snapshot) };
-        }).sort((a, b) => b.totalPnl - a.totalPnl);
-    }, [activeHoldingMap, activeStockTransactions, selectedSnapshot]);
+    const stockRows = useMemo(() => (
+        buildStockRows(activeStockTransactions, activeHoldingMap, selectedSnapshot)
+    ), [activeHoldingMap, activeStockTransactions, selectedSnapshot]);
 
     const marketFilteredStockRows = useMemo(() => (
         stockRows.filter((item) => item.market === marketFilter)
@@ -3527,104 +3301,33 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
         activeStockTransactions.filter((trade) => (trade.market || 'TW') === marketFilter)
     ), [activeStockTransactions, marketFilter]);
 
-    const stockStats = useMemo(() => ({
-        totalBuy: marketFilteredStockRows.reduce((sum, item) => sum + item.buyAmount, 0),
-        totalMarketValue: marketFilteredStockRows.reduce((sum, item) => sum + item.marketValue, 0),
-        totalDividends: marketFilteredTransactions.filter((trade) => trade.type === 'dividend').reduce((sum, item) => sum + (Number(item.amount) || 0), 0),
-        totalInterest: marketFilteredTransactions.filter((trade) => trade.type === 'interest').reduce((sum, item) => sum + (Number(item.amount) || 0), 0),
-        totalDeposits: marketFilteredTransactions.filter((trade) => trade.type === 'deposit').reduce((sum, item) => sum + (Number(item.amount) || 0), 0),
-        totalWithdrawals: marketFilteredTransactions.filter((trade) => trade.type === 'withdrawal').reduce((sum, item) => sum + (Number(item.amount) || 0), 0),
-        totalPnl: marketFilteredStockRows.reduce((sum, item) => sum + item.totalPnl, 0) + marketFilteredTransactions.filter((trade) => trade.type === 'dividend' && trade.unassigned).reduce((sum, item) => sum + (Number(item.amount) || 0), 0)
-    }), [marketFilteredStockRows, marketFilteredTransactions]);
+    const stockStats = useMemo(() => (
+        getStockStats(marketFilteredStockRows, marketFilteredTransactions)
+    ), [marketFilteredStockRows, marketFilteredTransactions]);
 
-    const stockStatsTargetDate = useMemo(() => {
-        if (!hasStockRange && selectedSnapshot?.month) return getMonthEndDateKey(selectedSnapshot.month);
-        if (stockRangeEnd) return stockRangeEnd;
-        const latestTradeDate = [...marketFilteredTransactions]
-            .sort((a, b) => new Date(b.date) - new Date(a.date))[0]?.date;
-        return latestTradeDate || new Date().toISOString().slice(0, 10);
-    }, [hasStockRange, selectedSnapshot, stockRangeEnd, marketFilteredTransactions]);
+    const stockStatsTargetDate = useMemo(() => getStockStatsTargetDate({
+        hasRange: hasStockRange,
+        selectedSnapshot,
+        rangeEnd: stockRangeEnd,
+        transactions: marketFilteredTransactions,
+        today: new Date().toISOString().slice(0, 10)
+    }), [hasStockRange, selectedSnapshot, stockRangeEnd, marketFilteredTransactions]);
 
-    const stockDebtStats = useMemo(() => {
-        const latestDebtItems = getEffectiveDebtSnapshotAtDate(data.debts, data.debtEvents, stockStatsTargetDate);
-        const debtSnapshotDate = Object.keys(data.debts || {})
-            .filter((date) => date <= stockStatsTargetDate)
-            .sort()
-            .at(-1) || null;
-        let marketPledgeDebt = 0;
-        let totalPledgeDebt = 0;
-        let unallocatedPledgeDebt = 0;
-        let marketEstimatedAnnualInterest = 0;
+    const stockDebtStats = useMemo(() => getStockDebtStats({
+        debts: data.debts,
+        debtEvents: data.debtEvents,
+        market: marketFilter,
+        targetDate: stockStatsTargetDate,
+        totalPnl: stockStats.totalPnl
+    }), [data.debts, data.debtEvents, marketFilter, stockStats.totalPnl, stockStatsTargetDate]);
 
-        latestDebtItems.forEach((debt) => {
-            if (debt.category !== 'stock_pledge') return;
-            const amount = Number(debt.amount) || 0;
-            if (amount <= 0) return;
-            totalPledgeDebt += amount;
-            const estimatedAnnualInterest = getDebtEstimatedAnnualInterest(debt);
-            const allocation = getDebtMarketAllocation(debt);
-            const marketShare = allocation[marketFilter] || 0;
-            if (Object.keys(allocation).length === 0) {
-                unallocatedPledgeDebt += amount;
-                return;
-            }
-            marketPledgeDebt += amount * marketShare;
-            marketEstimatedAnnualInterest += estimatedAnnualInterest * marketShare;
-        });
-
-        return {
-            debtSnapshotDate,
-            marketPledgeDebt,
-            totalPledgeDebt,
-            unallocatedPledgeDebt,
-            marketEstimatedAnnualInterest,
-            marketEstimatedMonthlyInterest: marketEstimatedAnnualInterest / 12,
-            netPnlAfterDebt: stockStats.totalPnl - marketPledgeDebt
-        };
-    }, [data.debts, data.debtEvents, marketFilter, stockStats.totalPnl, stockStatsTargetDate]);
-
-    const latestSnapshotEstimate = useMemo(() => {
-        const rowMap = new Map();
-        marketFilteredStockRows.forEach((row) => {
-            rowMap.set(`${row.market}:${row.symbol}`, row);
-            rowMap.set(`${row.market}:${row.name}`, row);
-        });
-
-        let quotedCount = 0;
-        let eligibleQuoteCount = 0;
-        let marketValueDiff = 0;
-        let latestMarketValue = 0;
-
-        selectedSnapshotHoldings.forEach((holding) => {
-            const market = holding.market || 'TW';
-            const quote = latestHoldingQuotes[holding.id];
-            const shares = Number(holding.shares) || 0;
-            const snapshotValue = Number(holding.marketValue) || 0;
-            const latestValue = quote ? (Number(quote.price) || 0) * shares : snapshotValue;
-            latestMarketValue += latestValue;
-
-            if (!quote) return;
-            quotedCount += 1;
-
-            const row = rowMap.get(`${market}:${holding.symbol}`) || rowMap.get(`${market}:${holding.name}`);
-            if (row?.realizedOnly) return;
-
-            eligibleQuoteCount += 1;
-            marketValueDiff += latestValue - snapshotValue;
-        });
-
-        const estimatedTotalPnl = stockStats.totalPnl + marketValueDiff;
-        return {
-            hasEstimate: quotedCount > 0,
-            quotedCount,
-            eligibleQuoteCount,
-            holdingCount: selectedSnapshotHoldings.length,
-            latestMarketValue,
-            marketValueDiff,
-            estimatedTotalPnl,
-            estimatedNetPnlAfterDebt: estimatedTotalPnl - stockDebtStats.marketPledgeDebt
-        };
-    }, [latestHoldingQuotes, marketFilteredStockRows, selectedSnapshotHoldings, stockDebtStats.marketPledgeDebt, stockStats.totalPnl]);
+    const latestSnapshotEstimate = useMemo(() => getLatestSnapshotEstimate({
+        rows: marketFilteredStockRows,
+        holdings: selectedSnapshotHoldings,
+        quotes: latestHoldingQuotes,
+        totalPnl: stockStats.totalPnl,
+        marketPledgeDebt: stockDebtStats.marketPledgeDebt
+    }), [latestHoldingQuotes, marketFilteredStockRows, selectedSnapshotHoldings, stockDebtStats.marketPledgeDebt, stockStats.totalPnl]);
 
     useEffect(() => {
         if (marketFilter !== 'US' || typeof fetch === 'undefined') return;
@@ -3641,33 +3344,17 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
         return () => { isCancelled = true; };
     }, [marketFilter]);
 
-    const totalPnlLabel = useMemo(() => {
-        if (isPrivacyMode) return '****';
-        const sign = stockStats.totalPnl >= 0 ? '+' : '';
-        if (marketFilter !== 'US') return `${sign}${formatMoney(stockStats.totalPnl)}`;
-        const twdAmount = stockStats.totalPnl * usdToTwdRate;
-        if (usPnlCurrency === 'TWD') return `NT$${sign}${formatMoney(twdAmount)}`;
-        return `(USD) ${sign}${formatMoneyByMarket(stockStats.totalPnl, 'US')}`;
-    }, [isPrivacyMode, marketFilter, stockStats.totalPnl, usdToTwdRate, usPnlCurrency]);
+    const totalPnlLabel = useMemo(() => (
+        isPrivacyMode ? '****' : formatStockPnlLabel(stockStats.totalPnl, { market: marketFilter, usdToTwdRate, currency: usPnlCurrency })
+    ), [isPrivacyMode, marketFilter, stockStats.totalPnl, usdToTwdRate, usPnlCurrency]);
 
-    const netPnlAfterDebtLabel = useMemo(() => {
-        if (isPrivacyMode) return '****';
-        const sign = stockDebtStats.netPnlAfterDebt >= 0 ? '+' : '';
-        if (marketFilter !== 'US') return `${sign}${formatMoney(stockDebtStats.netPnlAfterDebt)}`;
-        const twdAmount = stockDebtStats.netPnlAfterDebt * usdToTwdRate;
-        if (usPnlCurrency === 'TWD') return `NT$${sign}${formatMoney(twdAmount)}`;
-        return `(USD) ${sign}${formatMoneyByMarket(stockDebtStats.netPnlAfterDebt, 'US')}`;
-    }, [isPrivacyMode, marketFilter, stockDebtStats.netPnlAfterDebt, usdToTwdRate, usPnlCurrency]);
+    const netPnlAfterDebtLabel = useMemo(() => (
+        isPrivacyMode ? '****' : formatStockPnlLabel(stockDebtStats.netPnlAfterDebt, { market: marketFilter, usdToTwdRate, currency: usPnlCurrency })
+    ), [isPrivacyMode, marketFilter, stockDebtStats.netPnlAfterDebt, usdToTwdRate, usPnlCurrency]);
 
-    const latestEstimatePnlLabel = useMemo(() => {
-        if (isPrivacyMode) return '****';
-        const amount = latestSnapshotEstimate.estimatedTotalPnl;
-        const sign = amount >= 0 ? '+' : '';
-        if (marketFilter !== 'US') return `${sign}${formatMoney(amount)}`;
-        const twdAmount = amount * usdToTwdRate;
-        if (usPnlCurrency === 'TWD') return `NT$${sign}${formatMoney(twdAmount)}`;
-        return `(USD) ${sign}${formatMoneyByMarket(amount, 'US')}`;
-    }, [isPrivacyMode, latestSnapshotEstimate.estimatedTotalPnl, marketFilter, usdToTwdRate, usPnlCurrency]);
+    const latestEstimatePnlLabel = useMemo(() => (
+        isPrivacyMode ? '****' : formatStockPnlLabel(latestSnapshotEstimate.estimatedTotalPnl, { market: marketFilter, usdToTwdRate, currency: usPnlCurrency })
+    ), [isPrivacyMode, marketFilter, latestSnapshotEstimate.estimatedTotalPnl, usdToTwdRate, usPnlCurrency]);
 
     const filteredStockRows = useMemo(() => {
         const keyword = stockSearch.trim().toLowerCase();
@@ -3686,13 +3373,7 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
             .sort((a, b) => new Date(b.date) - new Date(a.date));
     }, [activeStockTransactions, selectedStockDetail]);
 
-    const stockChartRows = useMemo(() => {
-        const rows = [...filteredStockRows]
-            .sort((a, b) => Math.abs(b.totalPnl) - Math.abs(a.totalPnl))
-            .slice(0, 8);
-        const maxAbs = Math.max(...rows.map((item) => Math.abs(item.totalPnl)), 1);
-        return rows.map((item) => ({ ...item, barWidth: Math.max(6, Math.round((Math.abs(item.totalPnl) / maxAbs) * 100)) }));
-    }, [filteredStockRows]);
+    const stockChartRows = useMemo(() => getStockChartRows(filteredStockRows), [filteredStockRows]);
 
     const parseImportText = (text, options = {}) => {
         setErrorMsg('');
@@ -4821,213 +4502,12 @@ const MainApp = ({ user, logout }) => {
         return Array.from(names).sort();
     }, [data.debts]);
 
-    const availableYears = useMemo(() => {
-        const years = new Set();
-        Object.keys(data.records || {}).forEach(d => years.add(new Date(d).getFullYear()));
-        Object.keys(data.incomes || {}).forEach(d => years.add(parseInt(d.split('-')[0])));
-        Object.keys(data.memos || {}).forEach(d => years.add(new Date(d).getFullYear()));
-        Object.keys(data.expenses || {}).forEach(d => years.add(parseInt(d.split('-')[0])));
-        Object.keys(data.debts || {}).forEach(d => years.add(new Date(d).getFullYear()));
-        Object.keys(data.debtEvents || {}).forEach(d => years.add(parseInt(d.split('-')[0])));
+    const availableYears = useMemo(() => getAvailableYears(data, new Date().getFullYear()), [data]);
 
-        const thisYear = new Date().getFullYear();
-        return Array.from(years).filter(y => y <= thisYear).sort((a, b) => b - a);
-    }, [data]);
-
-    const getYearEndAssets = (year, sourceData) => {
-        return getLatestSnapshotTotal(sourceData.records, `${year}-12-31`, (assets) =>
-            (assets || []).reduce((sum, item) => sum + (item.amount || 0), 0)
-        );
-    };
-
-    const getYearEndDebt = (year, sourceData) => {
-        return getLatestSnapshotTotal(sourceData.debts, `${year}-12-31`, (debts) => getDebtTotal(debts));
-    };
-
-    const getAssetRecordDatesInYear = (year, sourceData) => {
-        return Object.entries(sourceData.records || {})
-            .filter(([dateStr, assets]) => new Date(dateStr).getFullYear() === year && Array.isArray(assets) && assets.length > 0)
-            .map(([dateStr]) => dateStr)
-            .sort();
-    };
-
-    const getNetAssetsAtDate = (dateStr, sourceData) => {
-        const grossAssets = (sourceData.records?.[dateStr] || []).reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
-        const debts = getLatestSnapshotTotal(sourceData.debts, dateStr, (items) => getDebtTotal(items));
-        return grossAssets - debts;
-    };
-
-    const getYearAssetGrowthRange = (year, sourceData) => {
-        const dates = getAssetRecordDatesInYear(year, sourceData);
-        if (dates.length === 0) {
-            return { startDate: null, endDate: null, startAssets: 0, endAssets: 0, amount: 0, percentage: 0, ratio: 0 };
-        }
-
-        const startDate = dates[0];
-        const endDate = dates[dates.length - 1];
-        const startAssets = getNetAssetsAtDate(startDate, sourceData);
-        const endAssets = getNetAssetsAtDate(endDate, sourceData);
-        const amount = endAssets - startAssets;
-        const percentage = startAssets > 0 ? amount / startAssets : 0;
-        const ratio = startAssets > 0 ? endAssets / startAssets : 0;
-
-        return { startDate, endDate, startAssets, endAssets, amount, percentage, ratio };
-    };
+    const yearlyTrendData = useMemo(() => getYearlyTrendData(data, availableYears), [availableYears, data]);
 
 
-
-    const getYearTotalIncome = (year, sourceData) => {
-        let total = 0;
-        Object.entries(sourceData.incomes || {}).forEach(([dateStr, incomeData]) => {
-            const y = parseInt(dateStr.split('-')[0]);
-            if (y === year) total += (incomeData.totalAmount || 0);
-        });
-        return total;
-    };
-
-    const yearlyTrendData = useMemo(() => {
-        const totalAllTimeIncome = Object.values(data.incomes || {}).reduce((acc, curr) => acc + (curr.totalAmount || 0), 0);
-        return availableYears.map(year => {
-            const income = getYearTotalIncome(year, data);
-            const lastYearIncome = getYearTotalIncome(year - 1, data);
-            const incomeGrowthRate = lastYearIncome > 0 ? income / lastYearIncome : 0;
-            const incomeShare = totalAllTimeIncome > 0 ? income / totalAllTimeIncome : 0;
-            return {
-                year,
-                assets: getYearEndAssets(year, data) - getYearEndDebt(year, data),
-                incomeGrowthRate,
-                incomeShare
-            };
-        }).sort((a, b) => a.year - b.year);
-    }, [availableYears, data]);
-
-    const yearlyGrowthStats = useMemo(() => {
-        const yearDates = Object.keys(data.records).filter(d => new Date(d).getFullYear() === currentYear).sort();
-        if (yearDates.length < 2) return { amount: 0, rate: 0 };
-        const firstDate = yearDates[0];
-        const lastDate = yearDates[yearDates.length - 1];
-        const getAssetsSum = (date) => data.records[date].reduce((sum, item) => sum + (item.amount || 0), 0);
-        const startAmount = getAssetsSum(firstDate);
-        const endAmount = getAssetsSum(lastDate);
-        const diff = endAmount - startAmount;
-        const rate = startAmount > 0 ? diff / startAmount : 0;
-        return { amount: diff, rate };
-    }, [data, currentYear]);
-
-    const processedData = useMemo(() => {
-        const monthlyStats = Array(12).fill(0).map((_, i) => ({ month: i + 1, assets: 0, grossAssets: 0, debts: 0, income: 0, cost: 0, balance: 0, memo: null, hasRecord: false, latestDate: null, allRecords: [], analysis: { incomeDiff: 0, assetDiff: 0, compositeScore: 0 } }));
-        const monthRecordsMap = new Map();
-        const monthDebtMap = new Map();
-
-        Object.entries(data.records || {}).forEach(([dateStr, assets]) => {
-            const date = new Date(dateStr);
-            if (date.getFullYear() === currentYear) {
-                const totalAssets = assets.reduce((sum, item) => sum + (item.amount || 0), 0);
-                if (!Array.isArray(assets) || assets.length === 0 || totalAssets <= 0) return;
-                const monthIdx = date.getMonth();
-                if (!monthRecordsMap.has(monthIdx)) monthRecordsMap.set(monthIdx, []);
-                monthRecordsMap.get(monthIdx).push({ dateStr, assets: totalAssets });
-            }
-        });
-
-        Object.entries(data.debts || {}).forEach(([dateStr, debts]) => {
-            const date = new Date(dateStr);
-            if (date.getFullYear() === currentYear) {
-                const monthIdx = date.getMonth();
-                if (!monthDebtMap.has(monthIdx)) monthDebtMap.set(monthIdx, []);
-                monthDebtMap.get(monthIdx).push({ dateStr, debt: getDebtTotal(debts) });
-            }
-        });
-
-        monthRecordsMap.forEach((records, monthIdx) => {
-            records.sort((a, b) => new Date(a.dateStr) - new Date(b.dateStr));
-            const latest = records[records.length - 1];
-            monthlyStats[monthIdx].hasRecord = true;
-            monthlyStats[monthIdx].grossAssets = latest.assets;
-            monthlyStats[monthIdx].latestDate = latest.dateStr;
-            monthlyStats[monthIdx].allRecords = records;
-        });
-
-        monthDebtMap.forEach((records, monthIdx) => {
-            records.sort((a, b) => new Date(a.dateStr) - new Date(b.dateStr));
-            const latest = records[records.length - 1];
-            monthlyStats[monthIdx].debts = latest.debt;
-            if (!monthlyStats[monthIdx].latestDate) monthlyStats[monthIdx].latestDate = latest.dateStr;
-        });
-
-        for (let i = 0; i < 12; i++) {
-            if (!monthlyStats[i].hasRecord) {
-                monthlyStats[i].grossAssets = 0;
-                monthlyStats[i].debts = 0;
-                monthlyStats[i].assets = 0;
-                continue;
-            }
-
-            const monthEndDay = new Date(currentYear, i + 1, 0).getDate();
-            const monthEndKey = `${currentYear}-${String(i + 1).padStart(2, '0')}-${String(monthEndDay).padStart(2, '0')}`;
-            monthlyStats[i].debts = getLatestSnapshotTotal(data.debts, monthEndKey, (debts) => getDebtTotal(debts));
-            monthlyStats[i].assets = monthlyStats[i].grossAssets - monthlyStats[i].debts;
-            monthlyStats[i].allRecords = monthlyStats[i].allRecords.map((record) => ({
-                ...record,
-                assets: record.assets - getLatestSnapshotTotal(data.debts, record.dateStr, (debts) => getDebtTotal(debts))
-            }));
-        }
-
-        Object.entries(data.incomes || {}).forEach(([dateStr, incomeData]) => {
-            const [yearStr, monthStr] = dateStr.split('-');
-            if (parseInt(yearStr) === currentYear) {
-                const monthIdx = parseInt(monthStr) - 1;
-                monthlyStats[monthIdx].income = incomeData.totalAmount || 0;
-                if (!monthlyStats[monthIdx].latestDate) monthlyStats[monthIdx].latestDate = `${dateStr}-01`;
-            }
-        });
-
-        Object.keys(data.expenses || {}).forEach(monthStr => {
-            const [yStr, mStr] = monthStr.split('-');
-            if (parseInt(yStr) === currentYear) {
-                const mIdx = parseInt(mStr) - 1;
-                const cost = data.expenses[monthStr].reduce((acc, curr) => acc + curr.amount, 0);
-                monthlyStats[mIdx].cost = cost;
-                if (!monthlyStats[mIdx].latestDate) monthlyStats[mIdx].latestDate = `${monthStr}-01`;
-            }
-        });
-
-        Object.entries(data.memos || {}).forEach(([dateStr, content]) => {
-            const date = new Date(dateStr);
-            if (date.getFullYear() === currentYear) {
-                const monthIdx = date.getMonth();
-                monthlyStats[monthIdx].memo = content;
-                if (!monthlyStats[monthIdx].latestDate) monthlyStats[monthIdx].latestDate = dateStr;
-            }
-        });
-
-        // 取得去年12月的收入作為初始比較基準 (若無則為0)
-        const prevYearDecKey = `${currentYear - 1}-12`;
-        let prevIncome = (data.incomes || {})[prevYearDecKey]?.totalAmount || 0;
-        let prevAsset = getYearEndAssets(currentYear - 1, data) - getYearEndDebt(currentYear - 1, data);
-
-        for (let i = 0; i < 12; i++) {
-            const currentAsset = monthlyStats[i].assets;
-            const currentIncome = monthlyStats[i].income;
-            const cost = monthlyStats[i].cost || 0;
-            const hasAssetRecord = monthlyStats[i].hasRecord;
-
-            // 計算餘額 (原本的邏輯)
-            monthlyStats[i].balance = hasAssetRecord ? (currentAsset - prevAsset) - cost : -cost;
-
-            // 計算分析指標 (新增)
-            const incomeDiff = currentIncome - prevIncome;
-            const assetDiff = hasAssetRecord ? currentAsset - prevAsset : 0;
-            const compositeScore = incomeDiff + assetDiff;
-            monthlyStats[i].analysis = { incomeDiff, assetDiff, compositeScore };
-
-            if (hasAssetRecord) prevAsset = currentAsset;
-            prevIncome = currentIncome; // 更新比較基準為本月收入
-        }
-
-        return monthlyStats;
-        return monthlyStats;
-    }, [data, currentYear]);
+    const processedData = useMemo(() => getMonthlyStats(data, currentYear), [data, currentYear]);
 
     const handleManualSync = async () => {
         setIsSyncing(true);
@@ -5105,114 +4585,19 @@ const MainApp = ({ user, logout }) => {
         }
     };
 
-    const assetExtremes = useMemo(() => {
-        let allPoints = [];
-        processedData.forEach(m => {
-            if (m.hasRecord) allPoints = [...allPoints, ...m.allRecords.map(r => ({ val: r.assets, month: m.month }))];
-        });
-        if (allPoints.length === 0) return { max: { val: 0, month: 0 }, min: { val: 0, month: 0 } };
-        const max = allPoints.reduce((prev, current) => (prev.val > current.val) ? prev : current);
-        const min = allPoints.reduce((prev, current) => (prev.val < current.val) ? prev : current);
-        return { max, min };
-    }, [processedData]);
+    const assetExtremes = useMemo(() => getAssetExtremes(processedData), [processedData]);
 
     const assetChartData = useMemo(() => processedData.map((monthData) => ({
         ...monthData,
         assets: monthData.hasRecord ? monthData.assets : null
     })), [processedData]);
 
-    const yearStats = useMemo(() => {
-        // Income Stats
-        const thisYearIncome = getYearTotalIncome(currentYear, data);
-        const lastYearIncome = getYearTotalIncome(currentYear - 1, data);
-        const avgIncome = thisYearIncome / 12;
-
-        // "資產年增長" (User definition: This Year Income / Last Year Income %)
-        // Using "assetGrowthRate" variable to keep UI binding consistent, but logic is Income Ratio
-        const assetGrowthRate = lastYearIncome > 0 ? (thisYearIncome / lastYearIncome) : 0;
-
-        // "總所得%數" (User definition: This Year Income / Total Accumulated Income %)
-        // Calculate Total Accumulated Income (Lifetime)
-        const totalAccumulatedIncome = Object.values(data.incomes || {}).reduce((sum, item) => sum + (item.totalAmount || 0), 0);
-        const incomeGrowthRate = totalAccumulatedIncome > 0 ? (thisYearIncome / totalAccumulatedIncome) : 0;
-
-        // Real Asset Stats use only months that actually have asset records.
-        const growthRange = getYearAssetGrowthRange(currentYear, data);
-        const thisYearAssets = growthRange.endAssets;
-        const lastYearAssets = growthRange.startAssets;
-        const thisYearDebt = getYearEndDebt(currentYear, data);
-        const realAssetGrowthAmount = growthRange.amount;
-        const realAssetGrowthPercentage = growthRange.percentage;
-        const assetGrowthRatio = growthRange.ratio;
-
-        return {
-            totalIncome: thisYearIncome,
-            lastYearIncome,
-            avgIncome,
-            assetGrowthRate, // Income Ratio
-            incomeGrowthRate, // Share of Total Ratio
-            totalAccumulatedIncome,
-            thisYearAssets,
-            lastYearAssets,
-            assetGrowthStartDate: growthRange.startDate,
-            assetGrowthEndDate: growthRange.endDate,
-            thisYearDebt,
-            realAssetGrowthAmount,
-            realAssetGrowthPercentage,
-            assetGrowthRatio
-        };
-    }, [data, currentYear]);
+    const yearStats = useMemo(() => getYearStats(data, currentYear), [data, currentYear]);
 
     // FIRE Stats
-    const fireStats = useMemo(() => {
-        const rate = data.fireSettings?.withdrawalRate || 4.0;
-        const expenseMonths = Object.keys(data.expenses || {});
-        let avgExpense = 0;
+    const fireStats = useMemo(() => getFireStats(data), [data]);
 
-        if (expenseMonths.length > 0) {
-            const totalExpense = Object.values(data.expenses).flat().reduce((sum, item) => sum + (item.amount || 0), 0);
-            avgExpense = totalExpense / expenseMonths.length;
-        }
-
-        const annualExpense = avgExpense * 12;
-        const fireTarget = rate > 0 ? annualExpense / (rate / 100) : 0;
-
-        // Current Assets (Latest)
-        let currentAssets = 0;
-        const sortedDates = Object.keys(data.records || {}).sort((a, b) => new Date(b) - new Date(a));
-        if (sortedDates.length > 0) {
-            currentAssets = data.records[sortedDates[0]].reduce((sum, i) => sum + (i.amount || 0), 0) - getLatestSnapshotTotal(data.debts, sortedDates[0], (debts) => getDebtTotal(debts));
-        }
-
-        return { avgExpense, fireTarget, currentAssets, progress: fireTarget > 0 ? currentAssets / fireTarget : 0, rate };
-    }, [data]);
-
-    const fireYearlyStats = useMemo(() => {
-        const stats = {};
-        Object.entries(data.expenses || {}).forEach(([monthStr, items]) => {
-            const year = parseInt(monthStr.split('-')[0]);
-            const month = parseInt(monthStr.split('-')[1]);
-            const total = items.reduce((sum, i) => sum + (i.amount || 0), 0);
-
-            if (!stats[year]) stats[year] = { total: 0, months: 0, records: [] };
-            stats[year].total += total;
-            stats[year].months += 1;
-            stats[year].records.push({ month, val: total });
-        });
-
-        return Object.entries(stats)
-            .sort((a, b) => b[0] - a[0])
-            .map(([year, d]) => {
-                const max = d.records.reduce((prev, curr) => (prev.val > curr.val) ? prev : curr, { val: 0, month: 0 });
-                const min = d.records.reduce((prev, curr) => (prev.val < curr.val) ? prev : curr, { val: Infinity, month: 0 });
-                return {
-                    year,
-                    avg: d.total / d.months, // Average of recorded months
-                    max,
-                    min: min.val === Infinity ? { val: 0, month: 0 } : min
-                };
-            });
-    }, [data.expenses]);
+    const fireYearlyStats = useMemo(() => getFireYearlyStats(data.expenses), [data.expenses]);
 
 
 

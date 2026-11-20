@@ -13,6 +13,12 @@
 - [web] 網頁版搬到 `apps/web`；Firestore 規則搬到 `firebase/`；改用 npm workspaces。
 - [web] Docker 設定改為以 repo 根目錄為 build context，`packages/core` 一起掛載進容器。
 - [web] 測試補上記憶體版 `localStorage`，修正在 Node 25+ 執行測試時 `localStorage` 為 undefined 的問題。
+- [core] 把元件內的計算搬到 core，web 的數字與畫面不變：
+  - `dashboard.js`：可選年份、年度趨勢、每月資產 / 負債 / 收支 / 結餘、年度高低點、年度統計卡片、FIRE 與每年花費統計。
+  - `rangeStats.js`：區間收入、資產、負債、花費、財務推估，以及對帳單的帳戶清單與篩選。
+  - `stockAnalysis.js`：持倉快照、個股損益列、市場統計、質押依市場分攤、最新估值試算、損益標籤、損益長條圖。
+- [core] 新增 `calculations.test.js`，以手算範例驗證上述計算。
+- [web] `App.jsx` 改為呼叫 core（7,557 → 5,676 行）；移除未使用的 `yearlyGrowthStats`。
 
 ### CI
 - CI 新增 core 測試與 JavaScriptCore 打包步驟。
