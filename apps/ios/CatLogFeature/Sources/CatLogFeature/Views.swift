@@ -75,7 +75,12 @@ struct DashboardView: View {
                 }
                 if let stats = model.yearStats, let core = model.core {
                     Section("\(String(model.year)) 年度") {
-                        StatRow(title: "年底淨資產", value: core.formatWan(stats.thisYearAssets))
+                        // 與 web 相同：期末是「該年度最後一筆資產紀錄」，不一定是 12/31。
+                        StatRow(
+                            title: "期末淨資產",
+                            value: core.formatWan(stats.thisYearAssets),
+                            detail: stats.assetGrowthEndDate.map { "截至 \($0)" } ?? "尚無紀錄"
+                        )
                         StatRow(
                             title: "年度資產增長",
                             value: "\(stats.realAssetGrowthAmount >= 0 ? "+" : "")\(core.formatWan(stats.realAssetGrowthAmount))",
@@ -83,7 +88,7 @@ struct DashboardView: View {
                         )
                         StatRow(title: "年度總收入", value: core.formatWan(stats.totalIncome))
                         StatRow(title: "平均月收入", value: core.formatMoney(stats.avgIncome))
-                        StatRow(title: "年底負債", value: core.formatWan(stats.thisYearDebt))
+                        StatRow(title: "負債", value: core.formatWan(stats.thisYearDebt), detail: "截至 \(String(model.year)) 年底")
                     }
                 }
                 if let fire = model.fire, let core = model.core {
