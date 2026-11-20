@@ -26,7 +26,15 @@
 - [web] 雲端資料比 App 新，或 App 低於 `minClientVersion` 時切成唯讀並提示更新，擋下所有寫入（在改動畫面資料之前就擋下，不會出現「新增成功」但沒有存檔）；其他裝置要求更新時，開著的畫面也會立即切換。
 - [web] 建置時把 `package.json` 的版本注入為 `__APP_VERSION__`。
 
+### iOS
+- [iOS] 新增 `apps/ios`：SwiftUI 原生版骨架（唯讀預覽）。Google 登入後讀取同一份 Firestore 資料，顯示年度統計、FIRE 進度與每月資產 / 收支。
+- [iOS] `CatLogKit`：用 JavaScriptCore 執行 `packages/core`，數字與 web 完全一致；雲端讀寫依照與 web 相同的格式 v3 規則，並檢查 `schemaVersion` / `minClientVersion`。
+- [core] 雲端儲存格式的純函式（切塊、checksum、舊格式解析）搬到 `storageFormat.js`，web 與 iOS 共用。
+- [core] 修正切塊時可能把 emoji 切成兩半：半個字元存進 Firestore 會變成亂碼，之後 checksum 驗證失敗、App 被鎖住。
+- [core] 新增 `fixtures/cloud-storage-v3.json`，由 web 實際寫出，iOS 測試必須讀出相同內容。
+
 ### CI
+- 新增 iOS workflow（macOS）：CatLogKit 測試與 App 建置；Node CI 檢查 iOS 內建的 core bundle 是否與 core 同步。
 - CI 新增 core 測試與 JavaScriptCore 打包步驟。
 - 根目錄 `prepare` 在沒有安裝 husky 的環境（Vercel）會略過，不再讓安裝失敗。
 

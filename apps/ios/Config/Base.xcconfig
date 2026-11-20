@@ -1,0 +1,12 @@
+// CatLog iOS 共用設定。個人或機密的值放在 Local.xcconfig（不進版控），範本見 Local.xcconfig.example。
+
+// 對外版本號：MAJOR.MINOR 與 web 共用（見 README 的版本號規則）。
+MARKETING_VERSION = 3.0.0
+// Build number：CI 會以執行次數覆寫。
+CURRENT_PROJECT_VERSION = 1
+
+CATLOG_BUNDLE_ID = work.cloudjet.catlog
+CATLOG_DEVELOPMENT_TEAM =
+GOOGLE_REVERSED_CLIENT_ID = com.googleusercontent.apps.not-configured
+
+#include? "Local.xcconfig"

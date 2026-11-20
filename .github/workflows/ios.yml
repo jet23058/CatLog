@@ -1,0 +1,39 @@
+name: iOS
+
+on:
+  push:
+    branches: [ "main" ]
+    paths: [ "apps/ios/**", "packages/core/**", ".github/workflows/ios.yml" ]
+  pull_request:
+    branches: [ "main" ]
+    paths: [ "apps/ios/**", "packages/core/**", ".github/workflows/ios.yml" ]
+
+jobs:
+  ios:
+    runs-on: macos-latest
+    timeout-minutes: 40
+
+    steps:
+    - uses: actions/checkout@v7
+
+    - name: Show Xcode version
+      run: xcodebuild -version
+
+    # CatLogKit 沒有第三方相依，直接在 macOS 上跑：JavaScriptCore 橋接、雲端讀寫、與 web 共用的 fixture。
+    - name: Test CatLogKit
+      run: swift test --package-path apps/ios/CatLogKit
+
+    - name: Cache Swift packages
+      uses: actions/cache@v5
+      with:
+        path: ~/Library/Developer/Xcode/DerivedData/**/SourcePackages
+        key: spm-${{ hashFiles('apps/ios/CatLog.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+
+    - name: Build app for iOS Simulator
+      run: |
+        xcodebuild build \
+          -project apps/ios/CatLog.xcodeproj \
+          -scheme CatLog \
+          -destination 'generic/platform=iOS Simulator' \
+          CODE_SIGNING_ALLOWED=NO \
+          CURRENT_PROJECT_VERSION=${{ github.run_number }}
