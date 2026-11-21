@@ -293,3 +293,38 @@ export const describeStockTrades = (trades = []) => trades.map((trade) => ({
     title: getStockTradeTitle(trade),
     description: getStockTradeDescription(trade)
 }));
+
+// 「最新估值」：用抓到的最新價試算目前快照的市值與「若未賣出」損益，不改寫快照。
+// quotes：{ [holding.id]: { price } }。holdings 每檔附上最新價、最新估值與差異，web 與 iOS 顯示相同。
+export const getStockQuoteEstimate = (data = {}, options = {}, quotes = {}) => {
+    const overview = getStockOverview(data, options);
+    const estimate = getLatestSnapshotEstimate({
+        rows: overview.rows,
+        holdings: overview.holdings,
+        quotes,
+        totalPnl: overview.stats.totalPnl,
+        marketPledgeDebt: overview.debtStats.marketPledgeDebt
+    });
+    const holdings = overview.holdings.map((holding) => {
+        const quote = quotes[holding.id];
+        const shares = Number(holding.shares) || 0;
+        const snapshotValue = Number(holding.marketValue) || 0;
+        const latestPrice = quote ? Number(quote.price) || 0 : null;
+        const latestValue = quote ? latestPrice * shares : null;
+        const diff = quote ? latestValue - snapshotValue : null;
+        return {
+            id: holding.id || '',
+            market: marketOf(holding),
+            symbol: holding.symbol || '',
+            name: holding.name || holding.symbol || '',
+            shares,
+            snapshotPrice: Number(holding.marketPrice) || 0,
+            snapshotValue,
+            latestPrice,
+            latestValue,
+            diff,
+            diffRate: quote && snapshotValue ? diff / snapshotValue : null
+        };
+    });
+    return { ...estimate, holdings };
+};

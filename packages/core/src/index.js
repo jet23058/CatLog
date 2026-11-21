@@ -17,3 +17,4 @@ export * from './monthDetail.js';
 export * from './records.js';
 export * from './importExport.js';
 export * from './stockImport.js';
+export * from './stockQuote.js';

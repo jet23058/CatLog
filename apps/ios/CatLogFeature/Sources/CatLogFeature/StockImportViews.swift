@@ -171,6 +171,7 @@ struct HoldingSnapshotSheet: View {
     @State private var rows: [HoldingRowInput]
     @State private var preview: HoldingSnapshotPreview?
     @State private var errorMessage: String?
+    @State private var fetchingRowId: UUID?
 
     init(model: AppModel, core: CatLogCore, market: String) {
         self.model = model
@@ -247,6 +248,11 @@ struct HoldingSnapshotSheet: View {
                     }
                     HStack {
                         TextField("現價", text: $row.price).numericField($row.price)
+                        Button(fetchingRowId == row.id ? "抓取中" : "抓價") { Task { await fetchPrice(row) } }
+                            .font(.caption.bold())
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                            .disabled(fetchingRowId != nil || row.name.trimmingCharacters(in: .whitespaces).isEmpty)
                         Divider()
                         TextField("股數", text: $row.shares).numericField($row.shares)
                     }
@@ -291,6 +297,19 @@ struct HoldingSnapshotSheet: View {
                     Text(isPrivacyMode ? "****" : core.formatMoney(holding.marketValue, market: holding.market)).monospacedDigit()
                 }
             }
+        }
+    }
+
+    /// 依代號或名稱抓最新股價填入現價（與 web 的「抓價」相同）。
+    private func fetchPrice(_ row: HoldingRowInput) async {
+        errorMessage = nil
+        fetchingRowId = row.id
+        defer { fetchingRowId = nil }
+        do {
+            let quote = try await StockQuoteService(core: core).quote(market: row.market, symbol: row.name)
+            if let index = rows.firstIndex(where: { $0.id == row.id }) { rows[index].price = CatLogCore.plain(quote.price) }
+        } catch {
+            errorMessage = error.localizedDescription
         }
     }
 

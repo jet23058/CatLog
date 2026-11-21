@@ -185,7 +185,7 @@ extension CatLogCore {
     }
 
     /// 2.5 → "2.5"、1000 → "1000"
-    static func plain(_ value: Double) -> String {
+    public static func plain(_ value: Double) -> String {
         value == value.rounded() ? String(Int(value)) : String(value)
     }
 }
