@@ -66,6 +66,34 @@ final class CoreBridgeTests: XCTestCase {
         XCTAssertEqual(fire.currentAssets, 11_000_000)
     }
 
+    func testMonthDetail() throws {
+        try core.load(dataJSON: sample)
+        XCTAssertEqual(try core.dataMonths(), ["2025-12", "2026-01", "2026-03"])
+
+        let march = try core.monthDetail("2026-03")
+        XCTAssertEqual(march.assetDate, "2026-03-31")
+        XCTAssertEqual(march.assets.map(\.amount), [6_500_000, 5_500_000])
+        XCTAssertEqual(march.prevMonth, "2026-01")
+        XCTAssertNil(march.nextMonth)
+        XCTAssertEqual(march.summary.netAssets, 11_000_000)
+        XCTAssertEqual(march.summary.monthlyIncome, 0) // 範例的 sources 是空陣列
+        XCTAssertEqual(march.summary.monthlyCost, 50_000)
+        XCTAssertEqual(march.expenseCategories.map(\.name), ["飲食"])
+        XCTAssertEqual(march.changeFromPreviousMonth(march.assets[1]), 1_500_000) // 股票 400 萬 → 550 萬
+        XCTAssertEqual(march.debts.map(\.amount), [1_000_000])
+        XCTAssertFalse(march.isDebtCarriedForward)
+        XCTAssertEqual(march.memo, "加薪 🎉")
+
+        XCTAssertEqual(core.debtCategoryLabel("stock_pledge"), "股票質押")
+        XCTAssertEqual(core.debtCategoryLabel(nil), "未分類")
+        XCTAssertEqual(core.debtEventLabel("repay"), "還本金")
+    }
+
+    func testAmountsStoredAsTextStillDecode() throws {
+        try core.load(dataJSON: #"{"records":{"2026-05-31":[{"name":"現金","type":"fixed","amount":"12,345"}]}}"#)
+        XCTAssertEqual(try core.monthDetail("2026-05").assets.first?.amount, 12_345)
+    }
+
     func testCompatibility() throws {
         try core.load(dataJSON: sample)
         XCTAssertTrue(try core.compatibility(appVersion: "4.0.0", metaJSON: nil).canWrite)

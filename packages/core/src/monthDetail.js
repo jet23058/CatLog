@@ -1,0 +1,146 @@
+// 月份明細頁：某個月的資產、負債、收入、花費、備忘錄與前後月比較。
+// 從 App.jsx 的 DetailView 搬出，邏輯保持原樣；web 與 iOS 共用。
+import { getDebtEventImpact, getDebtTotal, getEffectiveDebtSnapshotAtDate, getMonthEndDateKey, getMonthlyDebtInterestEstimate } from './debts.js';
+import { getLatestSnapshotDate } from './snapshots.js';
+
+const sumAmounts = (items = []) => items.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+
+// 某個月（YYYY-MM）內最新的日期 key。
+export const getLatestDateInMonth = (records = {}, month) => (
+    Object.keys(records || {})
+        .filter((date) => date.startsWith(month))
+        .sort()
+        .pop() || null
+);
+
+// 有任何資料（資產、備忘錄、負債、收入、花費）的月份，舊到新。用於上一月 / 下一月。
+export const getDataMonths = (data = {}) => {
+    const months = new Set();
+    Object.keys(data.records || {}).forEach((d) => months.add(d.substring(0, 7)));
+    Object.keys(data.memos || {}).forEach((d) => months.add(d.substring(0, 7)));
+    Object.keys(data.debts || {}).forEach((d) => months.add(d.substring(0, 7)));
+    Object.keys(data.incomes || {}).forEach((m) => months.add(m));
+    Object.keys(data.expenses || {}).forEach((m) => months.add(m));
+    return Array.from(months).sort();
+};
+
+// 花費依類別彙總（圓餅圖用），金額大到小。
+export const getExpenseCategories = (expenses = []) => {
+    const categoryMap = {};
+    expenses.forEach((ex) => {
+        const cat = ex.category || '其他';
+        if (!categoryMap[cat]) categoryMap[cat] = { name: cat, value: 0, items: [] };
+        categoryMap[cat].value += ex.amount;
+        categoryMap[cat].items.push(ex);
+    });
+    return Object.values(categoryMap).sort((a, b) => b.value - a.value);
+};
+
+// 月份摘要數字。web 編輯中會用畫面上的暫存資料重算，所以獨立成函式。
+export const getMonthSummary = ({ assets = [], debts = [], incomes = [], expenses = [], prevTotalAssets = 0, prevTotalDebts = 0, prevMonthIncome = 0 }) => {
+    const totalAssets = sumAmounts(assets);
+    const totalDebts = getDebtTotal(debts);
+    const netAssets = totalAssets - totalDebts;
+    const floatingAssets = sumAmounts(assets.filter((item) => item.type === 'floating'));
+    const investmentRate = totalAssets > 0 ? floatingAssets / totalAssets : 0;
+    const monthlyIncome = sumAmounts(incomes);
+    const monthlyCost = sumAmounts(expenses);
+
+    const incomeDiff = monthlyIncome - prevMonthIncome;
+    const assetDiff = netAssets - (prevTotalAssets - prevTotalDebts);
+    const compositeScore = incomeDiff + assetDiff;
+
+    return { totalAssets, totalDebts, netAssets, investmentRate, monthlyIncome, monthlyCost, incomeDiff, assetDiff, compositeScore };
+};
+
+/**
+ * 某個月的完整明細（唯讀）。
+ * - assets：當月最後一筆資產紀錄
+ * - debts：當月月底有效的負債（含前期延續與本月異動；本月有晚於快照的異動時，以異動日為準）
+ * - debtEvents：本月負債異動（依日期排序）與統計
+ * - prev*：上一個有資料的月份，用來比較
+ */
+export const getMonthDetail = (data = {}, monthKey) => {
+    const monthEndDate = getMonthEndDateKey(monthKey);
+    const assetDate = getLatestDateInMonth(data.records, monthKey);
+    const debtDate = getLatestDateInMonth(data.debts, monthKey);
+    const memoDate = getLatestDateInMonth(data.memos, monthKey);
+    const effectiveDebtSnapshotDate = monthEndDate ? getLatestSnapshotDate(data.debts, monthEndDate) : null;
+    const isDebtCarriedForward = Boolean(effectiveDebtSnapshotDate && effectiveDebtSnapshotDate.substring(0, 7) !== monthKey);
+
+    const monthlyDebtSnapshots = Object.entries(data.debts || {})
+        .filter(([date]) => date.startsWith(monthKey))
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([date, debts]) => ({ date, debts: Array.isArray(debts) ? debts : [], total: getDebtTotal(debts) }));
+
+    const debtEvents = [...(data.debtEvents?.[monthKey] || [])].sort((a, b) => new Date(a.date) - new Date(b.date));
+    const latestDebtEventDate = debtEvents.map((item) => item.date).filter(Boolean).sort().pop() || '';
+    const effectiveDebtDate = effectiveDebtSnapshotDate && latestDebtEventDate && latestDebtEventDate > effectiveDebtSnapshotDate
+        ? latestDebtEventDate
+        : effectiveDebtSnapshotDate;
+    const debts = effectiveDebtDate ? getEffectiveDebtSnapshotAtDate(data.debts, data.debtEvents, effectiveDebtDate) : [];
+    const baseDebtSnapshotItems = effectiveDebtSnapshotDate ? (data.debts?.[effectiveDebtSnapshotDate] || []) : [];
+
+    const debtEventStats = debtEvents.reduce((acc, item) => {
+        acc.principal += getDebtEventImpact(item);
+        if (item.type === 'interest') acc.interest += Number(item.amount) || 0;
+        if (item.type === 'fee') acc.fees += Number(item.amount) || 0;
+        if (item.type === 'rate_change') acc.rateChanges += 1;
+        return acc;
+    }, { principal: 0, interest: 0, fees: 0, rateChanges: 0 });
+    const estimatedMonthlyDebtInterest = baseDebtSnapshotItems
+        .reduce((sum, debt) => sum + getMonthlyDebtInterestEstimate(debt, monthKey, data.debtEvents, data.debts), 0);
+
+    const months = getDataMonths(data);
+    const currentIndex = months.indexOf(monthKey);
+    const prevMonth = currentIndex > 0 ? months[currentIndex - 1] : null;
+    // 與原本相同：月份不在清單中（indexOf 為 -1）時，下一月是最早有資料的月份。
+    const nextMonth = currentIndex < months.length - 1 ? months[currentIndex + 1] : null;
+    const prevAssetDate = prevMonth ? getLatestDateInMonth(data.records, prevMonth) : null;
+    const prevDebtDate = prevMonth ? getLatestSnapshotDate(data.debts, getMonthEndDateKey(prevMonth)) : null;
+    const prevAssets = prevAssetDate ? (data.records[prevAssetDate] || []) : [];
+    const prevMonthAssetsMap = prevAssets.reduce((acc, item) => {
+        acc[`${item.type}-${item.name}`] = item.amount;
+        return acc;
+    }, {});
+    const prevTotalAssets = sumAmounts(prevAssets);
+    const prevTotalDebts = prevDebtDate ? getDebtTotal(getEffectiveDebtSnapshotAtDate(data.debts, data.debtEvents, prevDebtDate)) : 0;
+    const prevMonthIncome = prevMonth ? (data.incomes?.[prevMonth]?.totalAmount || 0) : 0;
+
+    const assets = assetDate ? (data.records[assetDate] || []) : [];
+    const incomes = data.incomes?.[monthKey]?.sources || [];
+    const expenses = data.expenses?.[monthKey] || [];
+
+    return {
+        monthKey,
+        monthEndDate,
+        assetDate,
+        debtDate,
+        memoDate,
+        writeDate: assetDate || debtDate || memoDate || `${monthKey}-01`,
+        effectiveDebtSnapshotDate,
+        isDebtCarriedForward,
+        latestDebtEventDate,
+        assets,
+        memo: memoDate ? (data.memos?.[memoDate] || '') : '',
+        incomes,
+        debts,
+        baseDebtSnapshotItems,
+        monthlyDebtSnapshots,
+        debtEvents,
+        debtEventStats,
+        estimatedMonthlyDebtInterest,
+        expenses,
+        expenseAccounts: Array.from(new Set(expenses.map((ex) => ex.account))).sort(),
+        expenseCategories: getExpenseCategories(expenses),
+        prevMonth,
+        nextMonth,
+        prevAssetDate,
+        prevDebtDate,
+        prevMonthAssetsMap,
+        prevTotalAssets,
+        prevTotalDebts,
+        prevMonthIncome,
+        summary: getMonthSummary({ assets, debts, incomes, expenses, prevTotalAssets, prevTotalDebts, prevMonthIncome }),
+    };
+};

@@ -41,6 +41,10 @@
 - [iOS] 隱私模式也隱藏 FIRE 達成率與進度條。
 - [web] 修正閒置自動上鎖可被繞過：切到背景再回來時，原本會把閒置計時重新歸零，現在保留原本的期限，期限已到就直接上鎖。
 
+- [core] 月份明細的計算搬到 `monthDetail.js`（`getMonthDetail`、`getMonthSummary`），web 改為呼叫 core，行為不變。
+- [iOS] 首頁新增年度資產趨勢圖（只畫有資產紀錄的月份，隱私模式隱藏金額刻度）。
+- [iOS] 點每月列表可開啟月份明細：摘要、資產與較上月變化、收入、負債（含延續與異動、預估利息）、花費類別與明細（可依帳戶篩選）、備忘錄，可切換上一月 / 下一月。
+
 ### CI
 - 新增 iOS workflow（macOS）：CatLogKit 測試與 App 建置；Node CI 檢查 iOS 內建的 core bundle 是否與 core 同步。
 - CI 新增 core 測試與 JavaScriptCore 打包步驟。

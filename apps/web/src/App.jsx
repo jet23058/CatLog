@@ -32,18 +32,15 @@ import {
     getDebtEventImpact,
     getDebtEventLabel,
     getDebtTargetKey,
-    getDebtTotal,
-    getEffectiveDebtSnapshotAtDate,
     getExpenseAccounts,
     getExpenseImportSummary,
     getFireStats,
     getFireYearlyStats,
     getHoldingSnapshots,
     getJsonImportSummary,
-    getLatestSnapshotDate,
     getLatestSnapshotEstimate,
-    getMonthEndDateKey,
-    getMonthlyDebtInterestEstimate,
+    getMonthDetail,
+    getMonthSummary,
     getMonthlyStats,
     getRangeAssetStats,
     getRangeDebtStats,
@@ -2091,42 +2088,29 @@ const DetailView = ({ monthKey, data, onBack, onUpdateData, assetNames, isPrivac
     const [confirmDeleteMonth, setConfirmDeleteMonth] = useState(false);
     const [showDebtEventModal, setShowDebtEventModal] = useState(false);
 
-    const getLatestDateInMonth = (records = {}, month) => {
-        return Object.keys(records || {})
-            .filter((date) => date.startsWith(month))
-            .sort()
-            .pop() || null;
-    };
-
-    const monthEndDate = useMemo(() => getMonthEndDateKey(monthKey), [monthKey]);
-    const assetDate = useMemo(() => getLatestDateInMonth(data.records, monthKey), [data.records, monthKey]);
-    const debtDate = useMemo(() => getLatestDateInMonth(data.debts, monthKey), [data.debts, monthKey]);
-    const effectiveDebtSnapshotDate = useMemo(() => (
-        monthEndDate ? getLatestSnapshotDate(data.debts, monthEndDate) : null
-    ), [data.debts, monthEndDate]);
-    const memoDate = useMemo(() => getLatestDateInMonth(data.memos, monthKey), [data.memos, monthKey]);
-    const writeDate = assetDate || debtDate || memoDate || `${monthKey}-01`;
-    const isDebtCarriedForward = Boolean(effectiveDebtSnapshotDate && effectiveDebtSnapshotDate.substring(0, 7) !== monthKey);
-    const monthlyDebtSnapshots = useMemo(() => {
-        return Object.entries(data.debts || {})
-            .filter(([date]) => date.startsWith(monthKey))
-            .sort(([a], [b]) => a.localeCompare(b))
-            .map(([date, debts]) => ({
-                date,
-                debts: Array.isArray(debts) ? debts : [],
-                total: getDebtTotal(debts)
-            }));
-    }, [data.debts, monthKey]);
-    const currentMonthDebtEventLatestDate = useMemo(() => (
-        [...(data.debtEvents?.[monthKey] || [])]
-            .map((item) => item.date)
-            .filter(Boolean)
-            .sort()
-            .pop() || ''
-    ), [data.debtEvents, monthKey]);
-    const baseDebtSnapshotItems = useMemo(() => (
-        effectiveDebtSnapshotDate ? (data.debts?.[effectiveDebtSnapshotDate] || []) : []
-    ), [data.debts, effectiveDebtSnapshotDate]);
+    // 月份明細的計算在 @catlog/core（getMonthDetail），iOS 共用同一份。
+    const detail = useMemo(() => getMonthDetail(data, monthKey), [data, monthKey]);
+    const {
+        assetDate,
+        debtDate,
+        memoDate,
+        writeDate,
+        effectiveDebtSnapshotDate,
+        isDebtCarriedForward,
+        monthlyDebtSnapshots,
+        prevMonth,
+        nextMonth,
+        prevMonthAssetsMap,
+        prevTotalAssets,
+        prevTotalDebts,
+        prevMonthIncome,
+        debtEventStats,
+        estimatedMonthlyDebtInterest,
+        expenseAccounts,
+        expenseCategories: expenseChartData,
+        expenses: currentMonthExpenses,
+        debtEvents: currentDebtEvents
+    } = detail;
 
     useEffect(() => {
         if (assetDate && data.records[assetDate]) {
@@ -2135,58 +2119,11 @@ const DetailView = ({ monthKey, data, onBack, onUpdateData, assetNames, isPrivac
         } else {
             setLocalAssets([]);
         }
-        let memoContent = memoDate ? (data.memos[memoDate] || "") : "";
-        setLocalMemo(memoContent);
-        const incomes = data.incomes[monthKey]?.sources || [];
-        setLocalIncomes(incomes.map((item, idx) => ({ ...item, _tempId: idx })));
-        const effectiveDebtDate = effectiveDebtSnapshotDate && currentMonthDebtEventLatestDate && currentMonthDebtEventLatestDate > effectiveDebtSnapshotDate ? currentMonthDebtEventLatestDate : effectiveDebtSnapshotDate;
-        const debts = effectiveDebtDate ? getEffectiveDebtSnapshotAtDate(data.debts, data.debtEvents, effectiveDebtDate) : [];
-        setLocalDebts(debts.map((item, idx) => ({ ...item, _tempId: item.id || idx })));
-    }, [assetDate, effectiveDebtSnapshotDate, memoDate, monthKey, data, currentMonthDebtEventLatestDate]);
+        setLocalMemo(detail.memo);
+        setLocalIncomes(detail.incomes.map((item, idx) => ({ ...item, _tempId: idx })));
+        setLocalDebts(detail.debts.map((item, idx) => ({ ...item, _tempId: item.id || idx })));
+    }, [detail, assetDate, data]);
 
-    const sortedMonths = useMemo(() => {
-        const months = new Set();
-        Object.keys(data.records || {}).forEach(d => months.add(d.substring(0, 7)));
-        Object.keys(data.memos || {}).forEach(d => months.add(d.substring(0, 7)));
-        Object.keys(data.debts || {}).forEach(d => months.add(d.substring(0, 7)));
-        Object.keys(data.incomes || {}).forEach(monthStr => months.add(monthStr));
-        Object.keys(data.expenses || {}).forEach(monthStr => months.add(monthStr));
-        return Array.from(months).sort();
-    }, [data]);
-
-    const currentIndex = sortedMonths.indexOf(monthKey);
-    const prevMonth = currentIndex > 0 ? sortedMonths[currentIndex - 1] : null;
-    const nextMonth = currentIndex < sortedMonths.length - 1 ? sortedMonths[currentIndex + 1] : null;
-    const prevAssetDate = prevMonth ? getLatestDateInMonth(data.records, prevMonth) : null;
-    const prevDebtDate = prevMonth ? getLatestSnapshotDate(data.debts, getMonthEndDateKey(prevMonth)) : null;
-
-    const prevMonthAssetsMap = useMemo(() => {
-        if (!prevAssetDate) return {};
-        const assets = data.records[prevAssetDate] || [];
-        return assets.reduce((acc, item) => {
-            acc[`${item.type}-${item.name}`] = item.amount;
-            return acc;
-        }, {});
-    }, [prevAssetDate, data.records]);
-
-    const prevTotalAssets = useMemo(() => {
-        if (!prevAssetDate) return 0;
-        const assets = data.records[prevAssetDate] || [];
-        return assets.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
-    }, [prevAssetDate, data.records]);
-
-    const prevTotalDebts = useMemo(() => {
-        if (!prevDebtDate) return 0;
-        return getDebtTotal(getEffectiveDebtSnapshotAtDate(data.debts, data.debtEvents, prevDebtDate));
-    }, [prevDebtDate, data.debts, data.debtEvents]);
-
-    const currentMonthExpenses = useMemo(() => {
-        return data.expenses?.[monthKey] || [];
-    }, [monthKey, data.expenses]);
-
-    const currentDebtEvents = useMemo(() => {
-        return [...(data.debtEvents?.[monthKey] || [])].sort((a, b) => new Date(a.date) - new Date(b.date));
-    }, [data.debtEvents, monthKey]);
     const debtEventTargets = useMemo(() => (
         (localDebts || [])
             .filter((item) => item.category === 'stock_pledge')
@@ -2196,61 +2133,21 @@ const DetailView = ({ monthKey, data, onBack, onUpdateData, assetNames, isPrivac
             }))
     ), [localDebts]);
 
-    const debtEventStats = useMemo(() => {
-        return currentDebtEvents.reduce((acc, item) => {
-            acc.principal += getDebtEventImpact(item);
-            if (item.type === 'interest') acc.interest += Number(item.amount) || 0;
-            if (item.type === 'fee') acc.fees += Number(item.amount) || 0;
-            if (item.type === 'rate_change') acc.rateChanges += 1;
-            return acc;
-        }, { principal: 0, interest: 0, fees: 0, rateChanges: 0 });
-    }, [currentDebtEvents]);
-    const estimatedMonthlyDebtInterest = useMemo(() => (
-        baseDebtSnapshotItems.reduce((sum, debt) => sum + getMonthlyDebtInterestEstimate(debt, monthKey, data.debtEvents, data.debts), 0)
-    ), [baseDebtSnapshotItems, monthKey, data.debtEvents, data.debts]);
-
-    const prevMonthIncome = useMemo(() => {
-        if (!prevMonth) return 0;
-        const prevIncomeData = data.incomes[prevMonth];
-        return prevIncomeData ? (prevIncomeData.totalAmount || 0) : 0;
-    }, [prevMonth, data.incomes]);
-
-    const stats = useMemo(() => {
-        const totalAssets = localAssets.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
-        const totalDebts = getDebtTotal(localDebts);
-        const netAssets = totalAssets - totalDebts;
-        const floatingAssets = localAssets.filter(item => item.type === 'floating').reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
-        const investmentRate = totalAssets > 0 ? floatingAssets / totalAssets : 0;
-        const monthlyIncome = localIncomes.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
-        const monthlyCost = currentMonthExpenses.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
-
-        const incomeDiff = monthlyIncome - prevMonthIncome;
-        const assetDiff = netAssets - (prevTotalAssets - prevTotalDebts);
-        const compositeScore = incomeDiff + assetDiff;
-
-        return { totalAssets, totalDebts, netAssets, investmentRate, monthlyIncome, monthlyCost, incomeDiff, assetDiff, compositeScore };
-    }, [localAssets, localDebts, localIncomes, currentMonthExpenses, prevTotalAssets, prevTotalDebts, prevMonthIncome]);
+    // 編輯中用畫面上的暫存資料重算摘要。
+    const stats = useMemo(() => getMonthSummary({
+        assets: localAssets,
+        debts: localDebts,
+        incomes: localIncomes,
+        expenses: currentMonthExpenses,
+        prevTotalAssets,
+        prevTotalDebts,
+        prevMonthIncome
+    }), [localAssets, localDebts, localIncomes, currentMonthExpenses, prevTotalAssets, prevTotalDebts, prevMonthIncome]);
 
     const filteredExpenses = useMemo(() => {
         if (expenseFilter === 'all') return currentMonthExpenses;
         return currentMonthExpenses.filter(ex => ex.account === expenseFilter);
     }, [currentMonthExpenses, expenseFilter]);
-
-    const expenseAccounts = useMemo(() => {
-        const accounts = new Set(currentMonthExpenses.map(ex => ex.account));
-        return Array.from(accounts).sort();
-    }, [currentMonthExpenses]);
-
-    const expenseChartData = useMemo(() => {
-        const categoryMap = {};
-        currentMonthExpenses.forEach(ex => {
-            const cat = ex.category || '其他';
-            if (!categoryMap[cat]) categoryMap[cat] = { name: cat, value: 0, items: [] };
-            categoryMap[cat].value += ex.amount;
-            categoryMap[cat].items.push(ex);
-        });
-        return Object.values(categoryMap).sort((a, b) => b.value - a.value);
-    }, [currentMonthExpenses]);
 
     const COLORS = ['#0D9488', '#059669', '#10B981', '#34D399', '#6EE7B7', '#A7F3D0', '#D1FAE5'];
 
