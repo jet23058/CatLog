@@ -27,6 +27,34 @@ describe('編輯月份明細', () => {
     });
 });
 
+describe('只寫入需要的部分', () => {
+    const base = { month: '2026-05', assetDate: '2026-05-01', debtDate: '2026-05-01', memoDate: '2026-05-01' };
+
+    it('只有收入的月份改備忘錄，不會建立空的資產或負債快照', () => {
+        const data = {
+            records: { '2026-04-30': [{ name: '銀行', amount: 100 }] },
+            debts: { '2026-04-10': [{ name: '信貸', amount: 50 }] },
+            incomes: { '2026-05': { totalAmount: 10, sources: [{ company: 'A', amount: 10 }] } },
+        };
+        const next = updateMonthDetails(data, {
+            ...base, memo: '只改備忘錄', assets: [], incomes: [{ company: 'A', amount: 10 }],
+            debts: [{ name: '信貸', amount: 50 }], // 沿用前期、沒改動
+        });
+        expect(next.records).toBe(data.records);
+        expect(next.debts).toBe(data.debts);
+        expect(next.memos).toEqual({ '2026-05-01': '只改備忘錄' });
+    });
+
+    it('改了沿用的負債才寫入新的快照；原本有快照時全部刪光會寫入空陣列', () => {
+        const data = { records: { '2026-05-01': [{ name: 'a', amount: 1 }] }, debts: { '2026-04-10': [{ name: '信貸', amount: 50 }] } };
+        const changed = updateMonthDetails(data, { ...base, assets: [], debts: [{ name: '信貸', amount: 40 }] });
+        expect(changed.debts['2026-05-01']).toEqual([{ name: '信貸', amount: 40 }]);
+        expect(changed.records['2026-05-01']).toEqual([]);
+        expect(changed.incomes).toBeUndefined();
+        expect(changed.memos).toBeUndefined();
+    });
+});
+
 describe('編輯時一起刪除負債異動', () => {
     it('有傳 debtEvents 才寫回該月異動，沒傳時保持原樣', () => {
         const data = { debtEvents: { '2026-03': [{ id: 1 }, { id: 2 }], '2026-04': [{ id: 3 }] } };

@@ -2307,18 +2307,24 @@ var CatLogCore = (() => {
     }));
     const cleanDebts = debts.map(({ _tempId, ...debt }) => ({ ...debt, amount: toNumber(debt.amount) }));
     const newTotal = cleanIncomes.reduce((sum, item) => sum + item.amount, 0);
-    const existingIncomeMonth = data.incomes?.[month] || {};
-    return {
-      ...data,
-      records: { ...data.records || {}, [assetDate]: cleanAssets },
-      memos: { ...data.memos || {}, [memoDate]: memo },
-      debts: { ...data.debts || {}, [debtDate]: cleanDebts },
-      incomes: {
+    const hasAssetSnapshot = Object.prototype.hasOwnProperty.call(data.records || {}, assetDate);
+    const hasDebtSnapshot = Object.prototype.hasOwnProperty.call(data.debts || {}, debtDate);
+    const hasMemo = Object.prototype.hasOwnProperty.call(data.memos || {}, memoDate);
+    const existingIncomeMonth = data.incomes?.[month];
+    const currentEffectiveDebts = getMonthDetail(data, month).debts.map(({ _tempId, ...debt }) => ({ ...debt, amount: toNumber(debt.amount) }));
+    const debtsChanged = JSON.stringify(cleanDebts) !== JSON.stringify(currentEffectiveDebts);
+    const next = { ...data };
+    if (hasAssetSnapshot || cleanAssets.length > 0) next.records = { ...data.records || {}, [assetDate]: cleanAssets };
+    if (hasMemo || memo) next.memos = { ...data.memos || {}, [memoDate]: memo };
+    if (hasDebtSnapshot || debtsChanged) next.debts = { ...data.debts || {}, [debtDate]: cleanDebts };
+    if (existingIncomeMonth || cleanIncomes.length > 0) {
+      next.incomes = {
         ...data.incomes || {},
-        [month]: { ...existingIncomeMonth, totalAmount: newTotal, sources: cleanIncomes }
-      },
-      ...Array.isArray(debtEvents) ? { debtEvents: { ...data.debtEvents || {}, [month]: debtEvents } } : {}
-    };
+        [month]: { ...existingIncomeMonth || {}, totalAmount: newTotal, sources: cleanIncomes }
+      };
+    }
+    if (Array.isArray(debtEvents)) next.debtEvents = { ...data.debtEvents || {}, [month]: debtEvents };
+    return next;
   };
   var deleteMonthData = (data = {}, monthKey) => {
     const withoutMonth = (map = {}) => Object.fromEntries(Object.entries(map || {}).filter(([date]) => !date.startsWith(monthKey)));
