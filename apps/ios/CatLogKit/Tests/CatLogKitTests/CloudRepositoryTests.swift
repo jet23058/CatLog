@@ -57,6 +57,18 @@ final class CloudRepositoryTests: XCTestCase {
         XCTAssertEqual(history.map(\.revision), [3])
     }
 
+    func testManualModeKeepsOnlyRestorePoints() async throws {
+        let start = Date(timeIntervalSince1970: 1_767_225_600)
+        let data = { (v: Int) in #"{"records":{},"historySettings":{"mode":"manual"},"v":\#(v)}"# }
+        let first = try await repository.write(dataJSON: data(1), expectedRevision: 0, now: start)
+        try await repository.createRestorePoint(label: "整理前")
+        let second = try await repository.write(dataJSON: data(2), expectedRevision: 1, previousChunkIds: first.chunkIds, now: start.addingTimeInterval(86_400))
+        _ = try await repository.write(dataJSON: data(3), expectedRevision: 2, previousChunkIds: second.chunkIds, now: start.addingTimeInterval(2 * 86_400))
+        let history = try await repository.listHistory()
+        XCTAssertEqual(history.map(\.revision), [3, 1])
+        XCTAssertEqual(history.map(\.isRestorePoint), [false, true])
+    }
+
     func testKeepsOneVersionPerDay() async throws {
         var revision = 0
         var chunkIds: [String] = []

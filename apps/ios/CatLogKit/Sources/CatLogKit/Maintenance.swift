@@ -109,3 +109,25 @@ extension CloudRepository {
                                 checksumMatches: checksumMatches, parseError: parseError, counts: counts)
     }
 }
+
+/// 雲端歷史的保留方式（core: HISTORY_MODES）。
+public struct HistoryModeOption: Decodable, Equatable, Sendable, Hashable {
+    public let value: String
+    public let label: String
+}
+
+extension CatLogCore {
+    public var historyModes: [HistoryModeOption] {
+        (try? bridge.constant("HISTORY_MODES", as: [HistoryModeOption].self)) ?? [HistoryModeOption(value: "auto", label: "自動每天一份＋手動還原點")]
+    }
+
+    /// 目前資料設定的保留方式：auto（預設）或 manual。
+    public func historyMode() -> String {
+        (try? bridge.callString("getHistoryMode", [.data])) ?? "auto"
+    }
+
+    /// 回傳切換保留方式後的完整資料 JSON（設定存在資料裡，跨裝置同步）。
+    public func settingHistoryMode(_ mode: String) throws -> String {
+        try bridge.callJSON("setHistoryMode", [.data, .string(mode)])
+    }
+}

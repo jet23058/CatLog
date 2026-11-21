@@ -243,7 +243,8 @@ public final class CloudRepository: @unchecked Sendable {
         let previous = previousBox.value
         var keepPrevious = false
         do {
-            try await recordHistory(metas: [meta, previous].compactMap { $0 }, currentGeneration: generation, now: now)
+            let mode = (try? core.callString("getHistoryMode", [.json(json)])) ?? "auto"
+            try await recordHistory(metas: [meta, previous].compactMap { $0 }, currentGeneration: generation, mode: mode, now: now)
             keepPrevious = previous?.generation != nil
         } catch {
             keepPrevious = false
@@ -291,7 +292,7 @@ public final class CloudRepository: @unchecked Sendable {
         try await store.writeHistory([cleared])
     }
 
-    private func recordHistory(metas: [CloudMeta], currentGeneration: String, now: Date) async throws {
+    private func recordHistory(metas: [CloudMeta], currentGeneration: String, mode: String, now: Date) async throws {
         var entries: [HistoryEntry] = []
         for meta in metas {
             let text = try core.callJSON("createHistoryEntry", [.json(try meta.jsonString())])
@@ -300,7 +301,7 @@ public final class CloudRepository: @unchecked Sendable {
         try await store.writeHistory(entries)
         let all = String(decoding: try JSONEncoder().encode(try await store.readHistory()), as: UTF8.self)
         let prune: [String] = try core.call("selectHistoryToPrune", [.json(all), .object([
-            "now": .number((now.timeIntervalSince1970 * 1000).rounded()), "currentGeneration": .string(currentGeneration),
+            "now": .number((now.timeIntervalSince1970 * 1000).rounded()), "currentGeneration": .string(currentGeneration), "mode": .string(mode),
         ])])
         for generation in prune {
             let ids = try await store.readChunks(generation: generation).map(\.id)

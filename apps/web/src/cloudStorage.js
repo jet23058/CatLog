@@ -15,6 +15,7 @@ import {
     assembleHistoryVersion,
     buildMetaVersionFields,
     createHistoryEntry,
+    getHistoryMode,
     hashString,
     normalizeRestorePointLabel,
     parseLegacyChunks,
@@ -204,7 +205,7 @@ export const writeCloudData = async (db, uid, data, {
     // （例如 Firestore 規則還沒部署）時，照舊刪除上一份，避免資料塊無限累積。
     let keepPrevious = Boolean(previousMeta?.generation);
     if (keepPrevious) {
-        keepPrevious = await recordHistory(db, uid, [nextMeta, previousMeta], generation)
+        keepPrevious = await recordHistory(db, uid, [nextMeta, previousMeta], generation, getHistoryMode(data))
             .then(() => true)
             .catch((error) => {
                 console.warn('Failed to record history', error);
@@ -212,7 +213,7 @@ export const writeCloudData = async (db, uid, data, {
             });
     }
     if (!previousMeta?.generation) {
-        await recordHistory(db, uid, [nextMeta], generation).catch((error) => console.warn('Failed to record history', error));
+        await recordHistory(db, uid, [nextMeta], generation, getHistoryMode(data)).catch((error) => console.warn('Failed to record history', error));
     }
     if (!keepPrevious) {
         const staleIds = previousChunkIds.filter((id) => !newChunkIds.includes(id));
@@ -246,12 +247,12 @@ const deleteGeneration = async (db, uid, generation) => {
 };
 
 /** 記錄新版本（並補記上一份），再依保留規則刪除太舊的版本。失敗不影響這次存檔。 */
-const recordHistory = async (db, uid, metas, currentGeneration) => {
+const recordHistory = async (db, uid, metas, currentGeneration, mode = 'auto') => {
     const batch = writeBatch(db);
     // merge：已經設成還原點的紀錄（pinned、label）不會被蓋掉。
     metas.map(createHistoryEntry).filter(Boolean).forEach((entry) => batch.set(doc(historyRefFor(db, uid), entry.generation), entry, { merge: true }));
     await batch.commit();
-    const prune = selectHistoryToPrune(await listHistory(db, uid), { now: Date.now(), currentGeneration });
+    const prune = selectHistoryToPrune(await listHistory(db, uid), { now: Date.now(), currentGeneration, mode });
     for (const generation of prune) {
         await deleteGeneration(db, uid, generation);
     }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { assembleHistoryVersion, createHistoryEntry, hashString, normalizeRestorePointLabel, selectHistoryToPrune, sortHistoryEntries } from './index.js';
+import { assembleHistoryVersion, createHistoryEntry, getHistoryMode, hashString, normalizeRestorePointLabel, selectHistoryToPrune, setHistoryMode, sortHistoryEntries } from './index.js';
 
 const HOUR = 60 * 60 * 1000;
 const DAY = 24 * HOUR;
@@ -52,6 +52,19 @@ describe('雲端歷史版本', () => {
         expect(kept(entries, { currentGeneration: 'now' })).toEqual(['now', 'pin', 'ancient']);
         expect(normalizeRestorePointLabel('  匯入 MOZE 前  ')).toBe('匯入 MOZE 前');
         expect(normalizeRestorePointLabel('x'.repeat(100))).toHaveLength(60);
+    });
+
+    it('保留方式：預設自動；只保留手動時，只剩目前版本與還原點', () => {
+        expect(getHistoryMode({})).toBe('auto');
+        expect(getHistoryMode(null)).toBe('auto');
+        const data = setHistoryMode({ records: {}, historySettings: { other: 1 } }, 'manual');
+        expect(data.historySettings).toEqual({ other: 1, mode: 'manual' });
+        expect(getHistoryMode(data)).toBe('manual');
+        expect(() => setHistoryMode({}, 'weekly')).toThrow('不支援的保留方式');
+
+        const entries = [entry('now', NOW), entry('yesterday', NOW - DAY), entry('pin', NOW - 40 * DAY, { pinned: true })];
+        expect(kept(entries, { currentGeneration: 'now', mode: 'manual' })).toEqual(['now', 'pin']);
+        expect(kept(entries, { currentGeneration: 'now', mode: 'auto' })).toEqual(['now', 'yesterday', 'pin']);
     });
 
     it('組回某個版本並驗證 checksum', () => {

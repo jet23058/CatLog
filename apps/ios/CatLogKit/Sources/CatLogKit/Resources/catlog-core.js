@@ -31,6 +31,7 @@ var CatLogCore = (() => {
     DEFAULT_EXCHANGE_RATES: () => DEFAULT_EXCHANGE_RATES,
     HISTORY_KEEP_DAYS: () => HISTORY_KEEP_DAYS,
     HISTORY_KEEP_MONTHS: () => HISTORY_KEEP_MONTHS,
+    HISTORY_MODES: () => HISTORY_MODES,
     INITIAL_DATA: () => INITIAL_DATA,
     PRIVACY_MASK: () => PRIVACY_MASK,
     RESTORE_POINT_LABEL_MAX: () => RESTORE_POINT_LABEL_MAX,
@@ -127,6 +128,7 @@ var CatLogCore = (() => {
     getFireStats: () => getFireStats,
     getFireYearlyStats: () => getFireYearlyStats,
     getHeaderIndex: () => getHeaderIndex,
+    getHistoryMode: () => getHistoryMode,
     getHoldingSnapshots: () => getHoldingSnapshots,
     getImportablePreviousAssets: () => getImportablePreviousAssets,
     getIncomeFullKey: () => getIncomeFullKey,
@@ -237,6 +239,7 @@ var CatLogCore = (() => {
     processUSBrokerTransactionRows: () => processUSBrokerTransactionRows,
     selectHistoryToPrune: () => selectHistoryToPrune,
     setFireWithdrawalRate: () => setFireWithdrawalRate,
+    setHistoryMode: () => setHistoryMode,
     shouldLockOnResume: () => shouldLockOnResume,
     sortHistoryEntries: () => sortHistoryEntries,
     splitIntoChunks: () => splitIntoChunks,
@@ -2185,6 +2188,15 @@ var CatLogCore = (() => {
       stockSnapshotVersions: countItems(data?.stockHoldingSnapshots)
     };
   };
+  var HISTORY_MODES = [
+    { value: "auto", label: "\u81EA\u52D5\u6BCF\u5929\u4E00\u4EFD\uFF0B\u624B\u52D5\u9084\u539F\u9EDE" },
+    { value: "manual", label: "\u53EA\u4FDD\u7559\u624B\u52D5\u9084\u539F\u9EDE" }
+  ];
+  var getHistoryMode = (data) => data?.historySettings?.mode === "manual" ? "manual" : "auto";
+  var setHistoryMode = (data, mode) => {
+    if (!HISTORY_MODES.some((item) => item.value === mode)) throw new Error("\u4E0D\u652F\u63F4\u7684\u4FDD\u7559\u65B9\u5F0F");
+    return { ...data, historySettings: { ...data?.historySettings || {}, mode } };
+  };
   var HISTORY_KEEP_DAYS = 30;
   var HISTORY_KEEP_MONTHS = 12;
   var RESTORE_POINT_LABEL_MAX = 60;
@@ -2214,6 +2226,7 @@ var CatLogCore = (() => {
   var selectHistoryToPrune = (entries = [], {
     now,
     currentGeneration = "",
+    mode = "auto",
     keepDays = HISTORY_KEEP_DAYS,
     keepMonths = HISTORY_KEEP_MONTHS
   } = {}) => {
@@ -2227,6 +2240,10 @@ var CatLogCore = (() => {
       if (entry.generation === currentGeneration || entry.pinned === true) {
         keptDays.add(day);
         keptMonths.add(month);
+        return;
+      }
+      if (mode === "manual") {
+        prune.push(entry.generation);
         return;
       }
       if (now - entry.savedAt <= keepDays * DAY_MS && !keptDays.has(day)) {

@@ -243,6 +243,7 @@ struct CloudHistoryView: View {
     @State private var restoreBox: RestoreBox?
     @State private var restoreLabel = ""
     @State private var isUpdatingRestorePoint = false
+    @State private var mode = "auto"
 
     private struct RestoreBox: Identifiable {
         let id = UUID()
@@ -254,6 +255,16 @@ struct CloudHistoryView: View {
         List {
             if let errorMessage {
                 Section { Text(errorMessage).foregroundStyle(.red) }
+            }
+            Section {
+                Picker("保留方式", selection: Binding(get: { mode }, set: { new in Task { await changeMode(new) } })) {
+                    ForEach(core.historyModes, id: \.value) { Text($0.label).tag($0.value) }
+                }
+                .disabled(!model.compatibility.canWrite || model.isSaving)
+            } footer: {
+                Text(mode == "manual"
+                     ? "只保留你手動建立的還原點與目前版本，下次存檔時會清掉其他自動版本。設定會同步到所有裝置。"
+                     : "自動每天保留一份（30 天內每天、更早的每月一份保留 12 個月），手動還原點另外保留。設定會同步到所有裝置。")
             }
             Section {
                 TextField("還原點說明（選填），例如：匯入 MOZE 前", text: $restoreLabel)
@@ -311,7 +322,10 @@ struct CloudHistoryView: View {
         }
         .navigationTitle("雲端歷史版本")
         .navigationBarTitleDisplayMode(.inline)
-        .task(id: model.dataVersion) { await load() }
+        .task(id: model.dataVersion) {
+            mode = core.historyMode()
+            await load()
+        }
         .refreshable { await load() }
         .sheet(item: $restoreBox) { box in
             BackupImportSheet(model: model, preview: box.preview, title: "還原到版本 \(box.revision)", confirmTitle: "確認還原") { restoreBox = nil }
@@ -324,6 +338,16 @@ struct CloudHistoryView: View {
             errorMessage = nil
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+
+    private func changeMode(_ new: String) async {
+        guard new != mode else { return }
+        let previous = mode
+        mode = new
+        if case .failed(let message) = await model.saveChange({ try $0.settingHistoryMode(new) }) {
+            mode = previous
+            errorMessage = message
         }
     }
 

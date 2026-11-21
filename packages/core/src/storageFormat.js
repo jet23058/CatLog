@@ -86,6 +86,19 @@ export const summarizeDataCounts = (data) => {
 // - 目前使用中的版本永遠保留。
 // 其他版本連同資料塊一起刪除。
 
+// 保留方式（使用者可在「雲端歷史版本」切換，存在資料的 historySettings.mode，跨裝置同步）：
+// - auto：自動每天一份＋手動還原點（預設）
+// - manual：只保留手動還原點（與目前版本）
+export const HISTORY_MODES = [
+    { value: 'auto', label: '自動每天一份＋手動還原點' },
+    { value: 'manual', label: '只保留手動還原點' }
+];
+export const getHistoryMode = (data) => (data?.historySettings?.mode === 'manual' ? 'manual' : 'auto');
+export const setHistoryMode = (data, mode) => {
+    if (!HISTORY_MODES.some((item) => item.value === mode)) throw new Error('不支援的保留方式');
+    return { ...data, historySettings: { ...(data?.historySettings || {}), mode } };
+};
+
 export const HISTORY_KEEP_DAYS = 30;
 export const HISTORY_KEEP_MONTHS = 12;
 export const RESTORE_POINT_LABEL_MAX = 60;
@@ -127,6 +140,7 @@ const localMonthIndex = (ms) => {
 export const selectHistoryToPrune = (entries = [], {
     now,
     currentGeneration = '',
+    mode = 'auto',
     keepDays = HISTORY_KEEP_DAYS,
     keepMonths = HISTORY_KEEP_MONTHS
 } = {}) => {
@@ -141,6 +155,10 @@ export const selectHistoryToPrune = (entries = [], {
         if (entry.generation === currentGeneration || entry.pinned === true) {
             keptDays.add(day);
             keptMonths.add(month);
+            return;
+        }
+        if (mode === 'manual') {
+            prune.push(entry.generation);
             return;
         }
         if (now - entry.savedAt <= keepDays * DAY_MS && !keptDays.has(day)) {
