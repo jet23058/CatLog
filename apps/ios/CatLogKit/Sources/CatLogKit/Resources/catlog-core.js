@@ -39,15 +39,19 @@ var CatLogCore = (() => {
     addDebtEventToData: () => addDebtEventToData,
     addDebtToData: () => addDebtToData,
     addDebtToSnapshot: () => addDebtToSnapshot,
+    addHoldingSnapshotToData: () => addHoldingSnapshotToData,
     addIncomeToData: () => addIncomeToData,
+    addStockTransactionsToData: () => addStockTransactionsToData,
     areDataStructuresEqual: () => areDataStructuresEqual,
     buildCollectionDiff: () => buildCollectionDiff,
     buildExpenseDiff: () => buildExpenseDiff,
     buildHoldingMap: () => buildHoldingMap,
+    buildHoldingSnapshotPreview: () => buildHoldingSnapshotPreview,
     buildMetaVersionFields: () => buildMetaVersionFields,
     buildStockRows: () => buildStockRows,
     checkCompatibility: () => checkCompatibility,
     cleanPledgeStockRows: () => cleanPledgeStockRows,
+    clearStockTransactionsFromData: () => clearStockTransactionsFromData,
     compareVersions: () => compareVersions,
     convertToTWD: () => convertToTWD,
     createAssetEntry: () => createAssetEntry,
@@ -58,6 +62,7 @@ var CatLogCore = (() => {
     createHoldingRow: () => createHoldingRow,
     createIncomeSource: () => createIncomeSource,
     deleteDebtEventFromData: () => deleteDebtEventFromData,
+    deleteHoldingSnapshotFromData: () => deleteHoldingSnapshotFromData,
     deleteMonthData: () => deleteMonthData,
     describeIncompatibility: () => describeIncompatibility,
     describeStockTrades: () => describeStockTrades,
@@ -121,6 +126,7 @@ var CatLogCore = (() => {
     getJsonImportSummary: () => getJsonImportSummary,
     getLatestAssetByName: () => getLatestAssetByName,
     getLatestDateInMonth: () => getLatestDateInMonth,
+    getLatestHoldingSnapshotForMarket: () => getLatestHoldingSnapshotForMarket,
     getLatestSnapshotDate: () => getLatestSnapshotDate,
     getLatestSnapshotEstimate: () => getLatestSnapshotEstimate,
     getLatestSnapshotItems: () => getLatestSnapshotItems,
@@ -137,6 +143,7 @@ var CatLogCore = (() => {
     getNetAssetsAtDate: () => getNetAssetsAtDate,
     getPledgeAverageRate: () => getPledgeAverageRate,
     getPreviousAssetSnapshot: () => getPreviousAssetSnapshot,
+    getPreviousHoldingRows: () => getPreviousHoldingRows,
     getRangeAssetStats: () => getRangeAssetStats,
     getRangeDebtStats: () => getRangeDebtStats,
     getRangeExpenseStats: () => getRangeExpenseStats,
@@ -200,6 +207,7 @@ var CatLogCore = (() => {
     parseCollateralText: () => parseCollateralText,
     parseExpenseCSV: () => parseExpenseCSV,
     parseLegacyChunks: () => parseLegacyChunks,
+    parseStockImport: () => parseStockImport,
     processArchivedUSRealizedCSVRows: () => processArchivedUSRealizedCSVRows,
     processExpenseCSVText: () => processExpenseCSVText,
     processStockCSVText: () => processStockCSVText,
@@ -211,6 +219,7 @@ var CatLogCore = (() => {
     splitIntoChunks: () => splitIntoChunks,
     summarizeBackupImport: () => summarizeBackupImport,
     summarizeExpenseImport: () => summarizeExpenseImport,
+    summarizeStockImport: () => summarizeStockImport,
     updateIncomeSourceField: () => updateIncomeSourceField,
     updateMonthDetails: () => updateMonthDetails
   });
@@ -2532,6 +2541,106 @@ var CatLogCore = (() => {
       changedMonths,
       hasChanges: changedMonths.some((m) => m.added || m.removed || m.modified)
     };
+  };
+
+  // src/stockImport.js
+  var marketOf2 = (item) => item?.market || "TW";
+  var TRADE_TYPES = ["buy", "sell", "dividend", "interest", "deposit", "withdrawal", "fee"];
+  var parseStockImport = (text, options = {}) => {
+    const result = processStockCSVText(text, options);
+    if (result.transactions.length === 0) throw new Error("\u6C92\u6709\u627E\u5230\u53EF\u532F\u5165\u7684\u80A1\u7968\u4EA4\u6613\u3002");
+    return result;
+  };
+  var summarizeStockImport = (result = {}) => {
+    const transactions = result.transactions || [];
+    const counts = Object.fromEntries(TRADE_TYPES.map((type) => [type, transactions.filter((trade) => trade.type === type).length]));
+    return {
+      market: result.market || "TW",
+      total: transactions.length,
+      counts,
+      isArchived: Boolean(result.isArchived),
+      skippedRows: (result.skippedRows || []).map((row) => ({
+        row: row.row,
+        item: [row.type, row.item].filter(Boolean).join(" / "),
+        reason: row.reason || ""
+      }))
+    };
+  };
+  var addStockTransactionsToData = (data, transactions = []) => ({
+    ...data,
+    stockTransactions: [...data.stockTransactions || [], ...transactions]
+  });
+  var clearStockTransactionsFromData = (data, market = "TW") => ({
+    ...data,
+    stockTransactions: (data.stockTransactions || []).filter((trade) => marketOf2(trade) !== (market || "TW"))
+  });
+  var getLatestHoldingSnapshotForMarket = (stockHoldingSnapshots = {}, market = "TW") => getHoldingSnapshots(stockHoldingSnapshots).filter((snapshot) => snapshot.holdings.some((holding) => marketOf2(holding) === market)).sort((a, b) => {
+    const timeA = new Date(a.importedAt || `${a.month}-01`).getTime() || 0;
+    const timeB = new Date(b.importedAt || `${b.month}-01`).getTime() || 0;
+    if (timeB !== timeA) return timeB - timeA;
+    return (Number(b.version) || 0) - (Number(a.version) || 0);
+  })[0] || null;
+  var getPreviousHoldingRows = (stockHoldingSnapshots = {}, market = "TW") => {
+    const snapshot = getLatestHoldingSnapshotForMarket(stockHoldingSnapshots, market);
+    if (!snapshot) return [];
+    return snapshot.holdings.filter((holding) => marketOf2(holding) === market).map((holding) => ({
+      market,
+      name: holding.name || holding.symbol || "",
+      price: holding.marketPrice ? String(holding.marketPrice) : "",
+      shares: holding.shares ? String(holding.shares) : ""
+    }));
+  };
+  var buildHoldingSnapshotPreview = ({ month, note = "", rows = [], idPrefix = "holding" }) => {
+    const activeRows = rows.filter((row) => String(row.name || "").trim() || row.price || row.shares);
+    if (activeRows.length === 0) throw new Error("\u8ACB\u81F3\u5C11\u8F38\u5165\u4E00\u7B46\u6301\u5009\u8CC7\u6599\u3002");
+    const skippedRows = [];
+    const holdings = activeRows.flatMap((row, index) => {
+      const name = String(row.name || "").trim();
+      const marketPrice = parseAmount(row.price);
+      const shares = parseAmount(row.shares);
+      if (!name || marketPrice <= 0 || shares <= 0) {
+        skippedRows.push({ row: index + 1, item: name || "\u7A7A\u767D", reason: "\u8ACB\u78BA\u8A8D\u80A1\u7968\u540D\u7A31\u3001\u73FE\u50F9\u8207\u80A1\u6578\u90FD\u6709\u586B\u5BEB" });
+        return [];
+      }
+      return [{
+        id: `${idPrefix}-${index}`,
+        month,
+        market: row.market || "TW",
+        symbol: "",
+        name,
+        shares,
+        averageCost: 0,
+        costAmount: 0,
+        marketPrice,
+        marketValue: marketPrice * shares,
+        account: ""
+      }];
+    });
+    if (holdings.length === 0) throw new Error("\u6C92\u6709\u627E\u5230\u53EF\u532F\u5165\u7684\u6301\u5009\u5FEB\u7167\u3002\u8ACB\u78BA\u8A8D\u81F3\u5C11\u4E00\u5217\u8CC7\u6599\u5B8C\u6574\u3002");
+    return { month, note: String(note).trim(), holdings, skippedRows };
+  };
+  var addHoldingSnapshotToData = (data, preview, { nowISO, nowMs }) => {
+    const { month } = preview;
+    const existingVersions = data.stockHoldingSnapshots?.[month] || [];
+    const nextVersion = existingVersions.reduce((max, item) => Math.max(max, Number(item.version) || 0), 0) + 1;
+    const snapshot = {
+      id: `holding-snapshot-${month}-v${nextVersion}-${nowMs}`,
+      version: nextVersion,
+      importedAt: nowISO,
+      note: preview.note || "",
+      holdings: preview.holdings
+    };
+    return {
+      ...data,
+      stockHoldingSnapshots: { ...data.stockHoldingSnapshots || {}, [month]: [...existingVersions, snapshot] }
+    };
+  };
+  var deleteHoldingSnapshotFromData = (data, month, snapshotId) => {
+    const remaining = (data.stockHoldingSnapshots?.[month] || []).filter((snapshot) => snapshot.id !== snapshotId);
+    const nextSnapshots = { ...data.stockHoldingSnapshots || {} };
+    if (remaining.length > 0) nextSnapshots[month] = remaining;
+    else delete nextSnapshots[month];
+    return { ...data, stockHoldingSnapshots: nextSnapshots };
   };
   return __toCommonJS(src_exports);
 })();
