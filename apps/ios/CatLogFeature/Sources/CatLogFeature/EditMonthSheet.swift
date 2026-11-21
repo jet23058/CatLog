@@ -73,14 +73,18 @@ struct EditMonthSheet: View {
                         .numericField(assetBinding(index, "amount"))
                         .multilineTextAlignment(.trailing)
                         .frame(maxWidth: 140)
-                    DeleteRowButton { draft?.assets.remove(at: index) }
+                }
+                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                    Button(role: .destructive) { draft?.assets.remove(at: index) } label: {
+                        Label("刪除", systemImage: "trash")
+                    }
                 }
             }
-            .onDelete { draft?.assets.remove(atOffsets: $0) }
+
         } header: {
             Text("資產（\(draft?.assetDate ?? "")）")
         } footer: {
-            Text("點垃圾桶刪除，按「儲存」後才會生效。")
+            Text("向左滑出現刪除，按「儲存」後才會生效。")
         }
     }
 
@@ -88,10 +92,7 @@ struct EditMonthSheet: View {
         Section("收入") {
             ForEach(draft?.incomes.indices ?? 0..<0, id: \.self) { index in
                 VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        TextField("收入來源", text: incomeBinding(index, "company"))
-                        DeleteRowButton { draft?.incomes.remove(at: index) }
-                    }
+                    TextField("收入來源", text: incomeBinding(index, "company"))
                     TextField("入帳帳戶", text: incomeBinding(index, "bank")).font(.subheadline)
                     HStack {
                         Picker("幣別", selection: incomeBinding(index, "currency")) {
@@ -113,8 +114,13 @@ struct EditMonthSheet: View {
                     TextField("備註", text: incomeBinding(index, "memo")).font(.caption)
                 }
                 .padding(.vertical, 4)
+                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                    Button(role: .destructive) { draft?.incomes.remove(at: index) } label: {
+                        Label("刪除", systemImage: "trash")
+                    }
+                }
             }
-            .onDelete { draft?.incomes.remove(atOffsets: $0) }
+
         }
     }
 
@@ -132,7 +138,6 @@ struct EditMonthSheet: View {
                             ForEach(core.debtCategories, id: \.value) { Text($0.label).tag($0.value) }
                         }
                         .labelsHidden()
-                        DeleteRowButton { draft?.debts.remove(at: index) }
                     }
                     HStack {
                         TextField("機構 / 帳戶", text: debtBinding(index, "lender"))
@@ -144,8 +149,13 @@ struct EditMonthSheet: View {
                     TextField("備註", text: debtBinding(index, "memo")).font(.caption)
                 }
                 .padding(.vertical, 4)
+                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                    Button(role: .destructive) { draft?.debts.remove(at: index) } label: {
+                        Label("刪除", systemImage: "trash")
+                    }
+                }
             }
-            .onDelete { draft?.debts.remove(atOffsets: $0) }
+
         } header: {
             Text("負債（\(draft?.debtDate ?? "")）")
         } footer: {
@@ -170,11 +180,15 @@ struct EditMonthSheet: View {
                         if event[text: "type"] != "rate_change" {
                             Text(core.formatMoney(Double(event[text: "amount"]) ?? 0)).monospacedDigit()
                         }
-                        DeleteRowButton { draft?.debtEvents.remove(at: index) }
+                    }
+                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                        Button(role: .destructive) { draft?.debtEvents.remove(at: index) } label: {
+                            Label("刪除", systemImage: "trash")
+                        }
                     }
                 }
             }
-            .onDelete { draft?.debtEvents.remove(atOffsets: $0) }
+
         } header: {
             Text("負債異動")
         } footer: {
@@ -230,15 +244,3 @@ extension Array {
     subscript(safe index: Int) -> Element? { indices.contains(index) ? self[index] : nil }
 }
 
-/// 刪除一列（點一下就刪；按「儲存」後才寫入雲端，按「取消」就不會改）。
-private struct DeleteRowButton: View {
-    let action: () -> Void
-
-    var body: some View {
-        Button(role: .destructive, action: action) {
-            Image(systemName: "trash").foregroundStyle(.red)
-        }
-        .buttonStyle(.borderless)
-        .accessibilityLabel("刪除這一列")
-    }
-}
