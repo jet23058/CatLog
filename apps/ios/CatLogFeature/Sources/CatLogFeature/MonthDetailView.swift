@@ -72,14 +72,17 @@ struct MonthDetailView: View {
         .sheet(isPresented: $showEdit) {
             EditMonthSheet(model: model, core: core, monthKey: monthKey) { dismissView() }
         }
-        .confirmationDialog("刪除這筆負債異動？", isPresented: Binding(get: { pendingDeleteEvent != nil }, set: { if !$0 { pendingDeleteEvent = nil } }), titleVisibility: .visible) {
+        // 用 presenting：按鈕直接拿到要刪的那一筆。原本靠 pendingDeleteEvent，
+        // 但按下按鈕時 SwiftUI 會先關掉對話框、把它清成 nil，結果什麼都沒刪。
+        .confirmationDialog("刪除這筆負債異動？", isPresented: Binding(get: { pendingDeleteEvent != nil }, set: { if !$0 { pendingDeleteEvent = nil } }), titleVisibility: .visible, presenting: pendingDeleteEvent) { event in
             Button("刪除", role: .destructive) {
-                guard let id = pendingDeleteEvent?.id else { return }
-                pendingDeleteEvent = nil
+                guard let id = event.id else { return }
                 Task {
                     if case .failed(let message) = await model.deleteDebtEvent(month: monthKey, id: id) { actionError = message }
                 }
             }
+        } message: { event in
+            Text([core.debtEventLabel(event.type), event.date, event.name].compactMap { $0 }.joined(separator: "・"))
         }
         .alert("刪除失敗", isPresented: Binding(get: { actionError != nil }, set: { if !$0 { actionError = nil } })) {
             Button("好") { actionError = nil }
