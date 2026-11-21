@@ -131,6 +131,8 @@ describe('App Integration Tests', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
+        // 隱私模式、Face ID 等設定存在 localStorage，每個測試從乾淨狀態開始。
+        localStorage.clear();
         // Default mock data for getDocs (empty)
         getDocs.mockResolvedValue({
             empty: true,
@@ -1250,6 +1252,35 @@ describe('App Integration Tests', () => {
         await user.click(nextYearBtn);
 
         expect(screen.getByText(String(currentYear))).toBeInTheDocument();
+    });
+
+    test('FIRE modal shows progress as a percentage and hides it in privacy mode', async () => {
+        // 月支出 10,000 → 年支出 120,000；提領率 4% → 目標 300 萬；淨資產 85.2 萬 → 28.4%
+        getDocs.mockResolvedValue(createMockSnapshot({
+            records: { '2026-01-31': [{ name: '銀行', type: 'fixed', amount: 852000 }] },
+            expenses: { '2026-01': [{ date: '2026/01/05', amount: 10000, category: '飲食' }] },
+            incomes: {}, memos: {}, fireSettings: { withdrawalRate: 4 }
+        }));
+        const user = userEvent.setup();
+        render(<App />);
+        await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
+
+        const openFire = async () => {
+            await user.click(document.querySelector('.lucide-layout-grid').closest('button'));
+            await user.click(await screen.findByText('FIRE 目標'));
+            await screen.findByText('達成進度');
+        };
+
+        await openFire();
+        expect(screen.getByText('28.4%')).toBeInTheDocument();
+        expect(screen.getAllByText('300 萬').length).toBeGreaterThan(0);
+        await user.click(document.querySelector('.lucide-x').closest('button'));
+
+        await user.click(screen.getByTitle('隱藏金額'));
+        await openFire();
+        expect(screen.queryByText('28.4%')).not.toBeInTheDocument();
+        expect(screen.queryByText('300 萬')).not.toBeInTheDocument();
+        expect(screen.getAllByText('****').length).toBeGreaterThan(3);
     });
 
     test('Home Page: Advanced Features', async () => {

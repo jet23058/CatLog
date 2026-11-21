@@ -24,8 +24,8 @@
 | FIRE 進度 | ✅ | ✅ 檢視 |
 | 區間統計、對帳單核對 | ✅ | 🚧 |
 | MOZE 花費 CSV / 證券交易 / JSON 備份匯入 | ✅ | 🚧 |
-| 生物辨識鎖 | ✅ WebAuthn | 🚧 Face ID |
-| 隱私模式 | ✅ | 🚧 |
+| 生物辨識鎖 | ✅ WebAuthn | ✅ Face ID |
+| 隱私模式 | ✅ | ✅ |
 
 ✅ 已支援　✅ 檢視：iOS 可看、尚不能編輯　🚧 規劃中　— 新功能必須兩邊一起上線，規則見 [CONTRIBUTING.md](CONTRIBUTING.md)。
 

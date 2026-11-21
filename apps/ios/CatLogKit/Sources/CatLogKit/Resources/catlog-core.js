@@ -21,6 +21,8 @@ var CatLogCore = (() => {
   // src/index.js
   var src_exports = {};
   __export(src_exports, {
+    AUTO_LOCK_BACKGROUND_MS: () => AUTO_LOCK_BACKGROUND_MS,
+    AUTO_LOCK_IDLE_MS: () => AUTO_LOCK_IDLE_MS,
     BACKUP_FORMAT: () => BACKUP_FORMAT,
     BACKUP_VERSION: () => BACKUP_VERSION,
     CHUNK_SIZE: () => CHUNK_SIZE,
@@ -28,6 +30,7 @@ var CatLogCore = (() => {
     DEBT_CATEGORIES: () => DEBT_CATEGORIES,
     DEFAULT_EXCHANGE_RATES: () => DEFAULT_EXCHANGE_RATES,
     INITIAL_DATA: () => INITIAL_DATA,
+    PRIVACY_MASK: () => PRIVACY_MASK,
     SCHEMA_MIN_CLIENT_VERSION: () => SCHEMA_MIN_CLIENT_VERSION,
     STOCK_MARKETS: () => STOCK_MARKETS,
     addDebtAndCarryForward: () => addDebtAndCarryForward,
@@ -136,8 +139,10 @@ var CatLogCore = (() => {
     hashString: () => hashString,
     inferPledgeStockMarket: () => inferPledgeStockMarket,
     isArchivedUSRealizedCSVHeaders: () => isArchivedUSRealizedCSVHeaders,
+    isIdleExpired: () => isIdleExpired,
     isUSBrokerTransactionCSVHeaders: () => isUSBrokerTransactionCSVHeaders,
     looksLikeUSBrokerPastedRows: () => looksLikeUSBrokerPastedRows,
+    maskAmount: () => maskAmount,
     maxVersion: () => maxVersion,
     mergeDebtMaps: () => mergeDebtMaps,
     mergePledgeRateRows: () => mergePledgeRateRows,
@@ -159,6 +164,7 @@ var CatLogCore = (() => {
     processUSBrokerTransactionCSVRows: () => processUSBrokerTransactionCSVRows,
     processUSBrokerTransactionPastedRows: () => processUSBrokerTransactionPastedRows,
     processUSBrokerTransactionRows: () => processUSBrokerTransactionRows,
+    shouldLockOnResume: () => shouldLockOnResume,
     splitIntoChunks: () => splitIntoChunks
   });
 
@@ -1942,5 +1948,13 @@ var CatLogCore = (() => {
       throw error;
     }
   };
+
+  // src/appLock.js
+  var AUTO_LOCK_BACKGROUND_MS = 30 * 1e3;
+  var AUTO_LOCK_IDLE_MS = 5 * 60 * 1e3;
+  var PRIVACY_MASK = "****";
+  var shouldLockOnResume = (hiddenAt, now) => hiddenAt !== null && hiddenAt !== void 0 && now - hiddenAt >= AUTO_LOCK_BACKGROUND_MS;
+  var isIdleExpired = (lastActivityAt, now) => lastActivityAt !== null && lastActivityAt !== void 0 && now - lastActivityAt >= AUTO_LOCK_IDLE_MS;
+  var maskAmount = (text, isPrivacyMode) => isPrivacyMode ? PRIVACY_MASK : text;
   return __toCommonJS(src_exports);
 })();

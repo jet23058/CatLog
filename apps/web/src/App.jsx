@@ -2,6 +2,7 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, PieChart, Pie, Cell } from 'recharts';
 import { Cat, ChevronLeft, ChevronRight, Plus, Upload, Wallet, TrendingUp, DollarSign, Calendar, X, Save, FileJson, ArrowUpRight, ArrowDownRight, ArrowLeft, ArrowRight, Edit2, Trash2, Info, Check, TrendingDown, RefreshCw, FileText, Mountain, ArrowDown, AlertCircle, AlertTriangle, Building2, Lock, PieChart as PieChartIcon, Download, StickyNote, ShoppingBag, Filter, ChevronDown, PiggyBank, Activity, Sparkles, LogOut, Coins, ClipboardCheck, LayoutGrid, Package, Box, Footprints, Eye, EyeOff, ScanFace, ShieldCheck, ShieldAlert, Search } from 'lucide-react';
 import {
+    AUTO_LOCK_IDLE_MS,
     CURRENT_SCHEMA_VERSION,
     DEBT_CATEGORIES,
     DEFAULT_EXCHANGE_RATES,
@@ -19,7 +20,6 @@ import {
     formatExchangeRate,
     formatMoney,
     formatMoneyByMarket,
-    formatPercent,
     formatPriceUpToTwo,
     formatRate,
     formatStockPnlLabel,
@@ -63,13 +63,16 @@ import {
     getStockTradeTitle,
     getYearStats,
     getYearlyTrendData,
+    isIdleExpired,
+    maskAmount,
     mergeDebtMaps,
     migrateData,
     normalizeAppData,
     normalizeMonthValue,
     parseAmount,
     processExpenseCSVText,
-    processStockCSVText
+    processStockCSVText,
+    shouldLockOnResume
 } from '@catlog/core';
 
 const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.0.0';
@@ -3151,7 +3154,8 @@ const RangeStatsModal = ({ data, onClose }) => {
     );
 };
 
-const FIREModal = ({ fireStats, yearlyStats = [], onRateChange, onClose }) => {
+const FIREModal = ({ fireStats, yearlyStats = [], onRateChange, onClose, isPrivacyMode = false }) => {
+    const wan = (value) => maskAmount(formatWan(value), isPrivacyMode);
     const [localRate, setLocalRate] = useState(fireStats.rate);
     useEffect(() => { setLocalRate(fireStats.rate); }, [fireStats.rate]);
     const handleBlur = () => { onRateChange(localRate); };
@@ -3182,22 +3186,22 @@ const FIREModal = ({ fireStats, yearlyStats = [], onRateChange, onClose }) => {
                                     />%
                                 </span>
                             </h3>
-                            <p className="text-[10px] text-slate-400 mt-1">月均花費 {formatWan(fireStats.avgExpense)} / 年支預估 {formatWan(fireStats.avgExpense * 12)}</p>
+                            <p className="text-[10px] text-slate-400 mt-1">月均花費 {wan(fireStats.avgExpense)} / 年支預估 {wan(fireStats.avgExpense * 12)}</p>
                         </div>
                         <div className="text-right">
                             <div className="text-xs text-slate-400 mb-1">目標資產</div>
-                            <div className="text-lg font-bold font-inter text-slate-800">{formatWan(fireStats.fireTarget)}</div>
+                            <div className="text-lg font-bold font-inter text-slate-800">{wan(fireStats.fireTarget)}</div>
                         </div>
                     </div>
 
                     <div className="mb-2 flex justify-between items-end text-xs">
-                        <span className="font-bold text-teal-600 font-inter">{formatPercent(fireStats.progress)}</span>
-                        <span className="text-slate-400 font-inter">{formatWan(fireStats.currentAssets)} / {formatWan(fireStats.fireTarget)}</span>
+                        <span className="font-bold text-teal-600 font-inter">{maskAmount(formatRate(fireStats.progress), isPrivacyMode)}</span>
+                        <span className="text-slate-400 font-inter">{wan(fireStats.currentAssets)} / {wan(fireStats.fireTarget)}</span>
                     </div>
                     <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
                         <div
                             className="h-full bg-gradient-to-r from-amber-400 to-orange-500 rounded-full shadow-[0_0_10px_rgba(245,158,11,0.5)] transition-all duration-1000 ease-out"
-                            style={{ width: `${Math.min(fireStats.progress * 100, 100)}%` }}
+                            style={{ width: isPrivacyMode ? '0%' : `${Math.min(fireStats.progress * 100, 100)}%` }}
                         ></div>
                     </div>
                 </div>
@@ -3208,13 +3212,13 @@ const FIREModal = ({ fireStats, yearlyStats = [], onRateChange, onClose }) => {
                             <div key={stat.year} className="flex items-center justify-between text-sm py-2 border-b border-slate-50 last:border-0">
                                 <span className="font-bold font-inter text-slate-600 w-12">{stat.year}</span>
                                 <div className="flex-1 px-2 text-right">
-                                    <span className="block font-inter font-bold text-slate-700">{formatWan(stat.avg)}</span>
+                                    <span className="block font-inter font-bold text-slate-700">{wan(stat.avg)}</span>
                                     <span className="text-[10px] text-slate-400">平均月花費</span>
                                 </div>
                                 <div className="w-px h-6 bg-slate-100 mx-2"></div>
                                 <div className="text-[10px] text-slate-400 flex flex-col items-end w-24">
-                                    <div className="flex items-center gap-1">Max <span className="font-inter text-slate-600">{formatWan(stat.max.val)}</span> ({stat.max.month}月)</div>
-                                    <div className="flex items-center gap-1">Min <span className="font-inter text-slate-600">{formatWan(stat.min.val)}</span> ({stat.min.month}月)</div>
+                                    <div className="flex items-center gap-1">Max <span className="font-inter text-slate-600">{wan(stat.max.val)}</span> ({stat.max.month}月)</div>
+                                    <div className="flex items-center gap-1">Min <span className="font-inter text-slate-600">{wan(stat.min.val)}</span> ({stat.min.month}月)</div>
                                 </div>
                             </div>
                         ))}
@@ -4184,8 +4188,6 @@ const AuthenticatedApp = () => {
     return <MainApp user={user} logout={logout} />;
 };
 
-const AUTO_LOCK_BACKGROUND_MS = 30 * 1000;
-const AUTO_LOCK_IDLE_MS = 5 * 60 * 1000;
 
 const readBiometricEnabled = () => {
     try {
@@ -4233,19 +4235,27 @@ const MainApp = ({ user, logout }) => {
         if (!biometricEnabled) return undefined;
         let hiddenAt = null;
         let idleTimer = null;
+        let lastActivityAt = Date.now();
         const lock = () => setIsAppLocked(true);
-        const resetIdleTimer = () => {
+        const scheduleIdleLock = () => {
             clearTimeout(idleTimer);
-            idleTimer = setTimeout(lock, AUTO_LOCK_IDLE_MS);
+            const remaining = AUTO_LOCK_IDLE_MS - (Date.now() - lastActivityAt);
+            idleTimer = setTimeout(lock, Math.max(0, remaining));
+        };
+        const resetIdleTimer = () => {
+            lastActivityAt = Date.now();
+            scheduleIdleLock();
         };
         const handleVisibilityChange = () => {
             if (document.visibilityState === 'hidden') {
                 hiddenAt = Date.now();
                 return;
             }
-            if (hiddenAt && Date.now() - hiddenAt >= AUTO_LOCK_BACKGROUND_MS) lock();
+            // 回到前景不重設閒置計時：背景超過 30 秒、或閒置期限已到，都要上鎖。
+            const now = Date.now();
+            if (shouldLockOnResume(hiddenAt, now) || isIdleExpired(lastActivityAt, now)) lock();
+            else scheduleIdleLock();
             hiddenAt = null;
-            resetIdleTimer();
         };
         const activityEvents = ['pointerdown', 'keydown', 'touchstart', 'scroll'];
         document.addEventListener('visibilitychange', handleVisibilityChange);
@@ -5244,7 +5254,7 @@ const MainApp = ({ user, logout }) => {
             {showAddDebtModal && <AddDebtModal onClose={() => setShowAddDebtModal(false)} onSave={handleSaveNewDebt} debtNames={allDebtNames} accountOptions={debtAccountOptions} assetRecords={data.records} debts={data.debts} />}
 
             {showStatementModal && <StatementModal data={data} onClose={() => setShowStatementModal(false)} />}
-            {showFIREModal && <FIREModal fireStats={fireStats} yearlyStats={fireYearlyStats} onRateChange={handleFireRateChange} onClose={() => setShowFIREModal(false)} />}
+            {showFIREModal && <FIREModal fireStats={fireStats} yearlyStats={fireYearlyStats} onRateChange={handleFireRateChange} onClose={() => setShowFIREModal(false)} isPrivacyMode={isPrivacyMode} />}
             {showRangeStatsModal && <RangeStatsModal data={data} onClose={() => setShowRangeStatsModal(false)} />}
             {/* Global Loading Overlay */}
             {(isImporting || isSaving || isSyncing) && (

@@ -33,6 +33,14 @@
 - [core] 修正切塊時可能把 emoji 切成兩半：半個字元存進 Firestore 會變成亂碼，之後 checksum 驗證失敗、App 被鎖住。
 - [core] 新增 `fixtures/cloud-storage-v3.json`，由 web 實際寫出，iOS 測試必須讀出相同內容。
 
+- [iOS] Face ID 鎖定：開啟時先驗證；App 啟動即鎖定，背景超過 30 秒或閒置 5 分鐘重新上鎖，可改用裝置密碼；鎖定時不建立資料畫面，多工切換畫面加上遮罩。
+- [iOS] 隱私模式：金額顯示為 `****`，比例照常顯示。
+- [core] 新增 `appLock.js`：自動上鎖時間與隱私遮罩，web 改為使用同一份常數。
+- [web] FIRE 視窗支援隱私模式：目標、資產、花費、達成率與進度條都會隱藏（原本完全不受隱私模式影響）。
+- [web] 修正 FIRE 達成率顯示錯誤：28.4% 原本顯示成 0.3%（用錯格式化函式）。
+- [iOS] 隱私模式也隱藏 FIRE 達成率與進度條。
+- [web] 修正閒置自動上鎖可被繞過：切到背景再回來時，原本會把閒置計時重新歸零，現在保留原本的期限，期限已到就直接上鎖。
+
 ### CI
 - 新增 iOS workflow（macOS）：CatLogKit 測試與 App 建置；Node CI 檢查 iOS 內建的 core bundle 是否與 core 同步。
 - CI 新增 core 測試與 JavaScriptCore 打包步驟。
