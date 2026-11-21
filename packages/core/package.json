@@ -15,7 +15,7 @@
     "build:ios": "esbuild src/index.js --bundle --format=iife --global-name=CatLogCore --target=es2020 --legal-comments=none --banner:js=\"// Generated from packages/core by npm run build:ios -w @catlog/core. Do not edit.\" --outfile=../../apps/ios/CatLogKit/Sources/CatLogKit/Resources/catlog-core.js"
   },
   "devDependencies": {
-    "vitest": "^4.0.16",
-    "esbuild": "^0.21.5"
+    "vitest": "^4.1.12",
+    "esbuild": "^0.28.2"
   }
 }
