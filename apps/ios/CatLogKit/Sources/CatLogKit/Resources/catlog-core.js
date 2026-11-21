@@ -46,6 +46,7 @@ var CatLogCore = (() => {
     createBackupFile: () => createBackupFile,
     createHoldingRow: () => createHoldingRow,
     describeIncompatibility: () => describeIncompatibility,
+    describeStockTrades: () => describeStockTrades,
     detectDelimitedTextSeparator: () => detectDelimitedTextSeparator,
     extractBackupData: () => extractBackupData,
     filterTransactionsByRange: () => filterTransactionsByRange,
@@ -100,6 +101,7 @@ var CatLogCore = (() => {
     getLatestSnapshotEstimate: () => getLatestSnapshotEstimate,
     getLatestSnapshotItems: () => getLatestSnapshotItems,
     getLatestSnapshotTotal: () => getLatestSnapshotTotal,
+    getMarketSnapshots: () => getMarketSnapshots,
     getMemoFullKey: () => getMemoFullKey,
     getMemoIdentityKey: () => getMemoIdentityKey,
     getMonthDetail: () => getMonthDetail,
@@ -114,7 +116,9 @@ var CatLogCore = (() => {
     getRangeExpenseStats: () => getRangeExpenseStats,
     getRangeFinanceStats: () => getRangeFinanceStats,
     getRangeIncomeStats: () => getRangeIncomeStats,
+    getRangeStats: () => getRangeStats,
     getRateChangeEventsForDebt: () => getRateChangeEventsForDebt,
+    getRecentMonthsRange: () => getRecentMonthsRange,
     getRecordFullKey: () => getRecordFullKey,
     getRecordIdentityKey: () => getRecordIdentityKey,
     getSchemaVersion: () => getSchemaVersion,
@@ -122,8 +126,10 @@ var CatLogCore = (() => {
     getStatementExpenses: () => getStatementExpenses,
     getStockChartRows: () => getStockChartRows,
     getStockDebtStats: () => getStockDebtStats,
+    getStockLeaders: () => getStockLeaders,
     getStockMarketCounts: () => getStockMarketCounts,
     getStockMarketLabel: () => getStockMarketLabel,
+    getStockOverview: () => getStockOverview,
     getStockSnapshotFullKey: () => getStockSnapshotFullKey,
     getStockSnapshotIdentityKey: () => getStockSnapshotIdentityKey,
     getStockStats: () => getStockStats,
@@ -132,6 +138,7 @@ var CatLogCore = (() => {
     getStockTradeDescription: () => getStockTradeDescription,
     getStockTradeLabel: () => getStockTradeLabel,
     getStockTradeTitle: () => getStockTradeTitle,
+    getStockTrades: () => getStockTrades,
     getStockTransactionFullKey: () => getStockTransactionFullKey,
     getStockTransactionIdentityKey: () => getStockTransactionIdentityKey,
     getUSBrokerTradeType: () => getUSBrokerTradeType,
@@ -1724,6 +1731,31 @@ var CatLogCore = (() => {
     });
     return result.sort((a, b) => parseExpenseDate(b.date) - parseExpenseDate(a.date));
   };
+  var pad2 = (n) => String(n).padStart(2, "0");
+  var getRecentMonthsRange = (months, today) => {
+    const [year, month] = today.split("-").map(Number);
+    const lastDay = new Date(year, month, 0).getDate();
+    const start = new Date(year, month - 1 - months + 1, 1);
+    return {
+      startDate: `${start.getFullYear()}-${pad2(start.getMonth() + 1)}-01`,
+      endDate: `${year}-${pad2(month)}-${pad2(lastDay)}`
+    };
+  };
+  var getRangeStats = (data = {}, startDate, endDate) => {
+    const incomeStats = getRangeIncomeStats(data.incomes, startDate, endDate);
+    const assetStats = getRangeAssetStats(data.records, startDate, endDate);
+    const debtStats = getRangeDebtStats(data.debts, data.debtEvents, startDate, endDate);
+    const expenseStats = getRangeExpenseStats(data.expenses, startDate, endDate);
+    return {
+      startDate,
+      endDate,
+      incomeStats,
+      assetStats,
+      debtStats,
+      expenseStats,
+      financeStats: getRangeFinanceStats({ incomeStats, assetStats, debtStats, expenseStats })
+    };
+  };
 
   // src/stockAnalysis.js
   var marketOf = (item) => item.market || "TW";
@@ -1906,6 +1938,56 @@ var CatLogCore = (() => {
     const maxAbs = Math.max(...top.map((item) => Math.abs(item.totalPnl)), 1);
     return top.map((item) => ({ ...item, barWidth: Math.max(6, Math.round(Math.abs(item.totalPnl) / maxAbs * 100)) }));
   };
+  var getMarketSnapshots = (holdingSnapshots = [], market = "TW", snapshotId = "") => {
+    const visible = holdingSnapshots.filter((snapshot) => (snapshot.holdings || []).some((holding) => marketOf(holding) === market));
+    const selected = visible.find((snapshot) => snapshot.id === snapshotId) || visible[0] || null;
+    const holdings = selected ? (selected.holdings || []).filter((holding) => marketOf(holding) === market) : [];
+    return { visible, selected, holdings };
+  };
+  var getStockLeaders = (rows = [], limit = 5) => ({
+    winners: rows.filter((item) => item.totalPnl > 0).slice(0, limit),
+    losers: [...rows].filter((item) => item.totalPnl < 0).sort((a, b) => a.totalPnl - b.totalPnl).slice(0, limit)
+  });
+  var getStockOverview = (data = {}, { market = "TW", snapshotId = "", rangeStart = "", rangeEnd = "", today } = {}) => {
+    const holdingSnapshots = getHoldingSnapshots(data.stockHoldingSnapshots);
+    const { visible, selected, holdings } = getMarketSnapshots(holdingSnapshots, market, snapshotId);
+    const hasRange = Boolean(rangeStart || rangeEnd);
+    const holdingMap = selected ? buildHoldingMap(selected, holdings) : {};
+    const activeTransactions = filterTransactionsByRange(data.stockTransactions, rangeStart, rangeEnd);
+    const rows = buildStockRows(activeTransactions, hasRange ? {} : holdingMap, selected).filter((row) => row.market === market);
+    const marketTransactions = activeTransactions.filter((trade) => marketOf(trade) === market);
+    const stats = getStockStats(rows, marketTransactions);
+    const targetDate = getStockStatsTargetDate({ hasRange, selectedSnapshot: selected, rangeEnd, transactions: marketTransactions, today });
+    const debtStats = getStockDebtStats({ debts: data.debts, debtEvents: data.debtEvents, market, targetDate, totalPnl: stats.totalPnl });
+    return {
+      market,
+      hasRange,
+      marketCounts: getStockMarketCounts(data.stockTransactions, holdingSnapshots),
+      snapshots: visible.map(({ id, month, version, note, importedAt, holdings: items }) => ({
+        id,
+        month,
+        version,
+        note: note || "",
+        importedAt: importedAt || "",
+        holdingCount: (items || []).filter((holding) => marketOf(holding) === market).length
+      })),
+      selectedSnapshotId: selected?.id || null,
+      holdings,
+      rows,
+      stats,
+      targetDate,
+      debtStats,
+      ...getStockLeaders(rows),
+      transactionCount: marketTransactions.length
+    };
+  };
+  var getStockTrades = (data = {}, { market = "TW", symbol, rangeStart = "", rangeEnd = "" } = {}) => filterTransactionsByRange(data.stockTransactions, rangeStart, rangeEnd).filter((trade) => marketOf(trade) === market && trade.symbol === symbol).sort((a, b) => new Date(b.date) - new Date(a.date));
+  var describeStockTrades = (trades = []) => trades.map((trade) => ({
+    ...trade,
+    label: getStockTradeLabel(trade.type),
+    title: getStockTradeTitle(trade),
+    description: getStockTradeDescription(trade)
+  }));
 
   // src/storageFormat.js
   var CHUNK_SIZE = 25e4;

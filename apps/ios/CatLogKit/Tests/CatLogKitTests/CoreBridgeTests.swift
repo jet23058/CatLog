@@ -90,8 +90,43 @@ final class CoreBridgeTests: XCTestCase {
     }
 
     func testAmountsStoredAsTextStillDecode() throws {
-        try core.load(dataJSON: #"{"records":{"2026-05-31":[{"name":"現金","type":"fixed","amount":"12,345"}]}}"#)
-        XCTAssertEqual(try core.monthDetail("2026-05").assets.first?.amount, 12_345)
+        try core.load(dataJSON: #"{"records":{"2026-05-31":[{"name":"現金","type":"fixed","amount":" 12345 "},{"name":"錯誤","type":"fixed","amount":"1,000"}]}}"#)
+        let detail = try core.monthDetail("2026-05")
+        // 與 JS 的 Number() 相同：前後空白可以，千分位逗號不行（core 的總額也把它當 0）。
+        XCTAssertEqual(detail.assets.map(\.amount), [12_345, 0])
+        XCTAssertEqual(detail.summary.totalAssets, 12_345)
+    }
+
+    func testStockOverviewAndRangeStats() throws {
+        try core.load(dataJSON: """
+        {
+          "stockTransactions": [
+            { "date": "2026-01-10", "market": "TW", "symbol": "2330", "name": "台積電", "type": "buy", "amount": 600000 },
+            { "date": "2026-02-10", "market": "TW", "symbol": "2330", "name": "台積電", "type": "sell", "amount": 350000 },
+            { "date": "2026-03-01", "market": "TW", "type": "dividend", "amount": "2000", "unassigned": true }
+          ],
+          "stockHoldingSnapshots": { "2026-03": [{ "id": "v1", "version": 1, "holdings": [{ "market": "TW", "symbol": "2330", "name": "台積電", "shares": 300, "marketValue": 330000 }] }] },
+          "records": { "2026-01-01": [{ "name": "a", "amount": 1000 }], "2026-01-31": [{ "name": "a", "amount": 1200 }] },
+          "expenses": { "2026-01": [{ "date": "2026/01/10", "amount": 30, "category": "飲食" }] }
+        }
+        """)
+        let overview = try core.stockOverview(market: "TW", today: "2026-11-21")
+        XCTAssertEqual(overview.selectedSnapshotId, "v1")
+        XCTAssertEqual(overview.rows.map(\.symbol), ["2330"])
+        XCTAssertEqual(overview.rows.first?.totalPnl, 80_000)
+        XCTAssertEqual(overview.stats.totalPnl, 82_000) // 含未歸屬股息
+        XCTAssertEqual(overview.winners.map(\.symbol), ["2330"])
+        XCTAssertEqual(overview.holdings.first?.marketValue, 330_000)
+
+        let trades = try core.stockTrades(market: "TW", symbol: "2330")
+        XCTAssertEqual(trades.map(\.label), ["賣出", "買入"])
+        XCTAssertEqual(trades.first?.description, "台積電")
+
+        let range = try core.rangeStats(startDate: "2026-01-01", endDate: "2026-01-31")
+        XCTAssertEqual(range.assetStats.change, 200)
+        XCTAssertEqual(range.expenseStats.topCategories.first?.name, "飲食")
+        XCTAssertEqual(range.financeStats.totalCreated, 230)
+        XCTAssertEqual(try core.recentMonthsRange(3, today: "2026-11-21"), DateRange(startDate: "2026-09-01", endDate: "2026-11-30"))
     }
 
     func testCompatibility() throws {

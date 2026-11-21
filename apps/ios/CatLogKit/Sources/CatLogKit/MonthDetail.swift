@@ -1,6 +1,7 @@
 import Foundation
 
-/// 金額欄位：舊資料可能存成數字或字串（web 一律用 Number(x) 轉換），缺少時為 0。
+/// 金額欄位：舊資料可能存成數字或字串。轉換規則與 JS 的 `Number(x) || 0` 相同（core 的加總也是這樣算），
+/// 例如 "12345" → 12345、"12,345" → 0，確保單筆金額與 core 算出的總額一致。
 @propertyWrapper
 public struct LenientNumber: Decodable, Equatable, Sendable {
     public var wrappedValue: Double
@@ -12,7 +13,7 @@ public struct LenientNumber: Decodable, Equatable, Sendable {
         if let number = try? container.decode(Double.self) {
             wrappedValue = number.isFinite ? number : 0
         } else if let text = try? container.decode(String.self) {
-            wrappedValue = Double(text.replacingOccurrences(of: ",", with: "")) ?? 0
+            wrappedValue = Double(text.trimmingCharacters(in: .whitespacesAndNewlines)).flatMap { $0.isFinite ? $0 : nil } ?? 0
         } else {
             wrappedValue = 0
         }
