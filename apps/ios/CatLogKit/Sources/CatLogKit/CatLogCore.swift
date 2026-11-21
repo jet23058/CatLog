@@ -37,6 +37,11 @@ public final class CatLogCore: @unchecked Sendable {
         try bridge.call("getMonthlyStats", [.data, .int(year)])
     }
 
+    /// FIRE 視窗的年度花費統計（新到舊）。
+    public func fireYearlyStats() throws -> [FireYearStat] {
+        try bridge.call("getFireYearlyStats", [.dataField("expenses")])
+    }
+
     public func fireStats() throws -> FireStats {
         try bridge.call("getFireStats", [.data])
     }
