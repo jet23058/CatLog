@@ -275,6 +275,10 @@ export const getStockOverview = (data = {}, { market = 'TW', snapshotId = '', ra
         targetDate,
         debtStats,
         ...getStockLeaders(rows),
+        // 排行榜「查看全部」與損益長條圖（與 web 相同的規則）。
+        allWinners: getStockLeaders(rows, Infinity).winners,
+        allLosers: getStockLeaders(rows, Infinity).losers,
+        chartRows: getStockChartRows(rows),
         transactionCount: marketTransactions.length
     };
 };

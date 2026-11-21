@@ -90,6 +90,7 @@ struct StocksView: View {
             if let overview {
                 summarySection(overview)
                 leadersSection(overview)
+                if !overview.chartRows.isEmpty { chartSection(overview) }
                 rowsSection(overview)
                 if !overview.holdings.isEmpty && !useRange {
                     holdingsSection(overview)
@@ -227,7 +228,44 @@ struct StocksView: View {
     private func leadersSection(_ overview: StockOverview) -> some View {
         Section("排行") {
             LeaderGroup(title: "賺最多", rows: overview.winners, color: .green, value: signed)
+            if overview.allWinners.count > 3 {
+                NavigationLink("查看全部獲利股（\(overview.allWinners.count)）") {
+                    LeaderboardList(title: "全部獲利股", rows: overview.allWinners, color: .green, value: signed)
+                }
+                .font(.footnote)
+            }
             LeaderGroup(title: "虧最多", rows: overview.losers, color: .red, value: signed)
+            if overview.allLosers.count > 3 {
+                NavigationLink("查看全部虧損股（\(overview.allLosers.count)）") {
+                    LeaderboardList(title: "全部虧損股", rows: overview.allLosers, color: .red, value: signed)
+                }
+                .font(.footnote)
+            }
+        }
+    }
+
+    /// 個股損益長條圖：影響最大的 8 檔（core: getStockChartRows）。
+    private func chartSection(_ overview: StockOverview) -> some View {
+        Section {
+            ForEach(overview.chartRows) { row in
+                HStack(spacing: 8) {
+                    Text(row.symbol).font(.caption.bold()).lineLimit(1).frame(width: 72, alignment: .leading)
+                    GeometryReader { proxy in
+                        Capsule()
+                            .fill(row.totalPnl >= 0 ? Color.green.opacity(0.7) : Color.red.opacity(0.7))
+                            .frame(width: proxy.size.width * row.barWidth / 100)
+                    }
+                    .frame(height: 10)
+                    Text(signed(row.totalPnl)).font(.caption.monospacedDigit())
+                        .foregroundStyle(row.totalPnl >= 0 ? .green : .red)
+                        .frame(width: 96, alignment: .trailing)
+                }
+                .accessibilityElement(children: .combine)
+            }
+        } header: {
+            Text("個股損益圖表")
+        } footer: {
+            Text("依損益絕對值排序，顯示影響最大的 8 檔。")
         }
     }
 
@@ -437,5 +475,29 @@ struct StockTradesView: View {
         .task {
             trades = (try? core.stockTrades(market: row.market, symbol: row.symbol, rangeStart: rangeStart, rangeEnd: rangeEnd)) ?? []
         }
+    }
+}
+
+/// 排行榜「查看全部」。
+private struct LeaderboardList: View {
+    let title: String
+    let rows: [StockRow]
+    let color: Color
+    let value: (Double) -> String
+
+    var body: some View {
+        List(Array(rows.enumerated()), id: \.element.key) { index, row in
+            HStack {
+                Text("\(index + 1)").font(.caption.monospacedDigit()).foregroundStyle(.secondary).frame(width: 28, alignment: .leading)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(row.displayName)
+                    Text("\(row.symbol)・\(row.tradeCount) 筆").font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Text(value(row.totalPnl)).monospacedDigit().foregroundStyle(color)
+            }
+        }
+        .navigationTitle(title)
+        .navigationBarTitleDisplayMode(.inline)
     }
 }

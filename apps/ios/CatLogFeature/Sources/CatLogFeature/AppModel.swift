@@ -37,6 +37,10 @@ public final class AppModel: ObservableObject {
     @Published public private(set) var compatibility: Compatibility = .writable
     @Published public private(set) var compatibilityMessage: String?
     @Published public private(set) var isSaving = false
+    /// 最後一次成功讀取或寫入雲端的時間（同步狀態顯示用）。
+    @Published public private(set) var lastSyncedAt: Date?
+    /// 最後一次存檔失敗的訊息；之後成功存檔或重新讀取時清空。
+    @Published public private(set) var lastSaveError: String?
     /// 每次資料變動 +1，讓月份明細等畫面知道要重新讀取。
     @Published public private(set) var dataVersion = 0
     /// 雲端已被其他裝置更新，這次存檔沒有寫入；等使用者決定載入雲端或覆蓋。
@@ -139,6 +143,8 @@ public final class AppModel: ObservableObject {
             if !availableYears.contains(year) { year = availableYears.first ?? thisYear }
             recompute()
             dataVersion += 1
+            lastSyncedAt = Date()
+            lastSaveError = nil
             phase = .ready
             listenForRemoteChanges(uid: uid)
         } catch {
@@ -276,11 +282,14 @@ public final class AppModel: ObservableObject {
             remoteUpdateAvailable = false
             try core.load(dataJSON: dataJSON)
             refreshAfterChange(core: core)
+            lastSyncedAt = Date()
+            lastSaveError = nil
             return .saved
         } catch CloudStorageError.conflict(let remoteRevision, _) {
             conflict = PendingConflict(dataJSON: dataJSON, remoteRevision: remoteRevision)
             return .conflict
         } catch {
+            lastSaveError = error.localizedDescription
             return .failed(error.localizedDescription)
         }
     }

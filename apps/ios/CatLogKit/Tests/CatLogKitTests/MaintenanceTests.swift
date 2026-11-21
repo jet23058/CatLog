@@ -34,6 +34,13 @@ final class MaintenanceTests: XCTestCase {
         }
     }
 
+    func testFireYearlyStats() throws {
+        let stats = try core.fireYearlyStats()
+        XCTAssertEqual(stats.map(\.year), ["2026"])
+        XCTAssertEqual(stats.first?.avg, 260)
+        XCTAssertEqual(stats.first?.max.month, 10)
+    }
+
     func testDiagnoseAndRepair() async throws {
         let store = InMemoryChunkStore()
         let repository = CloudRepository(store: store, core: core.bridge)

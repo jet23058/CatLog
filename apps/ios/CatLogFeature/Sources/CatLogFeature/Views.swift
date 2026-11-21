@@ -157,6 +157,7 @@ struct DashboardView: View {
         NavigationStack(path: $path) {
             List {
                 Section {
+                    SyncStatusRow(model: model)
                     PreviewNotice(message: model.compatibilityMessage)
                     if model.remoteUpdateAvailable {
                         HStack {
@@ -212,6 +213,7 @@ struct DashboardView: View {
                             .font(.subheadline)
                         }
                         StatRow(title: "平均月支出", value: money(core.formatMoney(fire.avgExpense)))
+                        FireYearlyStatsGroup(core: core, isPrivacyMode: isPrivacyMode, version: model.dataVersion)
                         Button("調整提領率", systemImage: "slider.horizontal.3") { showFireRate = true }
                             .disabled(!model.compatibility.canWrite)
                     }
@@ -538,4 +540,59 @@ struct ErrorView: View {
         do { diagnostics = try await model.diagnoseCloud() } catch { toolMessage = error.localizedDescription }
     }
     #endif
+}
+
+/// 同步狀態（與 web 標題列相同）：儲存中、版本衝突、儲存失敗、已同步（時間）。
+struct SyncStatusRow: View {
+    @ObservedObject var model: AppModel
+
+    var body: some View {
+        HStack(spacing: 6) {
+            if model.isSaving {
+                ProgressView().controlSize(.small)
+                Text("儲存中…")
+            } else if model.conflict != nil {
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                Text("版本衝突，請選擇要保留哪一份")
+            } else if let error = model.lastSaveError {
+                Image(systemName: "xmark.octagon.fill").foregroundStyle(.red)
+                Text("儲存失敗：\(error)").lineLimit(2)
+            } else if let time = model.lastSyncedAt {
+                Image(systemName: "checkmark.icloud").foregroundStyle(.teal)
+                Text("已同步 \(time.formatted(date: .omitted, time: .shortened))")
+            }
+            Spacer()
+        }
+        .font(.footnote)
+        .foregroundStyle(.secondary)
+    }
+}
+
+/// FIRE 的年度花費統計（與 web 的 FIRE 視窗相同）：每年平均月花費、最高與最低月份。
+struct FireYearlyStatsGroup: View {
+    let core: CatLogCore
+    let isPrivacyMode: Bool
+    let version: Int
+    @State private var stats: [FireYearStat] = []
+
+    var body: some View {
+        DisclosureGroup("年度花費統計") {
+            if stats.isEmpty {
+                Text("尚無花費紀錄").foregroundStyle(.secondary)
+            }
+            ForEach(stats) { stat in
+                HStack(alignment: .top) {
+                    Text(stat.year).bold().monospacedDigit()
+                    Spacer()
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text(isPrivacyMode ? "****" : core.formatWan(stat.avg)).bold().monospacedDigit()
+                        Text("平均月花費").font(.caption2).foregroundStyle(.secondary)
+                        Text("最高 \(isPrivacyMode ? "****" : core.formatWan(stat.max.val))（\(stat.max.month) 月）・最低 \(isPrivacyMode ? "****" : core.formatWan(stat.min.val))（\(stat.min.month) 月）")
+                            .font(.caption2).foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+        .task(id: version) { stats = (try? core.fireYearlyStats()) ?? [] }
+    }
 }

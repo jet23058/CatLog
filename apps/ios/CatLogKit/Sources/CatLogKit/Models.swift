@@ -29,6 +29,19 @@ public struct FireStats: Decodable, Equatable, Sendable {
     public let rate: Double
 }
 
+/// `getFireYearlyStats(expenses)` 的每一年：平均月花費、花費最高與最低的月份。
+public struct FireYearStat: Decodable, Equatable, Sendable, Identifiable {
+    public struct MonthValue: Decodable, Equatable, Sendable {
+        public let month: Int
+        @LenientNumber public var val: Double
+    }
+    public let year: String
+    @LenientNumber public var avg: Double
+    public let max: MonthValue
+    public let min: MonthValue
+    public var id: String { year }
+}
+
 /// `getMonthlyStats(data, year)` 的每一個月。
 public struct MonthlyStat: Decodable, Equatable, Sendable, Identifiable {
     public let month: Int

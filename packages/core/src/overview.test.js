@@ -49,6 +49,9 @@ describe('個股績效總覽', () => {
         expect(tw.losers.map((r) => r.symbol)).toEqual(['2317']);
         expect(tw.marketCounts).toEqual({ TW: 2, US: 1 });
         expect(tw.targetDate).toBe('2026-03-31');
+        expect(tw.allWinners.map((r) => r.symbol)).toEqual(['2330']);
+        expect(tw.allLosers.map((r) => r.symbol)).toEqual(['2317']);
+        expect(tw.chartRows.map((r) => [r.symbol, r.barWidth])).toEqual([['2330', 100], ['2317', 25]]);
 
         const us = getStockOverview(data, { market: 'US', today: '2026-11-21' });
         expect(us.selectedSnapshotId).toBeNull();

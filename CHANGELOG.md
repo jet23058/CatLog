@@ -93,6 +93,10 @@
 - [iOS] 對帳單核對：選帳戶與區間，逐筆勾選，顯示已確認金額與總金額（勾選不存檔，與 web 相同）。
 - [iOS] FIRE 提領率可調整。
 - [iOS] 雲端資料讀取失敗時（開發版）：開啟診斷（資料塊、checksum、各區塊筆數）與用 JSON 備份修復，與 web 的本機診斷相同。
+- [core] `getStockOverview` 加上 `allWinners`、`allLosers`（排行榜查看全部）與 `chartRows`（損益長條圖）。
+- [iOS] FIRE 區塊新增「年度花費統計」：每年平均月花費、最高與最低月份（與 web 的 FIRE 視窗相同）。
+- [iOS] 個股績效新增損益長條圖（影響最大的 8 檔）與排行榜「查看全部獲利股 / 虧損股」。
+- [iOS] 首頁顯示同步狀態：儲存中、版本衝突、儲存失敗、已同步（時間）。
 - [iOS] `setup-launch-agent.sh` / `remote-install.sh`：從 SSH 透過 LaunchAgent 建置並安裝到 iPhone（Mac 需登入且螢幕未鎖定）。
 
 ### CI

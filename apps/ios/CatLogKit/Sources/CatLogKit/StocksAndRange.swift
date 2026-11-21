@@ -24,6 +24,15 @@ public struct StockRow: Decodable, Equatable, Sendable, Identifiable {
     public var displayName: String { name ?? symbol }
 }
 
+public struct StockChartRow: Decodable, Equatable, Sendable, Identifiable {
+    public let key: String
+    public let symbol: String
+    public let market: String
+    @LenientNumber public var totalPnl: Double
+    public let barWidth: Double
+    public var id: String { key }
+}
+
 public struct StockStats: Decodable, Equatable, Sendable {
     @LenientNumber public var totalBuy: Double
     @LenientNumber public var totalMarketValue: Double
@@ -75,6 +84,11 @@ public struct StockOverview: Decodable, Equatable, Sendable {
     public let debtStats: StockDebtStats
     public let winners: [StockRow]
     public let losers: [StockRow]
+    /// 排行榜「查看全部」。
+    public let allWinners: [StockRow]
+    public let allLosers: [StockRow]
+    /// 損益長條圖：影響最大的 8 檔，barWidth 為 6–100。
+    public let chartRows: [StockChartRow]
     public let transactionCount: Int
 }
 
