@@ -18,6 +18,8 @@ public final class CoreBridge: @unchecked Sendable {
         case null
         /// 在 JS 端組成物件，例如 `checkCompatibility({ appVersion, data, meta })`。
         indirect case object([String: Argument])
+        /// 已載入資料的某個欄位，例如 `.dataField("records")`，不必把整份資料傳回 Swift。
+        case dataField(String)
     }
 
     private let context: JSContext
@@ -141,6 +143,9 @@ public final class CoreBridge: @unchecked Sendable {
         case .int(let value): return value
         case .bool(let value): return value
         case .null: return NSNull()
+        case .dataField(let key):
+            guard let loadedData else { throw CoreBridgeError.dataNotLoaded }
+            return loadedData.objectForKeyedSubscript(key) ?? JSValue(undefinedIn: context)
         case .object(let fields):
             guard let object = JSValue(newObjectIn: context) else { throw CoreBridgeError.contextUnavailable }
             for (key, value) in fields {

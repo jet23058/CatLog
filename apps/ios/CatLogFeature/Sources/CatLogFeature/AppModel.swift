@@ -8,8 +8,10 @@ import UIKit
 
 /// App 狀態：登入、讀取雲端資料、用 core 計算儀表板數字。
 ///
-/// iOS 目前是唯讀預覽：只讀取並顯示資料，不寫回雲端。寫入功能會在各項功能移植時一起開放，
-/// 屆時寫入前必須先通過 `compatibility.canWrite`（見 docs/DATA_FORMAT.md）。
+/// 寫入規則與 web 相同（apps/web/src/App.jsx 的 saveToFirestoreChunks）：
+/// - 寫入前必須通過 `compatibility.canWrite`（見 docs/DATA_FORMAT.md）
+/// - 帶著上次讀到 / 寫入的 revision，雲端較新時不覆蓋，交給使用者選擇
+/// - 寫入成功後才更新畫面上的資料，失敗不會留下「看起來存了但其實沒存」的狀態
 @MainActor
 public final class AppModel: ObservableObject {
     public enum Phase: Equatable {
@@ -34,12 +36,30 @@ public final class AppModel: ObservableObject {
     @Published public private(set) var fire: FireStats?
     @Published public private(set) var compatibility: Compatibility = .writable
     @Published public private(set) var compatibilityMessage: String?
+    @Published public private(set) var isSaving = false
+    /// 雲端已被其他裝置更新，這次存檔沒有寫入；等使用者決定載入雲端或覆蓋。
+    @Published public var conflict: PendingConflict?
+    /// 其他裝置存檔後提示重新載入。
+    @Published public private(set) var remoteUpdateAvailable = false
     @Published public private(set) var isSigningIn = false
     @Published public private(set) var signInError: String?
 
     public let core: CatLogCore?
     public let appVersion: String
     private var authListener: AuthStateDidChangeListenerHandle?
+    private var metaListener: ListenerRegistration?
+    private var revision = 0
+    private var chunkIds: [String] = []
+    private var isDemo = false
+
+    /// 這台裝置的識別碼，寫在 meta/storage 的 deviceId，用來分辨是不是別台裝置存的。
+    private static let deviceId: String = {
+        let key = "cloudDeviceId"
+        if let existing = UserDefaults.standard.string(forKey: key) { return existing }
+        let id = "ios-" + UUID().uuidString.prefix(8).lowercased()
+        UserDefaults.standard.set(id, forKey: key)
+        return id
+    }()
 
     public init() {
         appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.0.0"
@@ -49,6 +69,7 @@ public final class AppModel: ObservableObject {
         // 開發用：以 `-CatLogDemo` 啟動時載入範例資料，不需要 Firebase 就能檢查畫面。
         if ProcessInfo.processInfo.arguments.contains("-CatLogDemo"), let core {
             userEmail = "demo@catlog.local"
+            isDemo = true
             loadDemo(core: core)
             return
         }
@@ -103,6 +124,9 @@ public final class AppModel: ObservableObject {
         do {
             let repository = CloudRepository(store: FirestoreChunkStore(uid: uid), core: core.bridge)
             let snapshot = try await repository.read()
+            revision = snapshot.revision
+            chunkIds = snapshot.chunkIds
+            remoteUpdateAvailable = false
             try core.load(dataJSON: snapshot.dataJSON ?? "{}")
             let metaJSON = try snapshot.meta.map { try $0.jsonString() }
             compatibility = try core.compatibility(appVersion: appVersion, metaJSON: metaJSON)
@@ -113,8 +137,113 @@ public final class AppModel: ObservableObject {
             if !availableYears.contains(year) { year = availableYears.first ?? thisYear }
             recompute()
             phase = .ready
+            listenForRemoteChanges(uid: uid)
         } catch {
             phase = .failed(error.localizedDescription)
+        }
+    }
+
+    // MARK: - 寫入
+
+    public struct PendingConflict: Identifiable, Equatable {
+        public let id = UUID()
+        public let dataJSON: String
+        public let remoteRevision: Int
+    }
+
+    public enum SaveOutcome: Equatable {
+        case saved
+        case conflict
+        case failed(String)
+    }
+
+    /// 新增資產到指定日期並存檔。
+    public func addAssets(_ entries: [AssetEntry], dateKey: String) async -> SaveOutcome {
+        guard let core else { return .failed("core 無法載入") }
+        do { return await save(dataJSON: try core.addingAssets(entries, to: dateKey)) } catch { return .failed(error.localizedDescription) }
+    }
+
+    /// 新增一筆收入並存檔。
+    public func addIncome(_ entry: IncomeEntry, dateKey: String) async -> SaveOutcome {
+        guard let core else { return .failed("core 無法載入") }
+        do { return await save(dataJSON: try core.addingIncome(entry, to: dateKey)) } catch { return .failed(error.localizedDescription) }
+    }
+
+    /// 寫入雲端；成功後才更新畫面資料。
+    public func save(dataJSON: String, force: Bool = false) async -> SaveOutcome {
+        guard let core else { return .failed("core 無法載入") }
+        guard compatibility.canWrite else {
+            return .failed(compatibilityMessage ?? "這個版本的 App 無法寫入雲端資料，請先更新。")
+        }
+        if conflict != nil && !force { return .conflict }
+        if isDemo {
+            do { try core.load(dataJSON: dataJSON); refreshAfterChange(core: core); return .saved } catch { return .failed(error.localizedDescription) }
+        }
+        guard let uid = Auth.auth().currentUser?.uid else { return .failed("尚未登入") }
+
+        isSaving = true
+        defer { isSaving = false }
+        do {
+            let repository = CloudRepository(store: FirestoreChunkStore(uid: uid), core: core.bridge)
+            let result = try await repository.write(
+                dataJSON: dataJSON,
+                expectedRevision: revision,
+                force: force,
+                previousChunkIds: chunkIds,
+                deviceId: Self.deviceId
+            )
+            revision = result.revision
+            chunkIds = result.chunkIds
+            conflict = nil
+            remoteUpdateAvailable = false
+            try core.load(dataJSON: dataJSON)
+            refreshAfterChange(core: core)
+            return .saved
+        } catch CloudStorageError.conflict(let remoteRevision, _) {
+            conflict = PendingConflict(dataJSON: dataJSON, remoteRevision: remoteRevision)
+            return .conflict
+        } catch {
+            return .failed(error.localizedDescription)
+        }
+    }
+
+    /// 衝突時：放棄這次的變更，載入雲端最新版本。
+    public func resolveConflictByReloading() async {
+        conflict = nil
+        await reload()
+    }
+
+    /// 衝突時：用這台裝置的資料覆蓋雲端。
+    public func resolveConflictByOverwriting() async -> SaveOutcome {
+        guard let pending = conflict else { return .saved }
+        return await save(dataJSON: pending.dataJSON, force: true)
+    }
+
+    private func refreshAfterChange(core: CatLogCore) {
+        let thisYear = Calendar.current.component(.year, from: Date())
+        availableYears = (try? core.availableYears(thisYear: thisYear)) ?? availableYears
+        recompute()
+    }
+
+    /// 監看 meta/storage：其他裝置存檔後提示重新載入；雲端要求較新版本時立即切成唯讀。
+    private func listenForRemoteChanges(uid: String) {
+        metaListener?.remove()
+        guard let core else { return }
+        metaListener = FirestoreChunkStore(uid: uid).metaRef.addSnapshotListener { [weak self] snapshot, _ in
+            guard let data = snapshot?.data() else { return }
+            let meta = CloudMeta(firestore: data)
+            Task { @MainActor in
+                guard let self else { return }
+                if (meta.revision ?? 0) > self.revision && meta.deviceId != Self.deviceId {
+                    self.remoteUpdateAvailable = true
+                }
+                if let json = try? meta.jsonString(),
+                   let result = try? core.compatibility(appVersion: self.appVersion, metaJSON: json),
+                   !result.canWrite {
+                    self.compatibility = result
+                    self.compatibilityMessage = try? core.describe(result)
+                }
+            }
         }
     }
 
@@ -151,6 +280,12 @@ public final class AppModel: ObservableObject {
             yearStats = nil
             months = []
             dataMonths = []
+            metaListener?.remove()
+            metaListener = nil
+            revision = 0
+            chunkIds = []
+            conflict = nil
+            remoteUpdateAvailable = false
             fire = nil
         } else {
             Task { await reload() }

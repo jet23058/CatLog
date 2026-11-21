@@ -8,7 +8,9 @@ import {
     DEFAULT_EXCHANGE_RATES,
     INITIAL_DATA,
     STOCK_MARKETS,
+    addAssetsToData,
     addDebtAndCarryForward,
+    addIncomeToData,
     buildHoldingMap,
     buildStockRows,
     checkCompatibility,
@@ -25,6 +27,7 @@ import {
     formatStockPnlLabel,
     formatWan,
     getAssetExtremes,
+    getAssetNameOptions,
     getAvailableYears,
     getDebtCategoryLabel,
     getDebtEstimatedAnnualInterest,
@@ -37,11 +40,14 @@ import {
     getFireStats,
     getFireYearlyStats,
     getHoldingSnapshots,
+    getImportablePreviousAssets,
     getJsonImportSummary,
+    getLatestAssetByName,
     getLatestSnapshotEstimate,
     getMonthDetail,
     getMonthSummary,
     getMonthlyStats,
+    getPreviousAssetSnapshot,
     getRangeAssetStats,
     getRangeDebtStats,
     getRangeExpenseStats,
@@ -61,6 +67,7 @@ import {
     getStockTradeTitle,
     getYearStats,
     getYearlyTrendData,
+    isDuplicateAsset,
     isIdleExpired,
     maskAmount,
     mergeDebtMaps,
@@ -1345,39 +1352,19 @@ const AddAssetModal = ({ onClose, onSave, historyRecords, exchangeRateCache }) =
         }
     }, [exchangeRate, date, currency, exchangeRateCache]);
 
-    const uniqueAssetOptions = useMemo(() => {
-        const map = new Map();
-        Object.keys(historyRecords).sort().forEach(date => {
-            historyRecords[date].forEach(r => map.set(r.name, r.type));
-        });
-        return Array.from(map.entries()).map(([name, type]) => ({ name, type }));
-    }, [historyRecords]);
+    const uniqueAssetOptions = useMemo(() => getAssetNameOptions(historyRecords), [historyRecords]);
 
     const handleNameSelect = (e) => {
         const selectedName = e.target.value;
         setName(selectedName);
-        let found = null;
-        const allDates = Object.keys(historyRecords).sort().reverse();
-        for (const d of allDates) {
-            const record = historyRecords[d].find(r => r.name === selectedName);
-            if (record) { found = record; break; }
-        }
+        const found = getLatestAssetByName(historyRecords, selectedName);
         if (found && found.type === type) {
             setCurrency(found.currency || 'TWD');
             if (found.exchangeRate) setExchangeRate(String(found.exchangeRate));
         }
     };
 
-    const previousAssetSnapshot = useMemo(() => {
-        if (!date) return [];
-        const currentTimestamp = new Date(date).getTime();
-        const dates = Object.keys(historyRecords)
-            .filter(d => new Date(d).getTime() < currentTimestamp && (historyRecords[d] || []).length > 0) // 找出比選擇日期更早且有資產的日期
-            .sort((a, b) => new Date(b) - new Date(a)); // 降序排列，取最近的
-
-        if (dates.length === 0) return { date: null, assets: [] };
-        return { date: dates[0], assets: historyRecords[dates[0]] || [] };
-    }, [date, historyRecords]);
+    const previousAssetSnapshot = useMemo(() => getPreviousAssetSnapshot(historyRecords, date), [date, historyRecords]);
 
     const prevAssets = previousAssetSnapshot.assets;
     const suggestions = prevAssets.filter(a => a.type === type);
@@ -1456,13 +1443,8 @@ const AddAssetModal = ({ onClose, onSave, historyRecords, exchangeRateCache }) =
         if (!date) return setErrorMsg("請選擇日期");
 
         const cleanName = name.trim();
-        const assetsInDate = historyRecords[date] || [];
-        const pendingInDate = pendingAssets.filter((asset) => asset.date === date);
-        
-        // Duplicate check logic:
-        // Same Name AND Same Currency = Duplicate (Block)
-        // Same Name BUT Different Currency = Allowed (e.g. Taishin TWD vs Taishin JPY)
-        const isDuplicate = [...assetsInDate, ...pendingInDate].some(asset => asset.name === cleanName && asset.currency === currency);
+        // 同名稱 + 同幣別視為重複；同名不同幣別可以並存（規則在 core）。
+        const isDuplicate = isDuplicateAsset(historyRecords, date, pendingAssets, cleanName, currency);
 
         if (isDuplicate) {
             setErrorMsg(`「${cleanName} (${currency})」在 ${date} 已存在，請使用編輯功能。`);
@@ -1515,20 +1497,10 @@ const AddAssetModal = ({ onClose, onSave, historyRecords, exchangeRateCache }) =
     const handleImportPreviousAssets = () => {
         if (!previousAssetSnapshot.assets.length) return;
         const assetsInDate = historyRecords[date] || [];
-        setPendingAssets((items) => {
-            const existingKeys = new Set([...assetsInDate, ...items].map((asset) => `${asset.name}-${asset.currency || 'TWD'}`));
-            const importedAssets = previousAssetSnapshot.assets
-                .filter((asset) => !existingKeys.has(`${asset.name}-${asset.currency || 'TWD'}`))
-                .map((asset, index) => ({
-                    ...asset,
-                    id: `asset-import-${Date.now()}-${index}`,
-                    date,
-                    amount: Number(asset.amount) || 0,
-                    originalAmount: Number(asset.originalAmount) || Number(asset.amount) || 0,
-                    exchangeRate: Number(asset.exchangeRate) || 1
-                }));
-            return [...items, ...importedAssets];
-        });
+        setPendingAssets((items) => [
+            ...items,
+            ...getImportablePreviousAssets(historyRecords, date, items, `asset-import-${Date.now()}`)
+        ]);
         setHasImportedPreviousAssets(true);
         setErrorMsg('');
     };
@@ -4880,12 +4852,8 @@ const MainApp = ({ user, logout }) => {
 
     const handleSaveNewAsset = async (newAssets, dateKey) => {
         if (!ensureWritable()) return;
-        const assetsToAdd = (Array.isArray(newAssets) ? newAssets : [newAssets]).map(({ date, ...asset }) => asset);
-        const existingDetails = data.records[dateKey] || [];
-        const newData = {
-            ...data,
-            records: { ...data.records, [dateKey]: [...existingDetails, ...assetsToAdd] }
-        };
+        const assetsToAdd = Array.isArray(newAssets) ? newAssets : [newAssets];
+        const newData = addAssetsToData(data, dateKey, assetsToAdd);
         setData(newData);
         const didSave = await saveToFirestoreChunks(newData);
         if (!didSave) return;
@@ -4894,19 +4862,14 @@ const MainApp = ({ user, logout }) => {
         setShowAddModal(false);
     };
 
-    const handleSaveNewIncome = (newIncomeSource, dateKey) => {
+    const handleSaveNewIncome = async (newIncomeSource, dateKey) => {
         if (!ensureWritable()) return;
-        const monthKey = dateKey.substring(0, 7);
-        const existingMonthData = data.incomes[monthKey] || { totalAmount: 0, sources: [] };
-        const existingSources = existingMonthData.sources || [];
-        const newTotal = (existingMonthData.totalAmount || 0) + newIncomeSource.amount;
-        const newData = {
-            ...data,
-            incomes: { ...data.incomes, [monthKey]: { ...existingMonthData, totalAmount: newTotal, sources: [...existingSources, newIncomeSource] } }
-        };
+        const newData = addIncomeToData(data, dateKey, newIncomeSource);
         setData(newData);
-        saveToFirestoreChunks(newData);
-        handleShowAlert("新增成功", `已新增一筆收入至 ${monthKey}`);
+        // 等存檔結果：失敗時 saveToFirestoreChunks 會自己顯示錯誤，不再同時顯示「新增成功」。
+        const didSave = await saveToFirestoreChunks(newData);
+        if (!didSave) return;
+        handleShowAlert("新增成功", `已新增一筆收入至 ${dateKey.substring(0, 7)}`);
         setShowAddIncomeModal(false);
         setShowAddModal(false);
     };

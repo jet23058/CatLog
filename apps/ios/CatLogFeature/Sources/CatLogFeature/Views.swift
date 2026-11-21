@@ -114,6 +114,18 @@ struct DashboardView: View {
     /// 隱私模式：金額顯示成 ****，比例照常顯示。與 web 相同，只存在這台裝置。
     @AppStorage("isPrivacyMode") private var isPrivacyMode = false
     @State private var lockError: String?
+    @State private var showAddAsset = Self.demoSheet == "asset"
+    @State private var showAddIncome = Self.demoSheet == "income"
+
+    /// 開發用：`-CatLogDemoSheet asset|income` 啟動時直接打開新增畫面。
+    private static var demoSheet: String? {
+        #if DEBUG
+        let args = ProcessInfo.processInfo.arguments
+        if let index = args.firstIndex(of: "-CatLogDemoSheet"), index + 1 < args.count { return args[index + 1] }
+        #endif
+        return nil
+    }
+    @State private var saveError: String?
     @State private var path = Self.initialPath()
 
     /// 開發用：`-CatLogDemoMonth 2026-03` 或 `-CatLogDemoScreen stocks|range` 啟動時直接打開該畫面。
@@ -144,6 +156,15 @@ struct DashboardView: View {
             List {
                 Section {
                     PreviewNotice(message: model.compatibilityMessage)
+                    if model.remoteUpdateAvailable {
+                        HStack {
+                            Label("另一台裝置已更新雲端資料", systemImage: "arrow.triangle.2.circlepath")
+                                .font(.footnote)
+                            Spacer()
+                            Button("重新載入") { Task { await model.reload() } }
+                                .font(.footnote.bold())
+                        }
+                    }
                 }
                 if let stats = model.yearStats, let core = model.core {
                     Section("\(String(model.year)) 年度") {
@@ -226,7 +247,39 @@ struct DashboardView: View {
                 Text(lockError ?? "")
             }
             .refreshable { await model.reload() }
+            .sheet(isPresented: $showAddAsset) {
+                if let core = model.core { AddAssetSheet(model: model, core: core) }
+            }
+            .sheet(isPresented: $showAddIncome) {
+                if let core = model.core { AddIncomeSheet(model: model, core: core) }
+            }
+            // 與 web 相同：另一台裝置先存了檔，讓使用者選擇載入雲端版本或用這台覆蓋。
+            .alert("雲端有較新的資料", isPresented: Binding(get: { model.conflict != nil }, set: { _ in })) {
+                Button("載入雲端版本") { Task { await model.resolveConflictByReloading() } }
+                Button("用這台裝置覆蓋", role: .destructive) {
+                    Task {
+                        if case .failed(let message) = await model.resolveConflictByOverwriting() { saveError = message }
+                    }
+                }
+            } message: {
+                Text("另一台裝置在你之後存了檔，這次的新增還沒有寫入。載入雲端版本會放棄這次的新增；覆蓋會用這台裝置的資料取代雲端。")
+            }
+            .alert("儲存失敗", isPresented: Binding(get: { saveError != nil }, set: { if !$0 { saveError = nil } })) {
+                Button("好") { saveError = nil }
+            } message: {
+                Text(saveError ?? "")
+            }
             .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        Button("新增資產", systemImage: "wallet.pass") { showAddAsset = true }
+                        Button("新增收入", systemImage: "dollarsign.circle") { showAddIncome = true }
+                    } label: {
+                        Image(systemName: "plus")
+                    }
+                    .disabled(!model.compatibility.canWrite)
+                    .accessibilityLabel("新增紀錄")
+                }
                 ToolbarItem(placement: .topBarLeading) {
                     Menu {
                         ForEach(model.availableYears, id: \.self) { year in
@@ -342,7 +395,7 @@ private struct PreviewNotice: View {
                 Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
             }
         } else {
-            Label("iOS 預覽版：目前只能檢視，新增與編輯請先使用網頁版。", systemImage: "eye")
+            Label("iOS 可以新增資產與收入；編輯、刪除與匯入請先使用網頁版。", systemImage: "info.circle")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }
