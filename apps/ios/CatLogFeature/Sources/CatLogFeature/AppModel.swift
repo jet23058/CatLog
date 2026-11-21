@@ -228,6 +228,18 @@ public final class AppModel: ObservableObject {
         do { return await save(dataJSON: try core.deletingMonth(monthKey)) } catch { return .failed(error.localizedDescription) }
     }
 
+    /// 匯入 JSON 備份：整份取代雲端資料（與 web 相同）。
+    public func importBackup(_ preview: BackupImportPreview) async -> SaveOutcome {
+        guard let core else { return .failed("core 無法載入") }
+        do { return await save(dataJSON: try core.importingBackup(preview)) } catch { return .failed(error.localizedDescription) }
+    }
+
+    /// 匯入 MOZE 花費：只覆蓋 CSV 裡出現的月份。
+    public func importExpenses(_ preview: ExpenseImportPreview) async -> SaveOutcome {
+        guard let core else { return .failed("core 無法載入") }
+        do { return await save(dataJSON: try core.mergingExpenses(preview)) } catch { return .failed(error.localizedDescription) }
+    }
+
     /// 寫入雲端；成功後才更新畫面資料。
     /// - basedOn：資料是以這份雲端版本為基礎做出來的（新增負債會先重新讀取雲端）；nil 時用本機最後讀到 / 寫入的版本。
     public func save(dataJSON: String, force: Bool = false, basedOn base: (revision: Int, chunkIds: [String])? = nil) async -> SaveOutcome {
