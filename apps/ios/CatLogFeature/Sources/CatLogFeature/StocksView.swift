@@ -1,9 +1,11 @@
 import CatLogKit
 import SwiftUI
 
-/// 個股績效（唯讀）：台股 / 美股、持倉快照版本、日期區間、損益總覽與個股損益表。
-/// 計算全部來自 core 的 getStockOverview，與 web 相同。
+/// 個股績效：台股 / 美股、持倉快照版本、日期區間、損益總覽與個股損益表；
+/// 右上「⋯」可匯入交易、新增持倉快照、刪除快照版本、清空目前市場的交易。
+/// 計算與寫入規則都在 core（getStockOverview、stockImport.js），與 web 相同。
 struct StocksView: View {
+    @ObservedObject var model: AppModel
     let core: CatLogCore
     @AppStorage("isPrivacyMode") private var isPrivacyMode = false
     @State private var market = "TW"
@@ -14,6 +16,11 @@ struct StocksView: View {
     @State private var search = ""
     @State private var overview: StockOverview?
     @State private var errorMessage: String?
+    @State private var showTransactionImport = false
+    @State private var showHoldingImport = false
+    @State private var confirmClear = false
+    @State private var confirmDeleteSnapshot: HoldingSnapshotSummary?
+    @State private var saveError: String?
 
     private var currencySuffix: String { market == "US" ? "（USD）" : "" }
 
@@ -26,7 +33,7 @@ struct StocksView: View {
     }
 
     private var reloadKey: String {
-        "\(market)|\(snapshotId ?? "")|\(useRange)|\(CatLogCore.todayKey(rangeStart))|\(CatLogCore.todayKey(rangeEnd))"
+        "\(model.dataVersion)|\(market)|\(snapshotId ?? "")|\(useRange)|\(CatLogCore.todayKey(rangeStart))|\(CatLogCore.todayKey(rangeEnd))"
     }
 
     var body: some View {
@@ -72,12 +79,67 @@ struct StocksView: View {
         .navigationTitle("個股績效")
         .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $search, prompt: "搜尋名稱或代號")
+        .toolbar { ToolbarItem(placement: .primaryAction) { actionsMenu } }
+        .sheet(isPresented: $showTransactionImport) { StockTransactionImportSheet(model: model, core: core) }
+        .sheet(isPresented: $showHoldingImport) { HoldingSnapshotSheet(model: model, core: core, market: market) }
+        .confirmationDialog("清空\(marketLabel)股票交易？", isPresented: $confirmClear, titleVisibility: .visible) {
+            Button("清空\(marketLabel)交易", role: .destructive) { Task { await clearTransactions() } }
+        } message: {
+            Text("只會清空目前市場的匯入交易，不會刪除其他市場、資產、收入、花費或負債資料。")
+        }
+        .confirmationDialog("刪除持倉快照版本？", isPresented: Binding(get: { confirmDeleteSnapshot != nil }, set: { if !$0 { confirmDeleteSnapshot = nil } }),
+                            titleVisibility: .visible, presenting: confirmDeleteSnapshot) { snapshot in
+            Button("刪除 \(snapshot.title)", role: .destructive) { Task { await deleteSnapshot(snapshot) } }
+        } message: { snapshot in
+            Text("只會刪除 \(snapshot.title) 這個版本，不會刪除股票交易資料。")
+        }
+        .alert("無法儲存", isPresented: Binding(get: { saveError != nil }, set: { if !$0 { saveError = nil } })) {
+            Button("好") { saveError = nil }
+        } message: {
+            Text(saveError ?? "")
+        }
         .task(id: reloadKey) { load() }
         .onChange(of: market) { _, _ in snapshotId = nil }
         .navigationDestination(for: StockRow.self) { row in
             StockTradesView(core: core, row: row,
                             rangeStart: useRange ? CatLogCore.todayKey(rangeStart) : "",
                             rangeEnd: useRange ? CatLogCore.todayKey(rangeEnd) : "")
+        }
+    }
+
+    private var marketLabel: String { market == "US" ? "美股" : "台股" }
+
+    private var selectedSnapshot: HoldingSnapshotSummary? {
+        guard let overview, !useRange else { return nil }
+        return overview.snapshots.first { $0.id == overview.selectedSnapshotId }
+    }
+
+    private var actionsMenu: some View {
+        Menu {
+            Button("匯入股票交易", systemImage: "square.and.arrow.down") { showTransactionImport = true }
+            Button("新增持倉快照", systemImage: "shippingbox") { showHoldingImport = true }
+            if let selectedSnapshot {
+                Button("刪除快照 \(selectedSnapshot.title)", systemImage: "trash", role: .destructive) { confirmDeleteSnapshot = selectedSnapshot }
+            }
+            Button("清空\(marketLabel)交易", systemImage: "trash", role: .destructive) { confirmClear = true }
+                .disabled((overview?.transactionCount ?? 0) == 0)
+        } label: {
+            Image(systemName: "ellipsis.circle")
+        }
+        .disabled(!model.compatibility.canWrite || model.isSaving)
+    }
+
+    private func clearTransactions() async {
+        let target = market
+        if case .failed(let message) = await model.saveChange({ try $0.clearingStockTransactions(market: target) }) { saveError = message }
+    }
+
+    private func deleteSnapshot(_ snapshot: HoldingSnapshotSummary) async {
+        let outcome = await model.saveChange { try $0.deletingHoldingSnapshot(month: snapshot.month, id: snapshot.id) }
+        switch outcome {
+        case .saved: snapshotId = nil
+        case .conflict: break
+        case .failed(let message): saveError = message
         }
     }
 

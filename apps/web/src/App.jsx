@@ -78,6 +78,13 @@ import {
     getStockTradeTitle,
     getYearStats,
     getYearlyTrendData,
+    addHoldingSnapshotToData,
+    addStockTransactionsToData,
+    buildHoldingSnapshotPreview,
+    clearStockTransactionsFromData,
+    deleteHoldingSnapshotFromData,
+    getLatestHoldingSnapshotForMarket,
+    getPreviousHoldingRows,
     isDuplicateAsset,
     isIdleExpired,
     maskAmount,
@@ -88,7 +95,7 @@ import {
     parseAmount,
     parseCollateralText,
     processExpenseCSVText,
-    processStockCSVText,
+    parseStockImport,
     shouldLockOnResume,
     updateIncomeSourceField,
     updateMonthDetails
@@ -3168,9 +3175,7 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
     const parseImportText = (text, options = {}) => {
         setErrorMsg('');
         try {
-            const result = processStockCSVText(text, options);
-            if (result.transactions.length === 0) return setErrorMsg('沒有找到可匯入的股票交易。');
-            setPreview(result);
+            setPreview(parseStockImport(text, options));
         } catch (error) {
             setErrorMsg(error.message || '無法解析股票交易 CSV');
         }
@@ -3224,53 +3229,28 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
 
     const parseHoldingRows = () => {
         setErrorMsg('');
-        const activeRows = holdingRows.filter((row) => row.name.trim() || row.price || row.shares);
-        if (activeRows.length === 0) {
-            setErrorMsg('請至少輸入一筆持倉資料。');
-            return;
-        }
-
-        const skippedRows = [];
-        const holdings = activeRows.flatMap((row, index) => {
-            const name = row.name.trim();
-            const marketPrice = parseAmount(row.price);
-            const shares = parseAmount(row.shares);
-            if (!name || marketPrice <= 0 || shares <= 0) {
-                skippedRows.push({ row: index + 1, item: name || '空白', reason: '請確認股票名稱、現價與股數都有填寫' });
-                return [];
-            }
-            return [{
-                id: `holding-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 8)}`,
+        try {
+            // 規則在 core：缺名稱 / 現價 / 股數的列會略過。
+            setHoldingPreview(buildHoldingSnapshotPreview({
                 month: holdingMonth,
-                market: row.market || 'TW',
-                symbol: '',
-                name,
-                shares,
-                averageCost: 0,
-                costAmount: 0,
-                marketPrice,
-                marketValue: marketPrice * shares,
-                account: ''
-            }];
-        });
-
-        if (holdings.length === 0) {
-            setErrorMsg('沒有找到可匯入的持倉快照。請確認至少一列資料完整。');
-            return;
+                note: holdingNote,
+                rows: holdingRows,
+                idPrefix: `holding-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            }));
+        } catch (error) {
+            setErrorMsg(error.message);
         }
-
-        setHoldingPreview({ month: holdingMonth, note: holdingNote.trim(), holdings, skippedRows });
     };
 
-    const confirmImport = () => {
-        onImportTransactions(preview.transactions);
+    const confirmImport = async () => {
+        if (!(await onImportTransactions(preview.transactions))) return;
         setPreview(null);
         setInputText('');
         setShowTransactionImportModal(false);
     };
 
-    const confirmHoldingImport = () => {
-        onImportHoldingSnapshot(holdingPreview);
+    const confirmHoldingImport = async () => {
+        if (!(await onImportHoldingSnapshot(holdingPreview))) return;
         setHoldingPreview(null);
         setHoldingRows([createHoldingRow()]);
         setHoldingNote('');
@@ -3291,29 +3271,9 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
     const updateHoldingRow = (id, field, value) => setHoldingRows((rows) => rows.map((row) => row.id === id ? { ...row, [field]: value } : row));
     const addHoldingRow = () => setHoldingRows((rows) => [...rows, createHoldingRow({ market: rows.at(-1)?.market || 'TW' })]);
     const removeHoldingRow = (id) => setHoldingRows((rows) => rows.length > 1 ? rows.filter((row) => row.id !== id) : rows);
-    const getLatestHoldingSnapshotForMarket = (market) => (
-        [...holdingSnapshots]
-            .filter((snapshot) => (snapshot.holdings || []).some((holding) => (holding.market || 'TW') === market))
-            .sort((a, b) => {
-                const timeA = new Date(a.importedAt || `${a.month}-01`).getTime() || 0;
-                const timeB = new Date(b.importedAt || `${b.month}-01`).getTime() || 0;
-                if (timeB !== timeA) return timeB - timeA;
-                return (Number(b.version) || 0) - (Number(a.version) || 0);
-            })[0] || null
-    );
+    const hasPreviousHoldingSnapshot = (market) => Boolean(getLatestHoldingSnapshotForMarket(data.stockHoldingSnapshots, market));
     const importPreviousHoldingRows = (market) => {
-        const snapshot = getLatestHoldingSnapshotForMarket(market);
-        if (!snapshot) return;
-
-        const importedRows = (snapshot.holdings || [])
-            .filter((holding) => (holding.market || 'TW') === market)
-            .map((holding) => createHoldingRow({
-                market,
-                name: holding.name || holding.symbol || '',
-                price: holding.marketPrice ? String(holding.marketPrice) : '',
-                shares: holding.shares ? String(holding.shares) : ''
-            }));
-
+        const importedRows = getPreviousHoldingRows(data.stockHoldingSnapshots, market).map((row) => createHoldingRow(row));
         if (importedRows.length === 0) return;
 
         setHoldingRows((rows) => {
@@ -3710,7 +3670,7 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
                                 <button
                                     type="button"
                                     onClick={() => importPreviousHoldingRows(activeHoldingMarket)}
-                                    disabled={!getLatestHoldingSnapshotForMarket(activeHoldingMarket)}
+                                    disabled={!hasPreviousHoldingSnapshot(activeHoldingMarket)}
                                     className={`w-full px-3 py-2.5 rounded-xl bg-white border border-slate-200 text-xs font-bold transition-colors disabled:bg-slate-50 disabled:text-slate-300 disabled:border-slate-100 ${
                                         activeHoldingMarket === 'US'
                                             ? 'text-blue-700 hover:bg-blue-50'
@@ -4801,64 +4761,38 @@ const MainApp = ({ user, logout }) => {
         }
     };
 
-    const handleImportStockTransactions = (transactions) => {
-        if (!ensureWritable()) return;
-        const newData = {
-            ...data,
-            stockTransactions: [...(data.stockTransactions || []), ...transactions]
-        };
+    // 個股績效的寫入規則在 core；等存檔結果，失敗時還原並回傳 false，讓畫面保留預覽。
+    const saveStockChange = async (newData, title, message) => {
+        if (!ensureWritable()) return false;
         setData(newData);
-        saveToFirestoreChunks(newData);
-        handleShowAlert("匯入成功", `已新增 ${transactions.length} 筆股票交易`);
+        if (!(await saveToFirestoreChunks(newData))) {
+            revertUnsavedAdd(data);
+            return false;
+        }
+        handleShowAlert(title, message);
+        return true;
     };
 
+    const handleImportStockTransactions = (transactions) => saveStockChange(
+        addStockTransactionsToData(data, transactions), "匯入成功", `已新增 ${transactions.length} 筆股票交易`
+    );
+
     const handleClearStockTransactions = (market) => {
-        if (!ensureWritable()) return;
         const targetMarket = market || 'TW';
-        const newData = {
-            ...data,
-            stockTransactions: (data.stockTransactions || []).filter((trade) => (trade.market || 'TW') !== targetMarket)
-        };
-        setData(newData);
-        saveToFirestoreChunks(newData);
-        handleShowAlert("已清空", `${getStockMarketLabel(targetMarket)}股票交易資料已刪除`);
+        return saveStockChange(
+            clearStockTransactionsFromData(data, targetMarket), "已清空", `${getStockMarketLabel(targetMarket)}股票交易資料已刪除`
+        );
     };
 
     const handleImportHoldingSnapshot = (snapshotPreview) => {
-        if (!ensureWritable()) return;
-        const month = snapshotPreview.month;
-        const existingVersions = data.stockHoldingSnapshots?.[month] || [];
-        const nextVersion = existingVersions.reduce((max, item) => Math.max(max, Number(item.version) || 0), 0) + 1;
-        const snapshot = {
-            id: `holding-snapshot-${month}-v${nextVersion}-${Date.now()}`,
-            version: nextVersion,
-            importedAt: new Date().toISOString(),
-            note: snapshotPreview.note || '',
-            holdings: snapshotPreview.holdings
-        };
-        const newData = {
-            ...data,
-            stockHoldingSnapshots: {
-                ...(data.stockHoldingSnapshots || {}),
-                [month]: [...existingVersions, snapshot]
-            }
-        };
-        setData(newData);
-        saveToFirestoreChunks(newData);
-        handleShowAlert("匯入成功", `已新增 ${month} 持倉快照 v${nextVersion}`);
+        const newData = addHoldingSnapshotToData(data, snapshotPreview, { nowISO: new Date().toISOString(), nowMs: Date.now() });
+        const version = newData.stockHoldingSnapshots[snapshotPreview.month].at(-1).version;
+        return saveStockChange(newData, "匯入成功", `已新增 ${snapshotPreview.month} 持倉快照 v${version}`);
     };
 
-    const handleDeleteHoldingSnapshot = (month, snapshotId) => {
-        if (!ensureWritable()) return;
-        const remaining = (data.stockHoldingSnapshots?.[month] || []).filter((snapshot) => snapshot.id !== snapshotId);
-        const nextSnapshots = { ...(data.stockHoldingSnapshots || {}) };
-        if (remaining.length > 0) nextSnapshots[month] = remaining;
-        else delete nextSnapshots[month];
-        const newData = { ...data, stockHoldingSnapshots: nextSnapshots };
-        setData(newData);
-        saveToFirestoreChunks(newData);
-        handleShowAlert("刪除成功", "已刪除持倉快照版本");
-    };
+    const handleDeleteHoldingSnapshot = (month, snapshotId) => saveStockChange(
+        deleteHoldingSnapshotFromData(data, month, snapshotId), "刪除成功", "已刪除持倉快照版本"
+    );
 
     // 鎖定時只渲染鎖定畫面，避免資產資料留在 DOM 中。
     if (isAppLocked) {
