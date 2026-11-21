@@ -210,3 +210,29 @@ export const getRangeStats = (data = {}, startDate, endDate) => {
         financeStats: getRangeFinanceStats({ incomeStats, assetStats, debtStats, expenseStats })
     };
 };
+
+// 對帳單預設區間：上個月 15 日到這個月 16 日（today 為 YYYY-MM-DD，本地日期）。
+// web 原本用 Date.setMonth + toISOString：在 31 日會跳月、台灣早上 8 點前會差一天，這裡改用純日期計算。
+export const getStatementDefaultRange = (today) => {
+    const [year, month] = today.split('-').map(Number);
+    const previous = new Date(year, month - 2, 1);
+    return {
+        startDate: `${previous.getFullYear()}-${pad2(previous.getMonth() + 1)}-15`,
+        endDate: `${year}-${pad2(month)}-16`
+    };
+};
+
+// 對帳單畫面資料：帳戶清單、區間內的花費（新到舊，附顯示標題與穩定 key）與總金額。
+// key 用原始 id，沒有 id 的舊資料用日期與序號，讓勾選不會互相影響。
+export const getStatementView = (expenses = {}, account, startDate, endDate) => {
+    const accounts = getExpenseAccounts(expenses);
+    const selected = account && accounts.includes(account) ? account : (accounts[0] || '');
+    const items = getStatementExpenses(expenses, selected, startDate, endDate).map((item, index) => ({
+        key: item.id != null ? String(item.id) : `${item.date}#${index}`,
+        title: item.name || item.subCategory || item.category || '',
+        date: item.date || '',
+        category: item.category || '',
+        amount: Number(item.amount) || 0
+    }));
+    return { accounts, account: selected, items, total: items.reduce((sum, item) => sum + item.amount, 0) };
+};

@@ -159,7 +159,9 @@ var CatLogCore = (() => {
     getRecordIdentityKey: () => getRecordIdentityKey,
     getSchemaVersion: () => getSchemaVersion,
     getSortedValue: () => getSortedValue,
+    getStatementDefaultRange: () => getStatementDefaultRange,
     getStatementExpenses: () => getStatementExpenses,
+    getStatementView: () => getStatementView,
     getStockChartRows: () => getStockChartRows,
     getStockDebtStats: () => getStockDebtStats,
     getStockLeaders: () => getStockLeaders,
@@ -227,9 +229,11 @@ var CatLogCore = (() => {
     processUSBrokerTransactionCSVRows: () => processUSBrokerTransactionCSVRows,
     processUSBrokerTransactionPastedRows: () => processUSBrokerTransactionPastedRows,
     processUSBrokerTransactionRows: () => processUSBrokerTransactionRows,
+    setFireWithdrawalRate: () => setFireWithdrawalRate,
     shouldLockOnResume: () => shouldLockOnResume,
     splitIntoChunks: () => splitIntoChunks,
     summarizeBackupImport: () => summarizeBackupImport,
+    summarizeDataCounts: () => summarizeDataCounts,
     summarizeExpenseImport: () => summarizeExpenseImport,
     summarizeStockImport: () => summarizeStockImport,
     updateIncomeSourceField: () => updateIncomeSourceField,
@@ -1643,6 +1647,11 @@ var CatLogCore = (() => {
       };
     });
   };
+  var setFireWithdrawalRate = (data, rate) => {
+    const value = parseFloat(rate);
+    if (Number.isNaN(value) || value <= 0) throw new Error("\u63D0\u9818\u7387\u5FC5\u9808\u5927\u65BC 0");
+    return { ...data, fireSettings: { ...data.fireSettings || {}, withdrawalRate: value } };
+  };
 
   // src/rangeStats.js
   var toInclusiveRange = (startDate, endDate) => {
@@ -1812,6 +1821,26 @@ var CatLogCore = (() => {
       expenseStats,
       financeStats: getRangeFinanceStats({ incomeStats, assetStats, debtStats, expenseStats })
     };
+  };
+  var getStatementDefaultRange = (today) => {
+    const [year, month] = today.split("-").map(Number);
+    const previous = new Date(year, month - 2, 1);
+    return {
+      startDate: `${previous.getFullYear()}-${pad2(previous.getMonth() + 1)}-15`,
+      endDate: `${year}-${pad2(month)}-16`
+    };
+  };
+  var getStatementView = (expenses = {}, account, startDate, endDate) => {
+    const accounts = getExpenseAccounts(expenses);
+    const selected = account && accounts.includes(account) ? account : accounts[0] || "";
+    const items = getStatementExpenses(expenses, selected, startDate, endDate).map((item, index) => ({
+      key: item.id != null ? String(item.id) : `${item.date}#${index}`,
+      title: item.name || item.subCategory || item.category || "",
+      date: item.date || "",
+      category: item.category || "",
+      amount: Number(item.amount) || 0
+    }));
+    return { accounts, account: selected, items, total: items.reduce((sum, item) => sum + item.amount, 0) };
   };
 
   // src/stockAnalysis.js
@@ -2123,6 +2152,26 @@ var CatLogCore = (() => {
       }
       throw error;
     }
+  };
+  var summarizeDataCounts = (data) => {
+    const countItems = (obj = {}) => Object.values(obj || {}).reduce((sum, items) => sum + ((items || []).length || 0), 0);
+    const countIncomeSources = (obj = {}) => Object.values(obj || {}).reduce((sum, item) => sum + (item?.sources || []).length, 0);
+    return {
+      recordsDates: Object.keys(data?.records || {}).length,
+      recordsItems: countItems(data?.records),
+      debtDates: Object.keys(data?.debts || {}).length,
+      debtItems: countItems(data?.debts),
+      incomeMonths: Object.keys(data?.incomes || {}).length,
+      incomeSources: countIncomeSources(data?.incomes),
+      expenseMonths: Object.keys(data?.expenses || {}).length,
+      expenseItems: countItems(data?.expenses),
+      memoDates: Object.keys(data?.memos || {}).length,
+      debtEventMonths: Object.keys(data?.debtEvents || {}).length,
+      debtEventItems: countItems(data?.debtEvents),
+      stockTransactions: (data?.stockTransactions || []).length,
+      stockSnapshotMonths: Object.keys(data?.stockHoldingSnapshots || {}).length,
+      stockSnapshotVersions: countItems(data?.stockHoldingSnapshots)
+    };
   };
 
   // src/appLock.js

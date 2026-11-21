@@ -285,6 +285,30 @@ public final class AppModel: ObservableObject {
         }
     }
 
+    // MARK: - 診斷與修復（開發版）
+
+    /// 只讀不寫，回報雲端資料塊、checksum 與解析狀態。
+    public func diagnoseCloud() async throws -> CloudDiagnostics {
+        guard let core, let uid = Auth.auth().currentUser?.uid else { throw CoreBridgeError.coreNotLoaded }
+        return try await CloudRepository(store: FirestoreChunkStore(uid: uid), core: core.bridge).diagnose(core: core)
+    }
+
+    /// 用 JSON 備份覆蓋雲端資料（與 web 的「用 JSON 備份修復」相同），成功後重新讀取。回傳要顯示的訊息。
+    public func repair(fromBackup text: String) async -> String {
+        guard let core, let uid = Auth.auth().currentUser?.uid else { return "尚未登入" }
+        isSaving = true
+        defer { isSaving = false }
+        do {
+            let dataJSON = try core.repairDataJSON(fromBackup: text)
+            let repository = CloudRepository(store: FirestoreChunkStore(uid: uid), core: core.bridge)
+            _ = try await repository.write(dataJSON: dataJSON, expectedRevision: 0, force: true, deviceId: Self.deviceId)
+            await reload()
+            return "已用 JSON 備份重建雲端資料。"
+        } catch {
+            return "修復失敗：\(error.localizedDescription)"
+        }
+    }
+
     /// 衝突時：放棄這次的變更，載入雲端最新版本。
     public func resolveConflictByReloading() async {
         conflict = nil

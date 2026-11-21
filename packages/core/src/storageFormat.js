@@ -55,3 +55,25 @@ export const parseLegacyChunks = (chunks) => {
         throw error;
     }
 };
+
+// 雲端診斷：各區塊的日期 / 月份數與筆數（web 本機診斷與 iOS 共用）。
+export const summarizeDataCounts = (data) => {
+    const countItems = (obj = {}) => Object.values(obj || {}).reduce((sum, items) => sum + ((items || []).length || 0), 0);
+    const countIncomeSources = (obj = {}) => Object.values(obj || {}).reduce((sum, item) => sum + ((item?.sources || []).length), 0);
+    return {
+        recordsDates: Object.keys(data?.records || {}).length,
+        recordsItems: countItems(data?.records),
+        debtDates: Object.keys(data?.debts || {}).length,
+        debtItems: countItems(data?.debts),
+        incomeMonths: Object.keys(data?.incomes || {}).length,
+        incomeSources: countIncomeSources(data?.incomes),
+        expenseMonths: Object.keys(data?.expenses || {}).length,
+        expenseItems: countItems(data?.expenses),
+        memoDates: Object.keys(data?.memos || {}).length,
+        debtEventMonths: Object.keys(data?.debtEvents || {}).length,
+        debtEventItems: countItems(data?.debtEvents),
+        stockTransactions: (data?.stockTransactions || []).length,
+        stockSnapshotMonths: Object.keys(data?.stockHoldingSnapshots || {}).length,
+        stockSnapshotVersions: countItems(data?.stockHoldingSnapshots)
+    };
+};

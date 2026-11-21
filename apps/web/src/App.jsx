@@ -67,6 +67,9 @@ import {
     getRecentMonthsRange,
     getSchemaVersion,
     getStatementExpenses,
+    getStatementDefaultRange,
+    setFireWithdrawalRate,
+    summarizeDataCounts,
     getStockChartRows,
     getStockDebtStats,
     getStockMarketCounts,
@@ -102,6 +105,9 @@ import {
 } from '@catlog/core';
 
 const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.0.0';
+
+// 今天的本地日期 YYYY-MM-DD（不用 toISOString，避免台灣早上 8 點前變成前一天）。
+const getLocalDateKey = (date = new Date()) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 
 // --- CSS 樣式與 Tailwind 設定模擬 ---
 // 原本 index.css 的內容與 tailwind.config.js 的動畫設定整合於此
@@ -2591,18 +2597,10 @@ const DetailView = ({ monthKey, data, onBack, onUpdateData, assetNames, isPrivac
 };
 
 const StatementModal = ({ data, onClose }) => {
-    // Default Dates: Last Month 15th - This Month 16th
-    const [startDate, setStartDate] = useState(() => {
-        const d = new Date();
-        d.setMonth(d.getMonth() - 1);
-        d.setDate(15);
-        return d.toISOString().split('T')[0];
-    });
-    const [endDate, setEndDate] = useState(() => {
-        const d = new Date();
-        d.setDate(16);
-        return d.toISOString().split('T')[0];
-    });
+    // 預設上個月 15 日到這個月 16 日（規則在 core，用本地日期）。
+    const [defaultRange] = useState(() => getStatementDefaultRange(getLocalDateKey()));
+    const [startDate, setStartDate] = useState(defaultRange.startDate);
+    const [endDate, setEndDate] = useState(defaultRange.endDate);
     const [selectedAccount, setSelectedAccount] = useState('');
     const [checkedItems, setCheckedItems] = useState(new Set());
 
@@ -2700,15 +2698,9 @@ const StatementModal = ({ data, onClose }) => {
 };
 
 const RangeStatsModal = ({ data, onClose }) => {
-    // Default Dates: Start of current month - Today
-    const [startDate, setStartDate] = useState(() => {
-        const d = new Date();
-        d.setDate(1);
-        return d.toISOString().split('T')[0];
-    });
-    const [endDate, setEndDate] = useState(() => {
-        return new Date().toISOString().split('T')[0];
-    });
+    // 預設本月 1 日到今天（本地日期；原本 toISOString 在台灣早上 8 點前會差一天）。
+    const [startDate, setStartDate] = useState(() => `${getLocalDateKey().slice(0, 7)}-01`);
+    const [endDate, setEndDate] = useState(() => getLocalDateKey());
 
     // Calculate Income within range (based on month)
     const incomeStats = useMemo(() => getRangeIncomeStats(data.incomes, startDate, endDate), [data.incomes, startDate, endDate]);
@@ -4344,10 +4336,6 @@ const MainApp = ({ user, logout }) => {
                 parseError = error.message;
             }
 
-            const countObjectArrayItems = (obj = {}) => Object.values(obj || {}).reduce((sum, items) => sum + ((items || []).length || 0), 0);
-            const countIncomeSources = (obj = {}) => Object.values(obj || {}).reduce((sum, item) => sum + ((item?.sources || []).length), 0);
-            const countSnapshotVersions = (obj = {}) => Object.values(obj || {}).reduce((sum, versions) => sum + ((versions || []).length), 0);
-
             setDiagnostics({
                 show: true,
                 loading: false,
@@ -4358,20 +4346,7 @@ const MainApp = ({ user, logout }) => {
                     chunkCount: snapshot.size,
                     charCount: fullString.length,
                     hasParsedData: Boolean(parsed),
-                    recordsDates: Object.keys(parsed?.records || {}).length,
-                    recordsItems: countObjectArrayItems(parsed?.records),
-                    debtDates: Object.keys(parsed?.debts || {}).length,
-                    debtItems: countObjectArrayItems(parsed?.debts),
-                    incomeMonths: Object.keys(parsed?.incomes || {}).length,
-                    incomeSources: countIncomeSources(parsed?.incomes),
-                    expenseMonths: Object.keys(parsed?.expenses || {}).length,
-                    expenseItems: countObjectArrayItems(parsed?.expenses),
-                    memoDates: Object.keys(parsed?.memos || {}).length,
-                    debtEventMonths: Object.keys(parsed?.debtEvents || {}).length,
-                    debtEventItems: countObjectArrayItems(parsed?.debtEvents),
-                    stockTransactions: (parsed?.stockTransactions || []).length,
-                    stockSnapshotMonths: Object.keys(parsed?.stockHoldingSnapshots || {}).length,
-                    stockSnapshotVersions: countSnapshotVersions(parsed?.stockHoldingSnapshots)
+                    ...summarizeDataCounts(parsed),
                 }
             });
         } catch (error) {
@@ -4444,10 +4419,11 @@ const MainApp = ({ user, logout }) => {
     };
 
     const handleFireRateChange = (newRate) => {
-        const val = parseFloat(newRate);
-        if (isNaN(val) || val <= 0) return;
-        const newData = { ...data, fireSettings: { ...data.fireSettings, withdrawalRate: val } };
-        handleDataUpdate(newData);
+        try {
+            handleDataUpdate(setFireWithdrawalRate(data, newRate));
+        } catch {
+            // 不合法的提領率（空白、0、非數字）忽略，與原本相同。
+        }
     };
 
     const handleShowAlert = (title, message) => setAlertInfo({ show: true, title, message });
