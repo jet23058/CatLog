@@ -2052,6 +2052,7 @@ var CatLogCore = (() => {
     Object.keys(data.records || {}).forEach((d) => months.add(d.substring(0, 7)));
     Object.keys(data.memos || {}).forEach((d) => months.add(d.substring(0, 7)));
     Object.keys(data.debts || {}).forEach((d) => months.add(d.substring(0, 7)));
+    Object.keys(data.debtEvents || {}).forEach((m) => months.add(m));
     Object.keys(data.incomes || {}).forEach((m) => months.add(m));
     Object.keys(data.expenses || {}).forEach((m) => months.add(m));
     return Array.from(months).sort();

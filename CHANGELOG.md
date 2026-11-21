@@ -47,6 +47,7 @@
 
 - [core] 新增 `getStockOverview`、`getStockTrades`、`describeStockTrades`：個股績效整頁資料一次取得，web 與 iOS 共用。
 - [core] 新增 `getRangeStats`、`getRecentMonthsRange`。
+- [core] `getDataMonths` 納入只有負債異動的月份：iOS 月份列表可以打開，web 月份明細的上一月 / 下一月也不會跳過。
 - [web] 修正區間統計「近 N 個月」的開始日期：原本用 `toISOString` 換算成 UTC，在台灣會變成前一個月的最後一天（例如 8/31 而不是 9/1）。
 - [iOS] 個股績效（唯讀）：台股 / 美股、持倉快照版本、日期區間、總損益與質押後淨損益、賺最多 / 虧最多、可搜尋的個股損益表、單一股票交易明細、快照持股。
 - [iOS] 區間統計：自訂日期與「近 3 個月 / 近半年 / 近 1 年」，現金流、資產負債變化、財務推估。
