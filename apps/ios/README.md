@@ -71,6 +71,17 @@ App 依建置設定連到不同的 Firebase 專案，開發時不會碰到正式
 
 沒有對應的設定檔時 App 仍可執行，會顯示設定說明。
 
+### 裝到實體 iPhone
+
+1. 用傳輸線接上 iPhone、解鎖並「信任這部電腦」；iPhone 設定 → 隱私權與安全性 → 開啟「開發者模式」。
+2. Xcode → Settings → Accounts 登入 Apple ID，把 Team ID 填進 `Config/Local.xcconfig` 的 `CATLOG_DEVELOPMENT_TEAM`。免費帳號裝的 App 7 天後失效，重新安裝即可。
+3. 在 Mac **本機**（Warp / 終端機）執行：
+   ```bash
+   apps/ios/scripts/install-device.sh
+   ```
+   會建置 Debug 版（連測試站）、簽章、安裝並打開。簽章需要登入鑰匙圈，遠端連線（SSH）沒辦法簽。
+4. 第一次打開若顯示「未信任的開發者」：iPhone 設定 → 一般 → VPN 與裝置管理 → 信任。
+
 ### 不用 Firebase 檢查畫面
 
 Debug 建置以 `-CatLogDemo` 啟動會載入範例資料（Xcode：Scheme → Run → Arguments）。

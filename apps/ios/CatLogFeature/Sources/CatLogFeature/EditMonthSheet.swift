@@ -78,6 +78,7 @@ struct EditMonthSheet: View {
                     Button(role: .destructive) { draft?.assets.remove(at: index) } label: {
                         Label("刪除", systemImage: "trash")
                     }
+                    .tint(.red)
                 }
             }
 
@@ -118,6 +119,7 @@ struct EditMonthSheet: View {
                     Button(role: .destructive) { draft?.incomes.remove(at: index) } label: {
                         Label("刪除", systemImage: "trash")
                     }
+                    .tint(.red)
                 }
             }
 
@@ -153,6 +155,7 @@ struct EditMonthSheet: View {
                     Button(role: .destructive) { draft?.debts.remove(at: index) } label: {
                         Label("刪除", systemImage: "trash")
                     }
+                    .tint(.red)
                 }
             }
 
@@ -185,6 +188,7 @@ struct EditMonthSheet: View {
                         Button(role: .destructive) { draft?.debtEvents.remove(at: index) } label: {
                             Label("刪除", systemImage: "trash")
                         }
+                        .tint(.red)
                     }
                 }
             }
