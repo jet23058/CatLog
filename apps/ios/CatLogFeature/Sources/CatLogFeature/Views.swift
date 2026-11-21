@@ -116,6 +116,7 @@ struct DashboardView: View {
     @State private var lockError: String?
     @State private var showAddAsset = Self.demoSheet == "asset"
     @State private var showAddIncome = Self.demoSheet == "income"
+    @State private var showAddDebt = Self.demoSheet == "debt"
 
     /// 開發用：`-CatLogDemoSheet asset|income` 啟動時直接打開新增畫面。
     private static var demoSheet: String? {
@@ -235,7 +236,7 @@ struct DashboardView: View {
             .navigationDestination(for: DashboardRoute.self) { route in
                 if let core = model.core {
                     switch route {
-                    case .month(let monthKey): MonthDetailView(core: core, monthKey: monthKey)
+                    case .month(let monthKey): MonthDetailView(model: model, core: core, monthKey: monthKey)
                     case .stocks: StocksView(core: core)
                     case .range: RangeStatsView(core: core)
                     }
@@ -252,6 +253,9 @@ struct DashboardView: View {
             }
             .sheet(isPresented: $showAddIncome) {
                 if let core = model.core { AddIncomeSheet(model: model, core: core) }
+            }
+            .sheet(isPresented: $showAddDebt) {
+                if let core = model.core { AddDebtSheet(model: model, core: core) }
             }
             // 與 web 相同：另一台裝置先存了檔，讓使用者選擇載入雲端版本或用這台覆蓋。
             .alert("雲端有較新的資料", isPresented: Binding(get: { model.conflict != nil }, set: { _ in })) {
@@ -274,6 +278,7 @@ struct DashboardView: View {
                     Menu {
                         Button("新增資產", systemImage: "wallet.pass") { showAddAsset = true }
                         Button("新增收入", systemImage: "dollarsign.circle") { showAddIncome = true }
+                        Button("新增負債", systemImage: "creditcard") { showAddDebt = true }
                     } label: {
                         Image(systemName: "plus")
                     }
@@ -398,7 +403,7 @@ private struct PreviewNotice: View {
                 Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
             }
         } else {
-            Label("iOS 可以新增資產與收入；編輯、刪除與匯入請先使用網頁版。", systemImage: "info.circle")
+            Label("iOS 可以新增資產、收入、負債與負債異動；編輯、刪除與匯入請先使用網頁版。", systemImage: "info.circle")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }

@@ -9,12 +9,15 @@ import {
     INITIAL_DATA,
     STOCK_MARKETS,
     addAssetsToData,
-    addDebtAndCarryForward,
+    addDebtEventToData,
+    addDebtToData,
     addIncomeToData,
     buildHoldingMap,
     buildStockRows,
     checkCompatibility,
     createBackupFile,
+    createDebtEntry,
+    createDebtEvent,
     createHoldingRow,
     describeIncompatibility,
     extractBackupData,
@@ -30,12 +33,16 @@ import {
     getAssetExtremes,
     getAssetNameOptions,
     getAvailableYears,
+    getDebtAccountOptions,
     getDebtCategoryLabel,
     getDebtEstimatedAnnualInterest,
     getDebtEstimatedMonthlyInterest,
+    getDebtEventDefaultDate,
     getDebtEventImpact,
+    getDebtEventInputError,
     getDebtEventLabel,
-    getDebtTargetKey,
+    getDebtEventTargets,
+    getDebtInputError,
     getExpenseAccounts,
     getExpenseImportSummary,
     getFireStats,
@@ -71,11 +78,11 @@ import {
     isDuplicateAsset,
     isIdleExpired,
     maskAmount,
-    mergeDebtMaps,
     migrateData,
     normalizeAppData,
     normalizeMonthValue,
     parseAmount,
+    parseCollateralText,
     processExpenseCSVText,
     processStockCSVText,
     shouldLockOnResume
@@ -1687,40 +1694,10 @@ const AddDebtModal = ({ onClose, onSave, debtNames = [], accountOptions = [], as
         if (category === 'stock_pledge') setName('股票質押');
     }, [category]);
 
-    const selectableAccountOptions = useMemo(() => {
-        const options = [];
-        const seen = new Set();
-        const addOption = (value) => {
-            const cleanValue = String(value || '').trim();
-            if (!cleanValue || seen.has(cleanValue)) return;
-            seen.add(cleanValue);
-            options.push(cleanValue);
-        };
-        const addAssetOptions = (assets = []) => {
-            (assets || []).forEach((asset) => {
-                addOption(asset.account);
-                addOption(asset.broker);
-                addOption(asset.bank);
-                addOption(asset.lender);
-                if (!asset.account && !asset.broker && !asset.bank && !asset.lender) addOption(asset.name);
-            });
-        };
-
-        const targetDate = new Date(date);
-        const recordEntries = Object.entries(assetRecords || {})
-            .filter(([dateStr]) => new Date(dateStr) <= targetDate)
-            .sort(([a], [b]) => new Date(b) - new Date(a));
-        const sameMonthEntry = recordEntries.find(([dateStr]) => dateStr.substring(0, 7) === date.substring(0, 7));
-        if (sameMonthEntry) addAssetOptions(sameMonthEntry[1]);
-        if (recordEntries[0] && recordEntries[0] !== sameMonthEntry) addAssetOptions(recordEntries[0][1]);
-
-        Object.values(debts || {}).forEach((items) => {
-            (items || []).forEach((debt) => addOption(debt.lender));
-        });
-        accountOptions.forEach(addOption);
-
-        return options;
-    }, [accountOptions, assetRecords, date, debts]);
+    const selectableAccountOptions = useMemo(
+        () => getDebtAccountOptions(assetRecords, debts, date, accountOptions),
+        [accountOptions, assetRecords, date, debts]
+    );
 
     const addPledgeStock = () => {
         setPledgeStocks((rows) => [...rows, { id: Date.now() + rows.length, symbol: '', shares: '', rate: '' }]);
@@ -1747,23 +1724,10 @@ const AddDebtModal = ({ onClose, onSave, debtNames = [], accountOptions = [], as
 
     const handleSubmit = () => {
         setErrorMsg('');
-        if (!date) return setErrorMsg("請選擇日期");
-        if (!name.trim()) return setErrorMsg("請輸入負債名稱");
-        if (!amount || Number(amount) <= 0) return setErrorMsg("請輸入有效金額");
-        const cleanPledgeStocks = pledgeStocks
-            .map((row) => ({ symbol: row.symbol.trim(), shares: Math.trunc(Number(row.shares)) || 0, rate: Number(row.rate) || 0 }))
-            .filter((row) => row.symbol);
-        if (category === 'stock_pledge' && cleanPledgeStocks.length === 0) return setErrorMsg("請至少輸入一筆質押股票");
-
-        onSave({
-            id: Date.now(),
-            category,
-            name: name.trim(),
-            lender: lender.trim(),
-            amount: Number(amount),
-            pledgeStocks: category === 'stock_pledge' ? cleanPledgeStocks : [],
-            memo: memo.trim()
-        }, date);
+        const input = { date, category, name, lender, amount, pledgeStocks, memo };
+        const error = getDebtInputError(input);
+        if (error) return setErrorMsg(error);
+        onSave(createDebtEntry({ ...input, id: Date.now() }), date);
     };
 
     return (
@@ -1863,8 +1827,9 @@ const AddDebtModal = ({ onClose, onSave, debtNames = [], accountOptions = [], as
 
 const AddDebtEventModal = ({ monthKey, onClose, onSave, debtNames = [], debtTargets = [] }) => {
     const today = new Date();
-    const fallbackDate = `${monthKey}-${String(new Date(Number(monthKey.split('-')[0]), Number(monthKey.split('-')[1]), 0).getDate()).padStart(2, '0')}`;
-    const todayStr = today.toISOString().split('T')[0].startsWith(monthKey) ? today.toISOString().split('T')[0] : fallbackDate;
+    // 本地日期（不要用 toISOString，那會轉成 UTC，台灣早上 8 點前會變成前一天）。
+    const localToday = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    const todayStr = getDebtEventDefaultDate(monthKey, localToday);
 
     const [date, setDate] = useState(todayStr);
     const [type, setType] = useState('borrow');
@@ -1877,14 +1842,7 @@ const AddDebtEventModal = ({ monthKey, onClose, onSave, debtNames = [], debtTarg
     const [rateChangeRows, setRateChangeRows] = useState([{ id: `rate-${Date.now()}`, symbol: '', shares: '', rate: '' }]);
     const [errorMsg, setErrorMsg] = useState('');
 
-    const parseCollateral = (text) => text
-        .split(',')
-        .map((part) => part.trim())
-        .filter(Boolean)
-        .map((part) => {
-            const [symbol, shares] = part.split(/[:xX* ]+/).filter(Boolean);
-            return { symbol: symbol || part, shares: Number(shares) || 0 };
-        });
+    const parseCollateral = parseCollateralText;
 
     useEffect(() => {
         if (type !== 'rate_change') return;
@@ -1913,43 +1871,11 @@ const AddDebtEventModal = ({ monthKey, onClose, onSave, debtNames = [], debtTarg
 
     const handleSubmit = () => {
         setErrorMsg('');
-        if (!date || !date.startsWith(monthKey)) return setErrorMsg("日期需在目前月份內");
-        if (!name.trim()) return setErrorMsg("請輸入負債名稱");
-        if (type === 'rate_change') {
-            const target = debtTargets.find((item) => item.targetKey === selectedDebtTarget);
-            const cleanRows = rateChangeRows
-                .map((row) => ({ symbol: String(row.symbol || '').trim(), shares: Math.trunc(Number(row.shares)) || 0, rate: Number(row.rate) || 0 }))
-                .filter((row) => row.symbol && row.rate > 0);
-            if (!target) return setErrorMsg("請先選擇要調整利率的股票質押");
-            if (cleanRows.length === 0) return setErrorMsg("請至少輸入一筆新的利率資料");
-            onSave({
-                id: Date.now(),
-                date,
-                type,
-                name: target.name || name.trim(),
-                lender: target.lender || lender.trim(),
-                category: target.category || 'stock_pledge',
-                targetDebtId: target.id || '',
-                targetDebtKey: target.targetKey,
-                amount: 0,
-                collateral: [],
-                pledgeStocks: cleanRows,
-                memo: memo.trim()
-            });
-            return;
-        }
-        if (type !== 'collateral' && (!amount || Number(amount) <= 0)) return setErrorMsg("請輸入有效金額");
-
-        onSave({
-            id: Date.now(),
-            date,
-            type,
-            name: name.trim(),
-            lender: lender.trim(),
-            amount: type === 'collateral' ? 0 : Number(amount),
-            collateral: parseCollateral(collateralText),
-            memo: memo.trim()
-        });
+        const target = type === 'rate_change' ? (debtTargets.find((item) => item.targetKey === selectedDebtTarget) || null) : null;
+        const input = { monthKey, date, type, name, lender, amount, collateralText, rateRows: rateChangeRows, target, memo };
+        const error = getDebtEventInputError(input);
+        if (error) return setErrorMsg(error);
+        onSave(createDebtEvent({ ...input, id: Date.now() }));
     };
 
     return (
@@ -2101,14 +2027,7 @@ const DetailView = ({ monthKey, data, onBack, onUpdateData, assetNames, isPrivac
         setLocalDebts(detail.debts.map((item, idx) => ({ ...item, _tempId: item.id || idx })));
     }, [detail, assetDate, data]);
 
-    const debtEventTargets = useMemo(() => (
-        (localDebts || [])
-            .filter((item) => item.category === 'stock_pledge')
-            .map((item) => ({
-                ...item,
-                targetKey: getDebtTargetKey(item)
-            }))
-    ), [localDebts]);
+    const debtEventTargets = useMemo(() => getDebtEventTargets(localDebts), [localDebts]);
 
     // 編輯中用畫面上的暫存資料重算摘要。
     const stats = useMemo(() => getMonthSummary({
@@ -4830,17 +4749,13 @@ const MainApp = ({ user, logout }) => {
             handleShowAlert("刪除成功", `已刪除 ${monthToDelete} 的資產、負債與備忘`);
         } else if (type === 'ADD_DEBT_EVENT') {
             const { month, event } = payload;
-            const existingEvents = data.debtEvents?.[month] || [];
-            const newData = {
-                ...data,
-                debtEvents: {
-                    ...data.debtEvents,
-                    [month]: [...existingEvents, event]
-                }
-            };
+            const newData = addDebtEventToData(data, month, event);
             setData(newData);
-            saveToFirestoreChunks(newData);
-            handleShowAlert("新增成功", `已新增一筆${getDebtEventLabel(event.type)}異動`);
+            // 等存檔結果再顯示成功；失敗時還原（saveToFirestoreChunks 會自己顯示錯誤）。
+            saveToFirestoreChunks(newData).then((didSave) => {
+                if (didSave) handleShowAlert("新增成功", `已新增一筆${getDebtEventLabel(event.type)}異動`);
+                else revertUnsavedAdd(data);
+            });
         } else if (type === 'DELETE_DEBT_EVENT') {
             const { month, id } = payload;
             const newData = {
@@ -4898,12 +4813,8 @@ const MainApp = ({ user, logout }) => {
         try {
             const cloudData = await loadFromFirestoreChunks();
             const cloudBase = cloudData ? normalizeAppData(cloudData) : null;
-            const mergedDebts = mergeDebtMaps(cloudBase?.debts, data.debts);
-            const baseData = cloudBase ? { ...data, ...cloudBase, debts: mergedDebts } : { ...data, debts: mergedDebts };
-            const newData = {
-                ...baseData,
-                debts: addDebtAndCarryForward(mergedDebts, dateKey, newDebt)
-            };
+            // 先合併雲端最新的負債再新增，避免蓋掉其他裝置剛新增的負債（規則在 core）。
+            const newData = addDebtToData(data, cloudBase, dateKey, newDebt);
             setData(newData);
             const didSave = await saveToFirestoreChunks(newData);
             if (!didSave) return;

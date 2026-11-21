@@ -3,8 +3,17 @@ import SwiftUI
 
 /// 月份明細（唯讀）：與 web 的月份明細頁相同的資料，計算來自 core 的 getMonthDetail。
 struct MonthDetailView: View {
+    @ObservedObject var model: AppModel
     let core: CatLogCore
     @State var monthKey: String
+    @State private var showAddDebtEvent: Bool = {
+        #if DEBUG
+        // 開發用：`-CatLogDemoMonth YYYY-MM -CatLogDemoSheet debtEvent` 直接打開新增負債異動。
+        let args = ProcessInfo.processInfo.arguments
+        if let index = args.firstIndex(of: "-CatLogDemoSheet"), index + 1 < args.count { return args[index + 1] == "debtEvent" }
+        #endif
+        return false
+    }()
     @AppStorage("isPrivacyMode") private var isPrivacyMode = false
     @State private var detail: MonthDetail?
     @State private var errorMessage: String?
@@ -35,6 +44,9 @@ struct MonthDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
+                Button { showAddDebtEvent = true } label: { Image(systemName: "plus") }
+                    .disabled(!model.compatibility.canWrite)
+                    .accessibilityLabel("新增負債異動")
                 Button { go(to: detail?.prevMonth) } label: { Image(systemName: "chevron.left") }
                     .disabled(detail?.prevMonth == nil)
                     .accessibilityLabel("上個月")
@@ -43,7 +55,10 @@ struct MonthDetailView: View {
                     .accessibilityLabel("下個月")
             }
         }
-        .task(id: monthKey) { load() }
+        .task(id: "\(monthKey)#\(model.dataVersion)") { load() }
+        .sheet(isPresented: $showAddDebtEvent) {
+            AddDebtEventSheet(model: model, core: core, monthKey: monthKey)
+        }
     }
 
     // MARK: - Sections

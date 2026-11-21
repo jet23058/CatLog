@@ -38,7 +38,7 @@
 - ✅ monorepo 結構、`packages/core` 抽出第一批純函式（95 個）
 - ✅ 元件內的主要計算搬到 core：年度統計、每月資產趨勢、FIRE、區間統計、對帳單核對、個股損益彙總、質押分攤、最新估值（`dashboard.js`、`rangeStats.js`、`stockAnalysis.js`）
 - ✅ 月份明細頁的計算搬到 core（`monthDetail.js`）
-- ⏳ 仍在元件內的小型計算：新增負債視窗的質押利息預估、新增資產視窗的前次資產帶入。
+- ✅ 新增資產、收入、負債、負債異動的規則都在 core（`records.js`），web 與 iOS 共用
 - ✅ 資料格式加入 `schemaVersion` / `minClientVersion`，版本不符時 App 切成唯讀（見 [DATA_FORMAT.md](DATA_FORMAT.md)）
 - ✅ `apps/ios` 骨架：Google 登入、Firestore 讀取、JavaScriptCore 呼叫 core、年度統計 / FIRE / 每月資產（唯讀預覽）
 - ⏳ iOS 寫入與其他功能，依 README 功能對照表逐項移植

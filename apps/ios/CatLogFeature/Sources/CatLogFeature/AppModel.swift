@@ -37,6 +37,8 @@ public final class AppModel: ObservableObject {
     @Published public private(set) var compatibility: Compatibility = .writable
     @Published public private(set) var compatibilityMessage: String?
     @Published public private(set) var isSaving = false
+    /// 每次資料變動 +1，讓月份明細等畫面知道要重新讀取。
+    @Published public private(set) var dataVersion = 0
     /// 雲端已被其他裝置更新，這次存檔沒有寫入；等使用者決定載入雲端或覆蓋。
     @Published public var conflict: PendingConflict?
     /// 其他裝置存檔後提示重新載入。
@@ -136,6 +138,7 @@ public final class AppModel: ObservableObject {
             availableYears = try core.availableYears(thisYear: thisYear)
             if !availableYears.contains(year) { year = availableYears.first ?? thisYear }
             recompute()
+            dataVersion += 1
             phase = .ready
             listenForRemoteChanges(uid: uid)
         } catch {
@@ -169,8 +172,53 @@ public final class AppModel: ObservableObject {
         do { return await save(dataJSON: try core.addingIncome(entry, to: dateKey)) } catch { return .failed(error.localizedDescription) }
     }
 
+    /// 新增負債：與 web 相同，先重新讀取雲端最新資料、合併負債後再新增，避免蓋掉其他裝置剛新增的負債。
+    public func addDebt(_ input: DebtInput, dateKey: String) async -> SaveOutcome {
+        guard let core else { return .failed("core 無法載入") }
+        var cloudJSON: String?
+        var cloudRevision: (revision: Int, chunkIds: [String])?
+        if !isDemo {
+            guard let uid = Auth.auth().currentUser?.uid else { return .failed("尚未登入") }
+            do {
+                let snapshot = try await CloudRepository(store: FirestoreChunkStore(uid: uid), core: core.bridge).read()
+                // 只用在這次寫入：寫入成功後 save() 才會更新本機的 revision 與資料，
+                // 失敗時兩者都維持原狀，不會出現「版本號是新的、資料是舊的」。
+                cloudRevision = (snapshot.revision, snapshot.chunkIds)
+                if let meta = try snapshot.meta?.jsonString() {
+                    let result = try core.compatibility(appVersion: appVersion, metaJSON: meta)
+                    if !result.canWrite {
+                        compatibility = result
+                        compatibilityMessage = try? core.describe(result)
+                        return .failed(compatibilityMessage ?? "這個版本的 App 無法寫入雲端資料，請先更新。")
+                    }
+                }
+                cloudJSON = try snapshot.dataJSON.map { try core.bridge.callJSON("normalizeAppData", [.json($0)]) }
+            } catch {
+                return .failed("無法取得最新雲端資料，為避免覆蓋既有負債，這次沒有寫入。")
+            }
+        }
+        do {
+            let id = "debt-\(Int(Date().timeIntervalSince1970 * 1000))"
+            return await save(dataJSON: try core.addingDebt(input, id: id, cloudDataJSON: cloudJSON, dateKey: dateKey), basedOn: cloudRevision)
+        } catch {
+            return .failed(error.localizedDescription)
+        }
+    }
+
+    /// 新增負債異動並存檔。
+    public func addDebtEvent(_ input: DebtEventInput) async -> SaveOutcome {
+        guard let core else { return .failed("core 無法載入") }
+        do {
+            let id = "event-\(Int(Date().timeIntervalSince1970 * 1000))"
+            return await save(dataJSON: try core.addingDebtEvent(input, id: id))
+        } catch {
+            return .failed(error.localizedDescription)
+        }
+    }
+
     /// 寫入雲端；成功後才更新畫面資料。
-    public func save(dataJSON: String, force: Bool = false) async -> SaveOutcome {
+    /// - basedOn：資料是以這份雲端版本為基礎做出來的（新增負債會先重新讀取雲端）；nil 時用本機最後讀到 / 寫入的版本。
+    public func save(dataJSON: String, force: Bool = false, basedOn base: (revision: Int, chunkIds: [String])? = nil) async -> SaveOutcome {
         guard let core else { return .failed("core 無法載入") }
         guard compatibility.canWrite else {
             return .failed(compatibilityMessage ?? "這個版本的 App 無法寫入雲端資料，請先更新。")
@@ -187,9 +235,9 @@ public final class AppModel: ObservableObject {
             let repository = CloudRepository(store: FirestoreChunkStore(uid: uid), core: core.bridge)
             let result = try await repository.write(
                 dataJSON: dataJSON,
-                expectedRevision: revision,
+                expectedRevision: base?.revision ?? revision,
                 force: force,
-                previousChunkIds: chunkIds,
+                previousChunkIds: base?.chunkIds ?? chunkIds,
                 deviceId: Self.deviceId
             )
             revision = result.revision
@@ -220,6 +268,7 @@ public final class AppModel: ObservableObject {
     }
 
     private func refreshAfterChange(core: CatLogCore) {
+        dataVersion += 1
         let thisYear = Calendar.current.component(.year, from: Date())
         availableYears = (try? core.availableYears(thisYear: thisYear)) ?? availableYears
         recompute()
