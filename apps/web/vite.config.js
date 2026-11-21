@@ -38,5 +38,7 @@ export default defineConfig({
     globals: true,
     environment: 'jsdom',
     setupFiles: './src/setupTests.js',
+    // 個股績效的整合測試會逐字輸入大段 CSV，機器忙時偶爾超過預設的 5 秒。
+    testTimeout: 15000,
   },
 })

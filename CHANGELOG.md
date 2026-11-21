@@ -76,6 +76,11 @@
 - [iOS] 所有修改與刪除都在「編輯」畫面：資產、收入、負債快照、負債異動都可以向左滑刪除（紅色垃圾桶），按「儲存」後才生效；月份明細列表只用來檢視。
 - [iOS] 新增 `apps/ios/scripts/install-device.sh`：在 Mac 本機一行指令建置、簽章並安裝到接上的 iPhone。
 
+- [core] 新增 `importExport.js`：備份檔名、備份文字、備份解析、MOZE 花費 CSV 同步解析與合併、匯入差異摘要。
+- [web] 匯出備份的檔名改用本地日期（原本 `toISOString` 在台灣早上 8 點前會是前一天）。
+- [web] 匯入 MOZE 花費改為等存檔結果才顯示「匯入成功」，失敗時還原畫面資料。
+- [iOS] 首頁「資料」區塊：匯出 JSON 備份（分享）、匯入 JSON 備份、匯入 MOZE 花費 CSV；匯入前顯示各區塊 / 各月的新增、刪除、修改，確認後才寫入。
+
 ### CI
 - 新增 iOS workflow（macOS）：CatLogKit 測試與 App 建置；Node CI 檢查 iOS 內建的 core bundle 是否與 core 同步。
 - CI 新增 core 測試與 JavaScriptCore 打包步驟。
