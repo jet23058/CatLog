@@ -291,3 +291,10 @@ export const getFireYearlyStats = (expenses = {}) => {
             };
         });
 };
+
+// FIRE 提領率（%）。必須是大於 0 的數字，否則丟錯（web 原本直接忽略）。
+export const setFireWithdrawalRate = (data, rate) => {
+    const value = parseFloat(rate);
+    if (Number.isNaN(value) || value <= 0) throw new Error('提領率必須大於 0');
+    return { ...data, fireSettings: { ...(data.fireSettings || {}), withdrawalRate: value } };
+};

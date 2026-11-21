@@ -88,6 +88,11 @@
 - [iOS] 個股績效「最新估值」：每檔持股抓最新價，顯示最新價、估值與差異，總覽加上「若未賣出試算」；只試算，不改寫快照。iOS 直接向 TWSE / TPEX / Yahoo 抓價，不經過 web API。
 - [iOS] 新增持倉快照的每一列可「抓價」填入現價。
 - [iOS] 美股總損益可「轉台幣 / 轉美金」，顯示目前 USD/TWD 匯率（抓不到時用預設匯率）。
+- [core] 新增 `getStatementDefaultRange`、`getStatementView`（對帳單）、`setFireWithdrawalRate`（FIRE 提領率）、`summarizeDataCounts`（雲端診斷）。
+- [web] 修正對帳單預設日期：原本用 `setMonth` + `toISOString`，在 31 日會跳到錯的月份、台灣早上 8 點前會差一天；區間統計的預設日期同樣改用本地日期。
+- [iOS] 對帳單核對：選帳戶與區間，逐筆勾選，顯示已確認金額與總金額（勾選不存檔，與 web 相同）。
+- [iOS] FIRE 提領率可調整。
+- [iOS] 雲端資料讀取失敗時（開發版）：開啟診斷（資料塊、checksum、各區塊筆數）與用 JSON 備份修復，與 web 的本機診斷相同。
 - [iOS] `setup-launch-agent.sh` / `remote-install.sh`：從 SSH 透過 LaunchAgent 建置並安裝到 iPhone（Mac 需登入且螢幕未鎖定）。
 
 ### CI

@@ -97,7 +97,7 @@ public enum CloudStorageError: Error, Equatable, LocalizedError {
 }
 
 public final class CloudRepository: @unchecked Sendable {
-    private let store: ChunkStore
+    let store: ChunkStore
     private let core: CoreBridge
 
     public init(store: ChunkStore, core: CoreBridge) {

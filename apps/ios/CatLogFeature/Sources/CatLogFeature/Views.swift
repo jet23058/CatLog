@@ -65,7 +65,7 @@ public struct RootView: View {
         case .ready:
             DashboardView(model: model, lock: lock)
         case .failed(let message):
-            ErrorView(message: message) { Task { await model.reload() } } signOut: { model.signOut() }
+            ErrorView(model: model, message: message)
         }
     }
 }
@@ -113,6 +113,7 @@ struct DashboardView: View {
     @ObservedObject var lock: AppLockController
     /// 隱私模式：金額顯示成 ****，比例照常顯示。與 web 相同，只存在這台裝置。
     @AppStorage("isPrivacyMode") private var isPrivacyMode = false
+    @State private var showFireRate = false
     @State private var lockError: String?
     @State private var showAddAsset = Self.demoSheet == "asset"
     @State private var showAddIncome = Self.demoSheet == "income"
@@ -211,6 +212,8 @@ struct DashboardView: View {
                             .font(.subheadline)
                         }
                         StatRow(title: "平均月支出", value: money(core.formatMoney(fire.avgExpense)))
+                        Button("調整提領率", systemImage: "slider.horizontal.3") { showFireRate = true }
+                            .disabled(!model.compatibility.canWrite)
                     }
                 }
                 if let core = model.core {
@@ -220,6 +223,9 @@ struct DashboardView: View {
                         }
                         NavigationLink(value: DashboardRoute.range) {
                             Label("區間統計", systemImage: "calendar.badge.clock")
+                        }
+                        NavigationLink(value: DashboardRoute.statement) {
+                            Label("對帳單核對", systemImage: "checklist")
                         }
                     }
                     DataToolsSection(model: model, core: core)
@@ -234,12 +240,14 @@ struct DashboardView: View {
                 }
             }
             .navigationTitle("極簡貓資產")
+            .sheet(isPresented: $showFireRate) { FireRateSheet(model: model) }
             .navigationDestination(for: DashboardRoute.self) { route in
                 if let core = model.core {
                     switch route {
                     case .month(let monthKey): MonthDetailView(model: model, core: core, monthKey: monthKey)
                     case .stocks: StocksView(model: model, core: core)
                     case .range: RangeStatsView(core: core)
+                    case .statement: StatementCheckView(core: core)
                     }
                 }
             }
@@ -341,6 +349,7 @@ enum DashboardRoute: Hashable {
     case month(String)
     case stocks
     case range
+    case statement
 }
 
 /// 年度淨資產趨勢：只畫有實際資產紀錄的月份（與 web 相同，未紀錄月份不當成 0）。
@@ -468,18 +477,65 @@ struct SetupNeededView: View {
 }
 
 struct ErrorView: View {
+    @ObservedObject var model: AppModel
     let message: String
-    let retry: () -> Void
-    let signOut: () -> Void
+    #if DEBUG
+    @State private var showRepairPicker = false
+    @State private var pendingRepairText: String?
+    @State private var diagnostics: CloudDiagnostics?
+    @State private var toolMessage: String?
+    #endif
 
     var body: some View {
         ContentUnavailableView {
             Label("雲端資料讀取失敗", systemImage: "exclamationmark.icloud")
         } description: {
             Text(message)
+            Text("為了避免把空資料寫回雲端，已暫停所有寫入。")
         } actions: {
-            Button("重試", action: retry).buttonStyle(.borderedProminent)
-            Button("登出", role: .destructive, action: signOut)
+            Button("重試") { Task { await model.reload() } }.buttonStyle(.borderedProminent)
+            #if DEBUG
+            // 與 web 相同：診斷與修復只在開發版提供。
+            Button("開啟診斷") { Task { await diagnose() } }
+            Button("用 JSON 備份修復") { showRepairPicker = true }
+            #endif
+            Button("登出", role: .destructive) { model.signOut() }
         }
+        #if DEBUG
+        .fileImporter(isPresented: $showRepairPicker, allowedContentTypes: [.json, .plainText]) { result in
+            do {
+                let url = try result.get()
+                let accessing = url.startAccessingSecurityScopedResource()
+                defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+                pendingRepairText = try String(contentsOf: url, encoding: .utf8)
+            } catch {
+                toolMessage = error.localizedDescription
+            }
+        }
+        .confirmationDialog("用備份修復雲端資料？", isPresented: Binding(get: { pendingRepairText != nil }, set: { if !$0 { pendingRepairText = nil } }),
+                            titleVisibility: .visible) {
+            Button("覆蓋雲端資料", role: .destructive) {
+                let text = pendingRepairText
+                pendingRepairText = nil
+                Task { if let text { toolMessage = await model.repair(fromBackup: text) } }
+            }
+        } message: {
+            Text("這會用你選擇的 JSON 備份覆蓋目前的雲端資料。請確認這份備份是最近且可用的版本。")
+        }
+        .sheet(isPresented: Binding(get: { diagnostics != nil }, set: { if !$0 { diagnostics = nil } })) {
+            if let diagnostics { DiagnosticsSheet(diagnostics: diagnostics, email: model.userEmail) }
+        }
+        .alert("診斷 / 修復", isPresented: Binding(get: { toolMessage != nil }, set: { if !$0 { toolMessage = nil } })) {
+            Button("好") { toolMessage = nil }
+        } message: {
+            Text(toolMessage ?? "")
+        }
+        #endif
     }
+
+    #if DEBUG
+    private func diagnose() async {
+        do { diagnostics = try await model.diagnoseCloud() } catch { toolMessage = error.localizedDescription }
+    }
+    #endif
 }
