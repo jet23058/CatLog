@@ -66,6 +66,7 @@ var CatLogCore = (() => {
     getAssetExtremes: () => getAssetExtremes,
     getAssetRecordDatesInYear: () => getAssetRecordDatesInYear,
     getAvailableYears: () => getAvailableYears,
+    getDataMonths: () => getDataMonths,
     getDebtCategoryLabel: () => getDebtCategoryLabel,
     getDebtEffectiveDate: () => getDebtEffectiveDate,
     getDebtEstimatedAnnualInterest: () => getDebtEstimatedAnnualInterest,
@@ -83,6 +84,7 @@ var CatLogCore = (() => {
     getEffectiveDebtAtDate: () => getEffectiveDebtAtDate,
     getEffectiveDebtSnapshotAtDate: () => getEffectiveDebtSnapshotAtDate,
     getExpenseAccounts: () => getExpenseAccounts,
+    getExpenseCategories: () => getExpenseCategories,
     getExpenseFullKey: () => getExpenseFullKey,
     getExpenseIdentityKey: () => getExpenseIdentityKey,
     getExpenseImportSummary: () => getExpenseImportSummary,
@@ -93,13 +95,16 @@ var CatLogCore = (() => {
     getIncomeFullKey: () => getIncomeFullKey,
     getIncomeIdentityKey: () => getIncomeIdentityKey,
     getJsonImportSummary: () => getJsonImportSummary,
+    getLatestDateInMonth: () => getLatestDateInMonth,
     getLatestSnapshotDate: () => getLatestSnapshotDate,
     getLatestSnapshotEstimate: () => getLatestSnapshotEstimate,
     getLatestSnapshotItems: () => getLatestSnapshotItems,
     getLatestSnapshotTotal: () => getLatestSnapshotTotal,
     getMemoFullKey: () => getMemoFullKey,
     getMemoIdentityKey: () => getMemoIdentityKey,
+    getMonthDetail: () => getMonthDetail,
     getMonthEndDateKey: () => getMonthEndDateKey,
+    getMonthSummary: () => getMonthSummary,
     getMonthlyDebtInterestEstimate: () => getMonthlyDebtInterestEstimate,
     getMonthlyStats: () => getMonthlyStats,
     getNetAssetsAtDate: () => getNetAssetsAtDate,
@@ -1956,5 +1961,112 @@ var CatLogCore = (() => {
   var shouldLockOnResume = (hiddenAt, now) => hiddenAt !== null && hiddenAt !== void 0 && now - hiddenAt >= AUTO_LOCK_BACKGROUND_MS;
   var isIdleExpired = (lastActivityAt, now) => lastActivityAt !== null && lastActivityAt !== void 0 && now - lastActivityAt >= AUTO_LOCK_IDLE_MS;
   var maskAmount = (text, isPrivacyMode) => isPrivacyMode ? PRIVACY_MASK : text;
+
+  // src/monthDetail.js
+  var sumAmounts2 = (items = []) => items.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+  var getLatestDateInMonth = (records = {}, month) => Object.keys(records || {}).filter((date) => date.startsWith(month)).sort().pop() || null;
+  var getDataMonths = (data = {}) => {
+    const months = /* @__PURE__ */ new Set();
+    Object.keys(data.records || {}).forEach((d) => months.add(d.substring(0, 7)));
+    Object.keys(data.memos || {}).forEach((d) => months.add(d.substring(0, 7)));
+    Object.keys(data.debts || {}).forEach((d) => months.add(d.substring(0, 7)));
+    Object.keys(data.incomes || {}).forEach((m) => months.add(m));
+    Object.keys(data.expenses || {}).forEach((m) => months.add(m));
+    return Array.from(months).sort();
+  };
+  var getExpenseCategories = (expenses = []) => {
+    const categoryMap = {};
+    expenses.forEach((ex) => {
+      const cat = ex.category || "\u5176\u4ED6";
+      if (!categoryMap[cat]) categoryMap[cat] = { name: cat, value: 0, items: [] };
+      categoryMap[cat].value += ex.amount;
+      categoryMap[cat].items.push(ex);
+    });
+    return Object.values(categoryMap).sort((a, b) => b.value - a.value);
+  };
+  var getMonthSummary = ({ assets = [], debts = [], incomes = [], expenses = [], prevTotalAssets = 0, prevTotalDebts = 0, prevMonthIncome = 0 }) => {
+    const totalAssets = sumAmounts2(assets);
+    const totalDebts = getDebtTotal(debts);
+    const netAssets = totalAssets - totalDebts;
+    const floatingAssets = sumAmounts2(assets.filter((item) => item.type === "floating"));
+    const investmentRate = totalAssets > 0 ? floatingAssets / totalAssets : 0;
+    const monthlyIncome = sumAmounts2(incomes);
+    const monthlyCost = sumAmounts2(expenses);
+    const incomeDiff = monthlyIncome - prevMonthIncome;
+    const assetDiff = netAssets - (prevTotalAssets - prevTotalDebts);
+    const compositeScore = incomeDiff + assetDiff;
+    return { totalAssets, totalDebts, netAssets, investmentRate, monthlyIncome, monthlyCost, incomeDiff, assetDiff, compositeScore };
+  };
+  var getMonthDetail = (data = {}, monthKey) => {
+    const monthEndDate = getMonthEndDateKey(monthKey);
+    const assetDate = getLatestDateInMonth(data.records, monthKey);
+    const debtDate = getLatestDateInMonth(data.debts, monthKey);
+    const memoDate = getLatestDateInMonth(data.memos, monthKey);
+    const effectiveDebtSnapshotDate = monthEndDate ? getLatestSnapshotDate(data.debts, monthEndDate) : null;
+    const isDebtCarriedForward = Boolean(effectiveDebtSnapshotDate && effectiveDebtSnapshotDate.substring(0, 7) !== monthKey);
+    const monthlyDebtSnapshots = Object.entries(data.debts || {}).filter(([date]) => date.startsWith(monthKey)).sort(([a], [b]) => a.localeCompare(b)).map(([date, debts2]) => ({ date, debts: Array.isArray(debts2) ? debts2 : [], total: getDebtTotal(debts2) }));
+    const debtEvents = [...data.debtEvents?.[monthKey] || []].sort((a, b) => new Date(a.date) - new Date(b.date));
+    const latestDebtEventDate = debtEvents.map((item) => item.date).filter(Boolean).sort().pop() || "";
+    const effectiveDebtDate = effectiveDebtSnapshotDate && latestDebtEventDate && latestDebtEventDate > effectiveDebtSnapshotDate ? latestDebtEventDate : effectiveDebtSnapshotDate;
+    const debts = effectiveDebtDate ? getEffectiveDebtSnapshotAtDate(data.debts, data.debtEvents, effectiveDebtDate) : [];
+    const baseDebtSnapshotItems = effectiveDebtSnapshotDate ? data.debts?.[effectiveDebtSnapshotDate] || [] : [];
+    const debtEventStats = debtEvents.reduce((acc, item) => {
+      acc.principal += getDebtEventImpact(item);
+      if (item.type === "interest") acc.interest += Number(item.amount) || 0;
+      if (item.type === "fee") acc.fees += Number(item.amount) || 0;
+      if (item.type === "rate_change") acc.rateChanges += 1;
+      return acc;
+    }, { principal: 0, interest: 0, fees: 0, rateChanges: 0 });
+    const estimatedMonthlyDebtInterest = baseDebtSnapshotItems.reduce((sum, debt) => sum + getMonthlyDebtInterestEstimate(debt, monthKey, data.debtEvents, data.debts), 0);
+    const months = getDataMonths(data);
+    const currentIndex = months.indexOf(monthKey);
+    const prevMonth = currentIndex > 0 ? months[currentIndex - 1] : null;
+    const nextMonth = currentIndex < months.length - 1 ? months[currentIndex + 1] : null;
+    const prevAssetDate = prevMonth ? getLatestDateInMonth(data.records, prevMonth) : null;
+    const prevDebtDate = prevMonth ? getLatestSnapshotDate(data.debts, getMonthEndDateKey(prevMonth)) : null;
+    const prevAssets = prevAssetDate ? data.records[prevAssetDate] || [] : [];
+    const prevMonthAssetsMap = prevAssets.reduce((acc, item) => {
+      acc[`${item.type}-${item.name}`] = item.amount;
+      return acc;
+    }, {});
+    const prevTotalAssets = sumAmounts2(prevAssets);
+    const prevTotalDebts = prevDebtDate ? getDebtTotal(getEffectiveDebtSnapshotAtDate(data.debts, data.debtEvents, prevDebtDate)) : 0;
+    const prevMonthIncome = prevMonth ? data.incomes?.[prevMonth]?.totalAmount || 0 : 0;
+    const assets = assetDate ? data.records[assetDate] || [] : [];
+    const incomes = data.incomes?.[monthKey]?.sources || [];
+    const expenses = data.expenses?.[monthKey] || [];
+    return {
+      monthKey,
+      monthEndDate,
+      assetDate,
+      debtDate,
+      memoDate,
+      writeDate: assetDate || debtDate || memoDate || `${monthKey}-01`,
+      effectiveDebtSnapshotDate,
+      isDebtCarriedForward,
+      latestDebtEventDate,
+      assets,
+      memo: memoDate ? data.memos?.[memoDate] || "" : "",
+      incomes,
+      debts,
+      baseDebtSnapshotItems,
+      monthlyDebtSnapshots,
+      debtEvents,
+      debtEventStats,
+      estimatedMonthlyDebtInterest,
+      expenses,
+      expenseAccounts: Array.from(new Set(expenses.map((ex) => ex.account))).sort(),
+      expenseCategories: getExpenseCategories(expenses),
+      prevMonth,
+      nextMonth,
+      prevAssetDate,
+      prevDebtDate,
+      prevMonthAssetsMap,
+      prevTotalAssets,
+      prevTotalDebts,
+      prevMonthIncome,
+      summary: getMonthSummary({ assets, debts, incomes, expenses, prevTotalAssets, prevTotalDebts, prevMonthIncome })
+    };
+  };
   return __toCommonJS(src_exports);
 })();

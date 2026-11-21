@@ -41,6 +41,24 @@ public final class CatLogCore: @unchecked Sendable {
         try bridge.call("getFireStats", [.data])
     }
 
+    /// 某個月（YYYY-MM）的明細。
+    public func monthDetail(_ monthKey: String) throws -> MonthDetail {
+        try bridge.call("getMonthDetail", [.data, .string(monthKey)])
+    }
+
+    /// 有資料的月份（舊到新）。
+    public func dataMonths() throws -> [String] {
+        try bridge.call("getDataMonths", [.data])
+    }
+
+    public func debtCategoryLabel(_ value: String?) -> String {
+        (try? bridge.callString("getDebtCategoryLabel", [value.map { .string($0) } ?? .null])) ?? (value ?? "未分類")
+    }
+
+    public func debtEventLabel(_ type: String?) -> String {
+        (try? bridge.callString("getDebtEventLabel", [.string(type ?? "")])) ?? "異動"
+    }
+
     // MARK: - 格式化（與 web 相同的 Intl 規則）
 
     public func formatMoney(_ value: Double) -> String {

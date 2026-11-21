@@ -1,4 +1,5 @@
 import CatLogKit
+import Charts
 import SwiftUI
 import UIKit
 
@@ -113,13 +114,23 @@ struct DashboardView: View {
     /// 隱私模式：金額顯示成 ****，比例照常顯示。與 web 相同，只存在這台裝置。
     @AppStorage("isPrivacyMode") private var isPrivacyMode = false
     @State private var lockError: String?
+    @State private var path: [String] = Self.initialPath()
+
+    /// 開發用：`-CatLogDemoMonth 2026-03` 啟動時直接打開該月份明細。
+    private static func initialPath() -> [String] {
+        #if DEBUG
+        let args = ProcessInfo.processInfo.arguments
+        if let index = args.firstIndex(of: "-CatLogDemoMonth"), index + 1 < args.count { return [args[index + 1]] }
+        #endif
+        return []
+    }
 
     private func money(_ text: String) -> String {
         isPrivacyMode ? "****" : text
     }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             List {
                 Section {
                     PreviewNotice(message: model.compatibilityMessage)
@@ -140,6 +151,16 @@ struct DashboardView: View {
                         StatRow(title: "年度總收入", value: money(core.formatWan(stats.totalIncome)))
                         StatRow(title: "平均月收入", value: money(core.formatMoney(stats.avgIncome)))
                         StatRow(title: "負債", value: money(core.formatWan(stats.thisYearDebt)), detail: "截至 \(String(model.year)) 年底")
+                    }
+                }
+                if let core = model.core {
+                    let recorded = model.months.filter(\.hasRecord)
+                    if recorded.count >= 2 {
+                        Section("資產趨勢") {
+                            AssetTrendChart(months: recorded, core: core, isPrivacyMode: isPrivacyMode)
+                                .frame(height: 180)
+                                .padding(.vertical, 8)
+                        }
                     }
                 }
                 if let fire = model.fire, let core = model.core {
@@ -163,12 +184,19 @@ struct DashboardView: View {
                 if let core = model.core {
                     Section("每月") {
                         ForEach(model.months.filter { $0.hasRecord || $0.income != 0 || $0.cost != 0 }) { month in
-                            MonthRow(month: month, core: core, isPrivacyMode: isPrivacyMode)
+                            NavigationLink(value: Self.monthKey(year: model.year, month: month.month)) {
+                                MonthRow(month: month, core: core, isPrivacyMode: isPrivacyMode)
+                            }
                         }
                     }
                 }
             }
             .navigationTitle("極簡貓資產")
+            .navigationDestination(for: String.self) { monthKey in
+                if let core = model.core {
+                    MonthDetailView(core: core, monthKey: monthKey)
+                }
+            }
             .alert("無法開啟 Face ID 鎖定", isPresented: Binding(get: { lockError != nil }, set: { if !$0 { lockError = nil } })) {
                 Button("好") { lockError = nil }
             } message: {
@@ -217,6 +245,48 @@ struct DashboardView: View {
 
     static func percent(_ value: Double) -> String {
         value.isFinite ? (value).formatted(.percent.precision(.fractionLength(1))) : "—"
+    }
+
+    static func monthKey(year: Int, month: Int) -> String {
+        "\(year)-\(month < 10 ? "0" : "")\(month)"
+    }
+}
+
+/// 年度淨資產趨勢：只畫有實際資產紀錄的月份（與 web 相同，未紀錄月份不當成 0）。
+private struct AssetTrendChart: View {
+    let months: [MonthlyStat]
+    let core: CatLogCore
+    let isPrivacyMode: Bool
+
+    var body: some View {
+        Chart(months) { month in
+            AreaMark(x: .value("月份", month.month), y: .value("淨資產", month.assets))
+                .foregroundStyle(.teal.opacity(0.15))
+                .interpolationMethod(.monotone)
+            LineMark(x: .value("月份", month.month), y: .value("淨資產", month.assets))
+                .foregroundStyle(.teal)
+                .interpolationMethod(.monotone)
+            PointMark(x: .value("月份", month.month), y: .value("淨資產", month.assets))
+                .foregroundStyle(.teal)
+                .symbolSize(24)
+        }
+        .chartXScale(domain: 1...12)
+        .chartXAxis {
+            AxisMarks(values: [1, 3, 5, 7, 9, 11]) { value in
+                AxisGridLine()
+                AxisValueLabel { if let m = value.as(Int.self) { Text("\(m)月") } }
+            }
+        }
+        .chartYAxis {
+            AxisMarks(position: .leading) { value in
+                AxisGridLine()
+                // 隱私模式隱藏金額刻度，只保留曲線形狀。
+                if !isPrivacyMode, let amount = value.as(Double.self) {
+                    AxisValueLabel { Text(core.formatWan(amount)).font(.caption2) }
+                }
+            }
+        }
+        .accessibilityLabel("年度淨資產趨勢圖")
     }
 }
 
