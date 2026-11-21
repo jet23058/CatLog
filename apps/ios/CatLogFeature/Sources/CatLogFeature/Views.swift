@@ -1,28 +1,67 @@
 import CatLogKit
 import SwiftUI
+import UIKit
 
-/// App 的根畫面，依登入與讀取狀態切換。
+/// App 的根畫面，依登入、鎖定與讀取狀態切換。
 public struct RootView: View {
     @StateObject private var model = AppModel()
+    @StateObject private var lock = AppLockController(
+        authenticator: LocalDeviceAuthenticator(),
+        policy: (try? CoreBridge.bundled()).map(AppLockPolicy.fromCore) ?? .standard
+    )
+    @Environment(\.scenePhase) private var scenePhase
+    /// 30 秒檢查一次閒置；閒置上限是 5 分鐘，誤差可接受。
+    private let idleTimer = Timer.publish(every: 30, on: .main, in: .common).autoconnect()
 
     public init() {}
 
+    /// 與 web 相同：登入後的畫面才需要鎖。
+    private var needsLock: Bool {
+        guard lock.isEnabled, lock.isLocked else { return false }
+        switch model.phase {
+        case .needsSetup, .signedOut: return false
+        default: return true
+        }
+    }
+
     public var body: some View {
-        Group {
-            switch model.phase {
-            case .needsSetup:
-                SetupNeededView()
-            case .signedOut:
-                LoginView(model: model)
-            case .loading:
-                ProgressView("正在同步雲端資料…")
-            case .ready:
-                DashboardView(model: model)
-            case .failed(let message):
-                ErrorView(message: message) { Task { await model.reload() } } signOut: { model.signOut() }
+        ZStack {
+            if needsLock {
+                // 鎖定時完全不建立資料畫面，避免資產資料留在畫面階層中。
+                LockView(lock: lock)
+            } else {
+                content
+            }
+            if lock.isEnabled && scenePhase != .active {
+                PrivacyCover()
             }
         }
         .tint(.teal)
+        .background(ActivityTracker { lock.recordActivity() })
+        .onReceive(idleTimer) { _ in lock.checkIdle() }
+        // 用系統的 App 生命週期通知判斷進出背景（scenePhase 只用來決定要不要蓋上多工畫面遮罩）。
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)) { _ in
+            lock.didEnterBackground()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
+            lock.willEnterForeground()
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch model.phase {
+        case .needsSetup:
+            SetupNeededView()
+        case .signedOut:
+            LoginView(model: model)
+        case .loading:
+            ProgressView("正在同步雲端資料…")
+        case .ready:
+            DashboardView(model: model, lock: lock)
+        case .failed(let message):
+            ErrorView(message: message) { Task { await model.reload() } } signOut: { model.signOut() }
+        }
     }
 }
 
@@ -66,6 +105,14 @@ struct LoginView: View {
 
 struct DashboardView: View {
     @ObservedObject var model: AppModel
+    @ObservedObject var lock: AppLockController
+    /// 隱私模式：金額顯示成 ****，比例照常顯示。與 web 相同，只存在這台裝置。
+    @AppStorage("isPrivacyMode") private var isPrivacyMode = false
+    @State private var lockError: String?
+
+    private func money(_ text: String) -> String {
+        isPrivacyMode ? "****" : text
+    }
 
     var body: some View {
         NavigationStack {
@@ -78,17 +125,17 @@ struct DashboardView: View {
                         // 與 web 相同：期末是「該年度最後一筆資產紀錄」，不一定是 12/31。
                         StatRow(
                             title: "期末淨資產",
-                            value: core.formatWan(stats.thisYearAssets),
+                            value: money(core.formatWan(stats.thisYearAssets)),
                             detail: stats.assetGrowthEndDate.map { "截至 \($0)" } ?? "尚無紀錄"
                         )
                         StatRow(
                             title: "年度資產增長",
-                            value: "\(stats.realAssetGrowthAmount >= 0 ? "+" : "")\(core.formatWan(stats.realAssetGrowthAmount))",
+                            value: money("\(stats.realAssetGrowthAmount >= 0 ? "+" : "")\(core.formatWan(stats.realAssetGrowthAmount))"),
                             detail: Self.percent(stats.realAssetGrowthPercentage)
                         )
-                        StatRow(title: "年度總收入", value: core.formatWan(stats.totalIncome))
-                        StatRow(title: "平均月收入", value: core.formatMoney(stats.avgIncome))
-                        StatRow(title: "負債", value: core.formatWan(stats.thisYearDebt), detail: "截至 \(String(model.year)) 年底")
+                        StatRow(title: "年度總收入", value: money(core.formatWan(stats.totalIncome)))
+                        StatRow(title: "平均月收入", value: money(core.formatMoney(stats.avgIncome)))
+                        StatRow(title: "負債", value: money(core.formatWan(stats.thisYearDebt)), detail: "截至 \(String(model.year)) 年底")
                     }
                 }
                 if let fire = model.fire, let core = model.core {
@@ -98,23 +145,28 @@ struct DashboardView: View {
                             HStack {
                                 Text(Self.percent(fire.progress)).bold()
                                 Spacer()
-                                Text("\(core.formatWan(fire.currentAssets)) / \(core.formatWan(fire.fireTarget))")
+                                Text(money("\(core.formatWan(fire.currentAssets)) / \(core.formatWan(fire.fireTarget))"))
                                     .foregroundStyle(.secondary)
                             }
                             .font(.subheadline)
                         }
-                        StatRow(title: "平均月支出", value: core.formatMoney(fire.avgExpense))
+                        StatRow(title: "平均月支出", value: money(core.formatMoney(fire.avgExpense)))
                     }
                 }
                 if let core = model.core {
                     Section("每月") {
                         ForEach(model.months.filter { $0.hasRecord || $0.income != 0 || $0.cost != 0 }) { month in
-                            MonthRow(month: month, core: core)
+                            MonthRow(month: month, core: core, isPrivacyMode: isPrivacyMode)
                         }
                     }
                 }
             }
             .navigationTitle("極簡貓資產")
+            .alert("無法開啟 Face ID 鎖定", isPresented: Binding(get: { lockError != nil }, set: { if !$0 { lockError = nil } })) {
+                Button("好") { lockError = nil }
+            } message: {
+                Text(lockError ?? "")
+            }
             .refreshable { await model.reload() }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -127,9 +179,26 @@ struct DashboardView: View {
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        isPrivacyMode.toggle()
+                    } label: {
+                        Image(systemName: isPrivacyMode ? "eye.slash" : "eye")
+                    }
+                    .accessibilityLabel(isPrivacyMode ? "顯示金額" : "隱藏金額")
+                }
+                ToolbarItem(placement: .topBarTrailing) {
                     Menu {
                         if let email = model.userEmail { Text(email) }
                         Text("版本 \(model.appVersion)")
+                        if lock.isEnabled {
+                            Button("關閉 Face ID 鎖定", systemImage: "faceid") { lock.disable() }
+                        } else {
+                            Button("開啟 Face ID 鎖定", systemImage: "faceid") {
+                                Task {
+                                    if !(await lock.enable()) { lockError = lock.errorMessage }
+                                }
+                            }
+                        }
                         Button("登出", role: .destructive) { model.signOut() }
                     } label: {
                         Image(systemName: "person.circle")
@@ -185,20 +254,23 @@ private struct StatRow: View {
 private struct MonthRow: View {
     let month: MonthlyStat
     let core: CatLogCore
+    let isPrivacyMode: Bool
+
+    private func money(_ text: String) -> String { isPrivacyMode ? "****" : text }
 
     var body: some View {
         HStack {
             Text("\(month.month) 月").frame(width: 44, alignment: .leading)
             VStack(alignment: .leading, spacing: 2) {
-                Text(month.hasRecord ? core.formatWan(month.assets) : "未紀錄資產")
+                Text(month.hasRecord ? money(core.formatWan(month.assets)) : "未紀錄資產")
                     .foregroundStyle(month.hasRecord ? .primary : .secondary)
-                Text("收入 \(core.formatMoney(month.income))・支出 \(core.formatMoney(month.cost))")
+                Text("收入 \(money(core.formatMoney(month.income)))・支出 \(money(core.formatMoney(month.cost)))")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
             Spacer()
             if month.hasRecord {
-                Text("\(month.balance >= 0 ? "+" : "")\(core.formatWan(month.balance))")
+                Text(money("\(month.balance >= 0 ? "+" : "")\(core.formatWan(month.balance))"))
                     .font(.subheadline.monospacedDigit())
                     .foregroundStyle(month.balance >= 0 ? .green : .red)
             }

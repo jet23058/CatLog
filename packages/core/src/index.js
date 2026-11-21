@@ -12,3 +12,4 @@ export * from './rangeStats.js';
 export * from './stockAnalysis.js';
 export * from './schema.js';
 export * from './storageFormat.js';
+export * from './appLock.js';

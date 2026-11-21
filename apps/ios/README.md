@@ -4,6 +4,23 @@ SwiftUI 原生版。畫面是 SwiftUI，計算邏輯在 JavaScriptCore 裡執行
 
 > 目前是**唯讀預覽**：登入後可以檢視年度統計、FIRE 與每月資產，新增與編輯請先用網頁版。
 
+## 隱私與鎖定
+
+規則與 web 相同（時間定義在 `packages/core/src/appLock.js`）：
+
+- **Face ID 鎖定**：右上角帳號選單開啟。開啟時先驗證一次；之後 App 啟動時第一個畫面就是鎖定，切到背景超過 30 秒或閒置 5 分鐘會重新上鎖。Face ID 失敗可改輸入裝置密碼。鎖定時不建立任何資料畫面，多工切換畫面也會蓋上遮罩。
+- **隱私模式**：右上角眼睛圖示，金額顯示為 `****`，比例照常顯示。
+- 兩個設定都只存在這台裝置，不同步到雲端。
+
+在模擬器測試 Face ID：
+
+```bash
+xcrun simctl spawn booted notifyutil -s com.apple.BiometricKit.enrollmentChanged 1
+xcrun simctl spawn booted notifyutil -p com.apple.BiometricKit.enrollmentChanged
+xcrun simctl spawn booted notifyutil -p com.apple.BiometricKit_Sim.pearl.match     # 比對成功
+xcrun simctl spawn booted notifyutil -p com.apple.BiometricKit_Sim.pearl.nomatch   # 比對失敗
+```
+
 ## 結構
 
 ```
@@ -15,6 +32,7 @@ apps/ios/
 └── CatLogKit/            非 UI 邏輯，沒有第三方相依
     ├── CoreBridge        在 JavaScriptCore 執行 Resources/catlog-core.js
     ├── CatLogCore        core 函式的 Swift 包裝（年度統計、FIRE、相容性…）
+    ├── AppLockController Face ID 自動上鎖規則（與 web 相同）
     └── CloudRepository   雲端儲存格式 v3 讀寫（規則同 apps/web/src/cloudStorage.js）
 ```
 

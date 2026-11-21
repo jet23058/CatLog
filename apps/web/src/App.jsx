@@ -2,6 +2,7 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, PieChart, Pie, Cell } from 'recharts';
 import { Cat, ChevronLeft, ChevronRight, Plus, Upload, Wallet, TrendingUp, DollarSign, Calendar, X, Save, FileJson, ArrowUpRight, ArrowDownRight, ArrowLeft, ArrowRight, Edit2, Trash2, Info, Check, TrendingDown, RefreshCw, FileText, Mountain, ArrowDown, AlertCircle, AlertTriangle, Building2, Lock, PieChart as PieChartIcon, Download, StickyNote, ShoppingBag, Filter, ChevronDown, PiggyBank, Activity, Sparkles, LogOut, Coins, ClipboardCheck, LayoutGrid, Package, Box, Footprints, Eye, EyeOff, ScanFace, ShieldCheck, ShieldAlert, Search } from 'lucide-react';
 import {
+    AUTO_LOCK_IDLE_MS,
     CURRENT_SCHEMA_VERSION,
     DEBT_CATEGORIES,
     DEFAULT_EXCHANGE_RATES,
@@ -69,7 +70,8 @@ import {
     normalizeMonthValue,
     parseAmount,
     processExpenseCSVText,
-    processStockCSVText
+    processStockCSVText,
+    shouldLockOnResume
 } from '@catlog/core';
 
 const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.0.0';
@@ -4184,8 +4186,6 @@ const AuthenticatedApp = () => {
     return <MainApp user={user} logout={logout} />;
 };
 
-const AUTO_LOCK_BACKGROUND_MS = 30 * 1000;
-const AUTO_LOCK_IDLE_MS = 5 * 60 * 1000;
 
 const readBiometricEnabled = () => {
     try {
@@ -4243,7 +4243,7 @@ const MainApp = ({ user, logout }) => {
                 hiddenAt = Date.now();
                 return;
             }
-            if (hiddenAt && Date.now() - hiddenAt >= AUTO_LOCK_BACKGROUND_MS) lock();
+            if (shouldLockOnResume(hiddenAt, Date.now())) lock();
             hiddenAt = null;
             resetIdleTimer();
         };
