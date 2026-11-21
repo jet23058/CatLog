@@ -3,6 +3,18 @@ import SwiftUI
 
 // 新增資產 / 收入。欄位、驗證與換算規則與 web 的 AddAssetModal / AddIncomeModal 相同（規則在 core 的 records.js）。
 
+extension View {
+    /// 數字欄位：螢幕鍵盤用數字鍵盤，並過濾實體鍵盤或注音輸入法打出的非數字字元。
+    func numericField(_ text: Binding<String>, allowDecimal: Bool = true, maxFractionDigits: Int? = nil) -> some View {
+        self
+            .keyboardType(allowDecimal ? .decimalPad : .numberPad)
+            .onChange(of: text.wrappedValue) { _, new in
+                let clean = NumericInput.sanitize(new, allowDecimal: allowDecimal, maxFractionDigits: maxFractionDigits)
+                if clean != new { text.wrappedValue = clean }
+            }
+    }
+}
+
 /// 同一個月份、同一幣別的匯率，在新增資產與收入之間共用（與 web 的 exchangeRateCache 相同，只存在這次開啟期間）。
 @MainActor
 enum ExchangeRateMemory {
@@ -46,11 +58,11 @@ private struct CurrencyAmountFields: View {
         // 換到別的月份時，改用那個月份記住的匯率（與 web 相同）。
         .onChange(of: month) { _, _ in restoreRate() }
         TextField(currency == "TWD" ? "金額" : "原幣金額（\(currency)）", text: $originalAmount)
-            .keyboardType(.decimalPad)
+            .numericField($originalAmount, maxFractionDigits: 2)
         if currency != "TWD" {
             HStack {
                 TextField("匯率", text: $exchangeRate)
-                    .keyboardType(.decimalPad)
+                    .numericField($exchangeRate)
                     .onChange(of: exchangeRate) { _, new in ExchangeRateMemory.remember(new, month: month, currency: currency) }
                 Button {
                     Task { await fetchRate() }

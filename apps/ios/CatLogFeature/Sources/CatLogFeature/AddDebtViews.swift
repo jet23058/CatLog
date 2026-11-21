@@ -13,9 +13,9 @@ private struct PledgeRowsEditor: View {
             VStack(alignment: .leading, spacing: 6) {
                 TextField("股票代號 / 名稱", text: $row.symbol)
                 HStack {
-                    TextField("股數", text: $row.shares).keyboardType(.numberPad)
+                    TextField("股數", text: $row.shares).numericField($row.shares, allowDecimal: false)
                     Divider()
-                    TextField(rateTitle, text: $row.rate).keyboardType(.decimalPad)
+                    TextField(rateTitle, text: $row.rate).numericField($row.rate)
                 }
             }
         }
@@ -65,7 +65,7 @@ struct AddDebtSheet: View {
                             }
                         }
                     }
-                    TextField("金額（TWD）", text: $input.amount).keyboardType(.decimalPad)
+                    TextField("金額（TWD）", text: $input.amount).numericField($input.amount)
                 }
 
                 if isStockPledge {
@@ -180,7 +180,7 @@ struct AddDebtEventSheet: View {
                         TextField("負債名稱", text: $input.name)
                         TextField("機構 / 帳戶", text: $input.lender)
                         if input.type != "collateral" {
-                            TextField("金額（TWD）", text: $input.amount).keyboardType(.decimalPad)
+                            TextField("金額（TWD）", text: $input.amount).numericField($input.amount)
                         }
                     }
                     if input.type == "collateral" {
