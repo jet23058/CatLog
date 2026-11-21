@@ -35,6 +35,8 @@ describe('月份明細', () => {
         expect(getLatestDateInMonth(data.records, '2026-03')).toBe('2026-03-31');
         expect(getLatestDateInMonth(data.records, '2026-02')).toBeNull();
         expect(getDataMonths(data)).toEqual(['2026-01', '2026-03']);
+        // 只有負債異動的月份也要列入，才能打開月份明細。
+        expect(getDataMonths({ debtEvents: { '2026-07': [{ date: '2026-07-01', type: 'repay', amount: 1 }] } })).toEqual(['2026-07']);
         expect(getExpenseCategories(data.expenses['2026-03']).map((c) => [c.name, c.value])).toEqual([['房租', 30_000], ['其他', 700], ['飲食', 500]]);
     });
 

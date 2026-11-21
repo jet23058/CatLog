@@ -47,6 +47,7 @@ import {
     getRangeExpenseStats,
     getRangeFinanceStats,
     getRangeIncomeStats,
+    getRecentMonthsRange,
     getSchemaVersion,
     getStatementExpenses,
     getStockChartRows,
@@ -2861,19 +2862,12 @@ const RangeStatsModal = ({ data, onClose }) => {
                         <button
                             key={months}
                             onClick={() => {
+                                // 本地日期（不要用 toISOString，那會轉成 UTC，在台灣會早一天）。
                                 const now = new Date();
-                                // End date: last day of current month
-                                const endYear = now.getFullYear();
-                                const endMonth = now.getMonth();
-                                const lastDay = new Date(endYear, endMonth + 1, 0).getDate();
-                                const newEndDate = `${endYear}-${String(endMonth + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
-
-                                // Start date: first day of (current month - months + 1)
-                                const startMonthDate = new Date(endYear, endMonth - months + 1, 1);
-                                const newStartDate = startMonthDate.toISOString().split('T')[0];
-
-                                setStartDate(newStartDate);
-                                setEndDate(newEndDate);
+                                const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+                                const range = getRecentMonthsRange(months, today);
+                                setStartDate(range.startDate);
+                                setEndDate(range.endDate);
                             }}
                             className="flex-1 py-1.5 px-2 text-xs font-medium text-purple-600 bg-purple-50 hover:bg-purple-100 border border-purple-200 rounded-lg transition-colors"
                         >

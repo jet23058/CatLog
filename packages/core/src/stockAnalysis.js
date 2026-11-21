@@ -2,7 +2,7 @@
 // 從 App.jsx 的 StockAnalysisView 搬出，邏輯保持原樣；「今天」由呼叫端傳入。
 import { getDebtEstimatedAnnualInterest, getDebtMarketAllocation, getEffectiveDebtSnapshotAtDate, getMonthEndDateKey } from './debts.js';
 import { formatMoney, formatMoneyByMarket } from './format.js';
-import { normalizeSnapshotVersions } from './stocks.js';
+import { getStockTradeDescription, getStockTradeLabel, getStockTradeTitle, normalizeSnapshotVersions } from './stocks.js';
 
 const marketOf = (item) => item.market || 'TW';
 const sumTradeAmounts = (trades, type) => trades
@@ -228,3 +228,68 @@ export const getStockChartRows = (rows = []) => {
     const maxAbs = Math.max(...top.map((item) => Math.abs(item.totalPnl)), 1);
     return top.map((item) => ({ ...item, barWidth: Math.max(6, Math.round((Math.abs(item.totalPnl) / maxAbs) * 100)) }));
 };
+
+// 依市場篩選出有持股的快照版本，並選出目前要用的那一版（找不到指定 id 時用最新一版）。
+export const getMarketSnapshots = (holdingSnapshots = [], market = 'TW', snapshotId = '') => {
+    const visible = holdingSnapshots.filter((snapshot) => (snapshot.holdings || []).some((holding) => marketOf(holding) === market));
+    const selected = visible.find((snapshot) => snapshot.id === snapshotId) || visible[0] || null;
+    const holdings = selected ? (selected.holdings || []).filter((holding) => marketOf(holding) === market) : [];
+    return { visible, selected, holdings };
+};
+
+// 賺最多 / 虧最多：rows 已依總損益由高到低排序。
+export const getStockLeaders = (rows = [], limit = 5) => ({
+    winners: rows.filter((item) => item.totalPnl > 0).slice(0, limit),
+    losers: [...rows].filter((item) => item.totalPnl < 0).sort((a, b) => a.totalPnl - b.totalPnl).slice(0, limit)
+});
+
+/**
+ * 個股績效頁的完整資料（唯讀），web 的 StockAnalysisView 與 iOS 共用同一套計算。
+ * options：market（'TW' | 'US'）、snapshotId、rangeStart / rangeEnd（YYYY-MM-DD，可空）、today（YYYY-MM-DD）。
+ * 有日期區間時只計算區間內交易，不納入持倉快照市值（與 web 相同）。
+ */
+export const getStockOverview = (data = {}, { market = 'TW', snapshotId = '', rangeStart = '', rangeEnd = '', today } = {}) => {
+    const holdingSnapshots = getHoldingSnapshots(data.stockHoldingSnapshots);
+    const { visible, selected, holdings } = getMarketSnapshots(holdingSnapshots, market, snapshotId);
+    const hasRange = Boolean(rangeStart || rangeEnd);
+    const holdingMap = selected ? buildHoldingMap(selected, holdings) : {};
+    const activeTransactions = filterTransactionsByRange(data.stockTransactions, rangeStart, rangeEnd);
+    const rows = buildStockRows(activeTransactions, hasRange ? {} : holdingMap, selected).filter((row) => row.market === market);
+    const marketTransactions = activeTransactions.filter((trade) => marketOf(trade) === market);
+    const stats = getStockStats(rows, marketTransactions);
+    const targetDate = getStockStatsTargetDate({ hasRange, selectedSnapshot: selected, rangeEnd, transactions: marketTransactions, today });
+    const debtStats = getStockDebtStats({ debts: data.debts, debtEvents: data.debtEvents, market, targetDate, totalPnl: stats.totalPnl });
+
+    return {
+        market,
+        hasRange,
+        marketCounts: getStockMarketCounts(data.stockTransactions, holdingSnapshots),
+        snapshots: visible.map(({ id, month, version, note, importedAt, holdings: items }) => ({
+            id, month, version, note: note || '', importedAt: importedAt || '',
+            holdingCount: (items || []).filter((holding) => marketOf(holding) === market).length
+        })),
+        selectedSnapshotId: selected?.id || null,
+        holdings,
+        rows,
+        stats,
+        targetDate,
+        debtStats,
+        ...getStockLeaders(rows),
+        transactionCount: marketTransactions.length
+    };
+};
+
+// 單一股票的交易明細（新到舊），套用同樣的日期區間。
+export const getStockTrades = (data = {}, { market = 'TW', symbol, rangeStart = '', rangeEnd = '' } = {}) => (
+    filterTransactionsByRange(data.stockTransactions, rangeStart, rangeEnd)
+        .filter((trade) => marketOf(trade) === market && trade.symbol === symbol)
+        .sort((a, b) => new Date(b.date) - new Date(a.date))
+);
+
+// 交易明細加上顯示用文字（類別、標題、說明），讓 iOS 與 web 顯示一致。
+export const describeStockTrades = (trades = []) => trades.map((trade) => ({
+    ...trade,
+    label: getStockTradeLabel(trade.type),
+    title: getStockTradeTitle(trade),
+    description: getStockTradeDescription(trade)
+}));

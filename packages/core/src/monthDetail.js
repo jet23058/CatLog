@@ -13,12 +13,13 @@ export const getLatestDateInMonth = (records = {}, month) => (
         .pop() || null
 );
 
-// 有任何資料（資產、備忘錄、負債、收入、花費）的月份，舊到新。用於上一月 / 下一月。
+// 有任何資料（資產、備忘錄、負債、負債異動、收入、花費）的月份，舊到新。用於上一月 / 下一月與 iOS 月份列表。
 export const getDataMonths = (data = {}) => {
     const months = new Set();
     Object.keys(data.records || {}).forEach((d) => months.add(d.substring(0, 7)));
     Object.keys(data.memos || {}).forEach((d) => months.add(d.substring(0, 7)));
     Object.keys(data.debts || {}).forEach((d) => months.add(d.substring(0, 7)));
+    Object.keys(data.debtEvents || {}).forEach((m) => months.add(m));
     Object.keys(data.incomes || {}).forEach((m) => months.add(m));
     Object.keys(data.expenses || {}).forEach((m) => months.add(m));
     return Array.from(months).sort();

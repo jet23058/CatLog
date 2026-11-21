@@ -180,3 +180,33 @@ export const getStatementExpenses = (expenses = {}, account, startDate, endDate)
     });
     return result.sort((a, b) => parseExpenseDate(b.date) - parseExpenseDate(a.date));
 };
+
+const pad2 = (n) => String(n).padStart(2, '0');
+
+// 「近 N 個月」快捷區間：從 (本月 - N + 1) 的 1 號到本月最後一天（與 web 相同）。today 為 YYYY-MM-DD。
+export const getRecentMonthsRange = (months, today) => {
+    const [year, month] = today.split('-').map(Number);
+    const lastDay = new Date(year, month, 0).getDate();
+    const start = new Date(year, month - 1 - months + 1, 1);
+    return {
+        startDate: `${start.getFullYear()}-${pad2(start.getMonth() + 1)}-01`,
+        endDate: `${year}-${pad2(month)}-${pad2(lastDay)}`
+    };
+};
+
+// 區間統計的完整資料：收入、資產、負債、花費與財務推估。
+export const getRangeStats = (data = {}, startDate, endDate) => {
+    const incomeStats = getRangeIncomeStats(data.incomes, startDate, endDate);
+    const assetStats = getRangeAssetStats(data.records, startDate, endDate);
+    const debtStats = getRangeDebtStats(data.debts, data.debtEvents, startDate, endDate);
+    const expenseStats = getRangeExpenseStats(data.expenses, startDate, endDate);
+    return {
+        startDate,
+        endDate,
+        incomeStats,
+        assetStats,
+        debtStats,
+        expenseStats,
+        financeStats: getRangeFinanceStats({ incomeStats, assetStats, debtStats, expenseStats })
+    };
+};

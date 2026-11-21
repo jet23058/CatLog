@@ -114,15 +114,25 @@ struct DashboardView: View {
     /// 隱私模式：金額顯示成 ****，比例照常顯示。與 web 相同，只存在這台裝置。
     @AppStorage("isPrivacyMode") private var isPrivacyMode = false
     @State private var lockError: String?
-    @State private var path: [String] = Self.initialPath()
+    @State private var path = Self.initialPath()
 
-    /// 開發用：`-CatLogDemoMonth 2026-03` 啟動時直接打開該月份明細。
-    private static func initialPath() -> [String] {
+    /// 開發用：`-CatLogDemoMonth 2026-03` 或 `-CatLogDemoScreen stocks|range` 啟動時直接打開該畫面。
+    private static func initialPath() -> NavigationPath {
+        var path = NavigationPath()
         #if DEBUG
         let args = ProcessInfo.processInfo.arguments
-        if let index = args.firstIndex(of: "-CatLogDemoMonth"), index + 1 < args.count { return [args[index + 1]] }
+        func value(after flag: String) -> String? {
+            guard let index = args.firstIndex(of: flag), index + 1 < args.count else { return nil }
+            return args[index + 1]
+        }
+        if let month = value(after: "-CatLogDemoMonth") { path.append(DashboardRoute.month(month)) }
+        switch value(after: "-CatLogDemoScreen") {
+        case "stocks": path.append(DashboardRoute.stocks)
+        case "range": path.append(DashboardRoute.range)
+        default: break
+        }
         #endif
-        return []
+        return path
     }
 
     private func money(_ text: String) -> String {
@@ -182,10 +192,18 @@ struct DashboardView: View {
                     }
                 }
                 if let core = model.core {
+                    Section("工具") {
+                        NavigationLink(value: DashboardRoute.stocks) {
+                            Label("個股績效", systemImage: "chart.line.uptrend.xyaxis")
+                        }
+                        NavigationLink(value: DashboardRoute.range) {
+                            Label("區間統計", systemImage: "calendar.badge.clock")
+                        }
+                    }
                     Section("每月") {
                         // 只要該月有任何資料（含只有備忘錄或負債快照的月份）就列出，才能打開月份明細。
                         ForEach(model.months.filter { model.dataMonths.contains(Self.monthKey(year: model.year, month: $0.month)) }) { month in
-                            NavigationLink(value: Self.monthKey(year: model.year, month: month.month)) {
+                            NavigationLink(value: DashboardRoute.month(Self.monthKey(year: model.year, month: month.month))) {
                                 MonthRow(month: month, core: core, isPrivacyMode: isPrivacyMode)
                             }
                         }
@@ -193,9 +211,13 @@ struct DashboardView: View {
                 }
             }
             .navigationTitle("極簡貓資產")
-            .navigationDestination(for: String.self) { monthKey in
+            .navigationDestination(for: DashboardRoute.self) { route in
                 if let core = model.core {
-                    MonthDetailView(core: core, monthKey: monthKey)
+                    switch route {
+                    case .month(let monthKey): MonthDetailView(core: core, monthKey: monthKey)
+                    case .stocks: StocksView(core: core)
+                    case .range: RangeStatsView(core: core)
+                    }
                 }
             }
             .alert("無法開啟 Face ID 鎖定", isPresented: Binding(get: { lockError != nil }, set: { if !$0 { lockError = nil } })) {
@@ -251,6 +273,12 @@ struct DashboardView: View {
     static func monthKey(year: Int, month: Int) -> String {
         "\(year)-\(month < 10 ? "0" : "")\(month)"
     }
+}
+
+enum DashboardRoute: Hashable {
+    case month(String)
+    case stocks
+    case range
 }
 
 /// 年度淨資產趨勢：只畫有實際資產紀錄的月份（與 web 相同，未紀錄月份不當成 0）。
