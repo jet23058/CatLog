@@ -2,6 +2,7 @@
 // 從 App.jsx 的 AddAssetModal、AddIncomeModal、handleSaveNewAsset、handleSaveNewIncome 搬出，邏輯保持原樣。
 import { DEFAULT_EXCHANGE_RATES } from './data.js';
 import { addDebtAndCarryForward, getDebtTargetKey, mergeDebtMaps } from './debts.js';
+import { getMonthDetail } from './monthDetail.js';
 
 // 可選幣別（與預設匯率表相同）。
 export const SUPPORTED_CURRENCIES = Object.keys(DEFAULT_EXCHANGE_RATES);
@@ -275,5 +276,94 @@ export const addDebtEventToData = (data = {}, month, event) => ({
     debtEvents: {
         ...(data.debtEvents || {}),
         [month]: [...(data.debtEvents?.[month] || []), event]
+    }
+});
+
+// ---------------------------------------------------------------------------
+// 月份明細的編輯與刪除（從 DetailView 與 handleDetailUpdate 搬出）
+// ---------------------------------------------------------------------------
+
+// 輸入框的值可能是文字；存檔前轉成數字（空字串或無效值為 0）。
+const toNumber = (value) => Number(value) || 0;
+
+// 編輯收入的一個欄位：改到原幣金額、匯率或幣別時重算台幣金額（與 web 的 handleIncomeChange 相同）。
+export const updateIncomeSourceField = (source = {}, field, value) => {
+    const updated = { ...source, [field]: value };
+    if (field === 'originalAmount' || field === 'exchangeRate' || field === 'currency') {
+        if (field === 'currency' && value === 'TWD') {
+            updated.exchangeRate = 1;
+            updated.amount = toNumber(updated.originalAmount);
+        } else {
+            const rate = field === 'exchangeRate' ? value : updated.exchangeRate;
+            const orig = field === 'originalAmount' ? value : updated.originalAmount;
+            updated.amount = Number((Number(orig) * Number(rate)).toFixed(0)) || 0;
+        }
+    }
+    return updated;
+};
+
+/**
+ * 儲存月份明細的編輯：當月的資產、備忘錄、負債快照與收入寫回。
+ * assetDate / debtDate / memoDate 為要寫入的日期（當月沒有紀錄時用 getMonthDetail 的 writeDate）。
+ * 金額欄位一律轉成數字；暫存用的 _tempId 不寫入。
+ *
+ * 只寫入真的需要的部分，避免「只改備忘錄卻建立空的資產 / 負債快照」：
+ * - 資產：該日原本就有快照，或這次有資產，才寫入（全部刪光時寫入空陣列）。
+ * - 負債：該日原本就有快照，或內容和該月目前有效的負債不同，才寫入（沿用前期又沒改動時不複製一份）。
+ * - 備忘錄、收入：原本就有，或這次有內容，才寫入。
+ * debtEvents：有傳入時（iOS 在編輯畫面刪除異動）一起寫回該月的負債異動；沒傳時不動。
+ */
+export const updateMonthDetails = (data = {}, { month, assetDate, debtDate, memoDate, assets = [], memo = '', incomes = [], debts = [], debtEvents }) => {
+    const cleanAssets = assets.map(({ _tempId, ...asset }) => ({ ...asset, amount: toNumber(asset.amount) }));
+    const cleanIncomes = incomes.map(({ _tempId, ...source }) => ({
+        ...source,
+        amount: toNumber(source.amount),
+        ...(source.originalAmount !== undefined ? { originalAmount: toNumber(source.originalAmount) } : {}),
+        ...(source.exchangeRate !== undefined ? { exchangeRate: toNumber(source.exchangeRate) } : {})
+    }));
+    const cleanDebts = debts.map(({ _tempId, ...debt }) => ({ ...debt, amount: toNumber(debt.amount) }));
+    const newTotal = cleanIncomes.reduce((sum, item) => sum + item.amount, 0);
+
+    const hasAssetSnapshot = Object.prototype.hasOwnProperty.call(data.records || {}, assetDate);
+    const hasDebtSnapshot = Object.prototype.hasOwnProperty.call(data.debts || {}, debtDate);
+    const hasMemo = Object.prototype.hasOwnProperty.call(data.memos || {}, memoDate);
+    const existingIncomeMonth = data.incomes?.[month];
+    const currentEffectiveDebts = getMonthDetail(data, month).debts
+        .map(({ _tempId, ...debt }) => ({ ...debt, amount: toNumber(debt.amount) }));
+    const debtsChanged = JSON.stringify(cleanDebts) !== JSON.stringify(currentEffectiveDebts);
+
+    const next = { ...data };
+    if (hasAssetSnapshot || cleanAssets.length > 0) next.records = { ...(data.records || {}), [assetDate]: cleanAssets };
+    if (hasMemo || memo) next.memos = { ...(data.memos || {}), [memoDate]: memo };
+    if (hasDebtSnapshot || debtsChanged) next.debts = { ...(data.debts || {}), [debtDate]: cleanDebts };
+    if (existingIncomeMonth || cleanIncomes.length > 0) {
+        next.incomes = {
+            ...(data.incomes || {}),
+            [month]: { ...(existingIncomeMonth || {}), totalAmount: newTotal, sources: cleanIncomes }
+        };
+    }
+    if (Array.isArray(debtEvents)) next.debtEvents = { ...(data.debtEvents || {}), [month]: debtEvents };
+    return next;
+};
+
+// 刪除整個月的資產、負債快照、備忘錄與負債異動；收入與花費保留（與 web 相同）。不改動傳入的資料。
+export const deleteMonthData = (data = {}, monthKey) => {
+    const withoutMonth = (map = {}) => Object.fromEntries(Object.entries(map || {}).filter(([date]) => !date.startsWith(monthKey)));
+    const debtEvents = { ...(data.debtEvents || {}) };
+    delete debtEvents[monthKey];
+    return {
+        ...data,
+        records: withoutMonth(data.records),
+        memos: withoutMonth(data.memos),
+        debts: withoutMonth(data.debts),
+        ...(data.debtEvents ? { debtEvents } : {})
+    };
+};
+
+export const deleteDebtEventFromData = (data = {}, month, id) => ({
+    ...data,
+    debtEvents: {
+        ...(data.debtEvents || {}),
+        [month]: (data.debtEvents?.[month] || []).filter((item) => item.id !== id)
     }
 });

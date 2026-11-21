@@ -19,6 +19,8 @@ import {
     createDebtEntry,
     createDebtEvent,
     createHoldingRow,
+    deleteDebtEventFromData,
+    deleteMonthData,
     describeIncompatibility,
     extractBackupData,
     filterTransactionsByRange,
@@ -85,7 +87,9 @@ import {
     parseCollateralText,
     processExpenseCSVText,
     processStockCSVText,
-    shouldLockOnResume
+    shouldLockOnResume,
+    updateIncomeSourceField,
+    updateMonthDetails
 } from '@catlog/core';
 
 const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.0.0';
@@ -2050,22 +2054,9 @@ const DetailView = ({ monthKey, data, onBack, onUpdateData, assetNames, isPrivac
     const handleNavigate = (targetMonth) => { if (targetMonth) onUpdateData('NAVIGATE_MONTH', targetMonth); };
     const handleAssetChange = (id, field, value) => setLocalAssets(prev => prev.map(item => item.id === id ? { ...item, [field]: value } : item));
 
+    // 改原幣金額、匯率或幣別時重算台幣（規則在 core）。
     const handleIncomeChange = (idx, field, value) => {
-        setLocalIncomes(prev => prev.map((item, i) => {
-            if (i !== idx) return item;
-            const updated = { ...item, [field]: value };
-            if (field === 'originalAmount' || field === 'exchangeRate' || field === 'currency') {
-                const rate = field === 'exchangeRate' ? value : updated.exchangeRate;
-                const orig = field === 'originalAmount' ? value : updated.originalAmount;
-                if (field === 'currency' && value === 'TWD') {
-                    updated.exchangeRate = 1;
-                    updated.amount = Number(updated.originalAmount) || 0;
-                } else {
-                    updated.amount = Number((Number(orig) * Number(rate)).toFixed(0));
-                }
-            }
-            return updated;
-        }));
+        setLocalIncomes(prev => prev.map((item, i) => (i === idx ? updateIncomeSourceField(item, field, value) : item)));
     };
 
     const handleDeleteIncome = (idx) => setLocalIncomes(prev => prev.filter((_, i) => i !== idx));
@@ -4692,20 +4683,8 @@ const MainApp = ({ user, logout }) => {
         if (!ensureWritable()) return;
         if (type === 'NAVIGATE_MONTH') setSelectedDate(payload);
         else if (type === 'UPDATE_DETAILS') {
-            const { month, assetDate, debtDate, memoDate, assets, memo, incomes, debts } = payload;
-            const newTotal = incomes.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
-            const existingIncomeMonth = data.incomes[month] || {};
-
-            const newData = {
-                ...data,
-                records: { ...data.records, [assetDate]: assets },
-                memos: { ...data.memos, [memoDate]: memo },
-                debts: { ...data.debts, [debtDate]: debts || [] },
-                incomes: {
-                    ...data.incomes,
-                    [month]: { ...existingIncomeMonth, totalAmount: newTotal, sources: incomes }
-                }
-            };
+            // 當月資產、備忘錄、負債與收入一起寫回，金額轉成數字（規則在 core）。
+            const newData = updateMonthDetails(data, payload);
             setData(newData);
             saveToFirestoreChunks(newData);
         } else if (type === 'UPDATE_RECORDS') {
@@ -4738,11 +4717,8 @@ const MainApp = ({ user, logout }) => {
             saveToFirestoreChunks(newData);
         } else if (type === 'DELETE_MONTH') {
             const monthToDelete = payload;
-            const newData = { ...data };
-            Object.keys(newData.records || {}).forEach((date) => { if (date.startsWith(monthToDelete)) delete newData.records[date]; });
-            Object.keys(newData.memos || {}).forEach((date) => { if (date.startsWith(monthToDelete)) delete newData.memos[date]; });
-            Object.keys(newData.debts || {}).forEach((date) => { if (date.startsWith(monthToDelete)) delete newData.debts[date]; });
-            if (newData.debtEvents) delete newData.debtEvents[monthToDelete];
+            // 不直接改動原本的資料物件，存檔失敗時畫面才還原得回來（規則在 core）。
+            const newData = deleteMonthData(data, monthToDelete);
             setData(newData);
             saveToFirestoreChunks(newData);
             setView('dashboard');
@@ -4758,13 +4734,7 @@ const MainApp = ({ user, logout }) => {
             });
         } else if (type === 'DELETE_DEBT_EVENT') {
             const { month, id } = payload;
-            const newData = {
-                ...data,
-                debtEvents: {
-                    ...data.debtEvents,
-                    [month]: (data.debtEvents?.[month] || []).filter((item) => item.id !== id)
-                }
-            };
+            const newData = deleteDebtEventFromData(data, month, id);
             setData(newData);
             saveToFirestoreChunks(newData);
         }

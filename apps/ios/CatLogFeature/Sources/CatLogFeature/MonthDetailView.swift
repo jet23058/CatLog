@@ -6,6 +6,15 @@ struct MonthDetailView: View {
     @ObservedObject var model: AppModel
     let core: CatLogCore
     @State var monthKey: String
+    @State private var showEdit: Bool = {
+        #if DEBUG
+        // 開發用：`-CatLogDemoMonth YYYY-MM -CatLogDemoSheet edit` 直接打開編輯。
+        let args = ProcessInfo.processInfo.arguments
+        if let index = args.firstIndex(of: "-CatLogDemoSheet"), index + 1 < args.count { return args[index + 1] == "edit" }
+        #endif
+        return false
+    }()
+    @Environment(\.dismiss) private var dismissView
     @State private var showAddDebtEvent: Bool = {
         #if DEBUG
         // 開發用：`-CatLogDemoMonth YYYY-MM -CatLogDemoSheet debtEvent` 直接打開新增負債異動。
@@ -44,6 +53,8 @@ struct MonthDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
+                Button("編輯") { showEdit = true }
+                    .disabled(!model.compatibility.canWrite)
                 Button { showAddDebtEvent = true } label: { Image(systemName: "plus") }
                     .disabled(!model.compatibility.canWrite)
                     .accessibilityLabel("新增負債異動")
@@ -56,6 +67,9 @@ struct MonthDetailView: View {
             }
         }
         .task(id: "\(monthKey)#\(model.dataVersion)") { load() }
+        .sheet(isPresented: $showEdit) {
+            EditMonthSheet(model: model, core: core, monthKey: monthKey) { dismissView() }
+        }
         .sheet(isPresented: $showAddDebtEvent) {
             AddDebtEventSheet(model: model, core: core, monthKey: monthKey)
         }

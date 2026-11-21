@@ -9,6 +9,7 @@ enum DemoData {
         "2026-03-31": [{ "name": "銀行", "type": "fixed", "amount": 6500000 }, { "name": "股票", "type": "floating", "amount": 5500000 }]
       },
       "debts": { "2026-03-15": [{ "name": "信貸", "amount": 1000000 }] },
+      "debtEvents": { "2026-03": [{ "id": "demo-e1", "date": "2026-03-20", "type": "repay", "name": "信貸", "amount": 50000 }] },
       "incomes": {
         "2025-12": { "totalAmount": 100000 },
         "2026-01": { "totalAmount": 120000, "sources": [] },

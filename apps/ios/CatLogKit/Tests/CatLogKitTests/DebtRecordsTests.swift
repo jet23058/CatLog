@@ -60,5 +60,9 @@ final class DebtRecordsTests: XCTestCase {
         XCTAssertNil(try core.debtEventInputError(repay))
         try core.load(dataJSON: try core.addingDebtEvent(repay, id: "e2"))
         XCTAssertEqual(try core.monthDetail("2026-03").debtEvents.count, 2)
+        // iOS 新增的異動要帶 id，才能刪除
+        XCTAssertEqual(try core.monthDetail("2026-03").debtEvents.map(\.id), [.text("e1"), .text("e2")])
+        try core.load(dataJSON: try core.deletingDebtEvent(month: "2026-03", id: .text("e2")))
+        XCTAssertEqual(try core.monthDetail("2026-03").debtEvents.map(\.id), [.text("e1")])
     }
 }
