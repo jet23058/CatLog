@@ -29,6 +29,8 @@ public final class AppModel: ObservableObject {
     }
     @Published public private(set) var yearStats: YearStats?
     @Published public private(set) var months: [MonthlyStat] = []
+    /// 有任何資料的月份（YYYY-MM），每月列表用來決定哪些月份可以打開明細。
+    @Published public private(set) var dataMonths: Set<String> = []
     @Published public private(set) var fire: FireStats?
     @Published public private(set) var compatibility: Compatibility = .writable
     @Published public private(set) var compatibilityMessage: String?
@@ -135,6 +137,7 @@ public final class AppModel: ObservableObject {
         do {
             yearStats = try core.yearStats(year: year)
             months = try core.monthlyStats(year: year)
+            dataMonths = Set(try core.dataMonths())
             fire = try core.fireStats()
         } catch {
             phase = .failed(error.localizedDescription)
@@ -147,6 +150,7 @@ public final class AppModel: ObservableObject {
             phase = .signedOut
             yearStats = nil
             months = []
+            dataMonths = []
             fire = nil
         } else {
             Task { await reload() }

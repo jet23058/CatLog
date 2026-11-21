@@ -201,7 +201,8 @@ struct DashboardView: View {
                         }
                     }
                     Section("每月") {
-                        ForEach(model.months.filter { $0.hasRecord || $0.income != 0 || $0.cost != 0 }) { month in
+                        // 只要該月有任何資料（含只有備忘錄或負債快照的月份）就列出，才能打開月份明細。
+                        ForEach(model.months.filter { model.dataMonths.contains(Self.monthKey(year: model.year, month: $0.month)) }) { month in
                             NavigationLink(value: DashboardRoute.month(Self.monthKey(year: model.year, month: month.month))) {
                                 MonthRow(month: month, core: core, isPrivacyMode: isPrivacyMode)
                             }
@@ -286,17 +287,26 @@ private struct AssetTrendChart: View {
     let core: CatLogCore
     let isPrivacyMode: Bool
 
+    /// VoiceOver 會讀出每個點的數值；隱私模式時改成「已隱藏」。
+    private func spokenValue(_ month: MonthlyStat) -> String {
+        isPrivacyMode ? "已隱藏" : core.formatWan(month.assets)
+    }
+
     var body: some View {
         Chart(months) { month in
             AreaMark(x: .value("月份", month.month), y: .value("淨資產", month.assets))
                 .foregroundStyle(.teal.opacity(0.15))
                 .interpolationMethod(.monotone)
+                .accessibilityHidden(true)
             LineMark(x: .value("月份", month.month), y: .value("淨資產", month.assets))
                 .foregroundStyle(.teal)
                 .interpolationMethod(.monotone)
+                .accessibilityHidden(true)
             PointMark(x: .value("月份", month.month), y: .value("淨資產", month.assets))
                 .foregroundStyle(.teal)
                 .symbolSize(24)
+                .accessibilityLabel("\(month.month) 月淨資產")
+                .accessibilityValue(spokenValue(month))
         }
         .chartXScale(domain: 1...12)
         .chartXAxis {
