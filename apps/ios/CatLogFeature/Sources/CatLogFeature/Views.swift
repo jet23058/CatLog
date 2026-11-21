@@ -238,7 +238,7 @@ struct DashboardView: View {
                 if let core = model.core {
                     switch route {
                     case .month(let monthKey): MonthDetailView(model: model, core: core, monthKey: monthKey)
-                    case .stocks: StocksView(core: core)
+                    case .stocks: StocksView(model: model, core: core)
                     case .range: RangeStatsView(core: core)
                     }
                 }

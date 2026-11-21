@@ -80,6 +80,10 @@
 - [web] 匯出備份的檔名改用本地日期（原本 `toISOString` 在台灣早上 8 點前會是前一天）。
 - [web] 匯入 MOZE 花費改為等存檔結果才顯示「匯入成功」，失敗時還原畫面資料。
 - [iOS] 首頁「資料」區塊：匯出 JSON 備份（分享）、匯入 JSON 備份、匯入 MOZE 花費 CSV；匯入前顯示各區塊 / 各月的新增、刪除、修改，確認後才寫入。
+- [core] 新增 `stockImport.js`：股票交易匯入解析與摘要、append 交易、清空單一市場交易、手動持倉快照預覽、帶入上次持倉、新增 / 刪除持倉快照版本。
+- [web] 個股績效的匯入交易、清空、新增 / 刪除持倉快照改用 core，並改為等存檔結果才顯示成功；失敗時還原資料並保留預覽。
+- [iOS] 個股績效右上「⋯」：匯入股票交易（檔案或貼上、美股日期格式、封存 v1 格式）、新增持倉快照（手動輸入、帶入上次持倉）、刪除目前快照版本、清空目前市場交易。
+- [iOS] `setup-launch-agent.sh` / `remote-install.sh`：從 SSH 透過 LaunchAgent 建置並安裝到 iPhone（Mac 需登入且螢幕未鎖定）。
 
 ### CI
 - 新增 iOS workflow（macOS）：CatLogKit 測試與 App 建置；Node CI 檢查 iOS 內建的 core bundle 是否與 core 同步。
