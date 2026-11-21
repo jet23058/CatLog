@@ -33,6 +33,7 @@ var CatLogCore = (() => {
     PRIVACY_MASK: () => PRIVACY_MASK,
     SCHEMA_MIN_CLIENT_VERSION: () => SCHEMA_MIN_CLIENT_VERSION,
     STOCK_MARKETS: () => STOCK_MARKETS,
+    STOCK_QUOTE_SOURCES: () => STOCK_QUOTE_SOURCES,
     SUPPORTED_CURRENCIES: () => SUPPORTED_CURRENCIES,
     addAssetsToData: () => addAssetsToData,
     addDebtAndCarryForward: () => addDebtAndCarryForward,
@@ -49,6 +50,8 @@ var CatLogCore = (() => {
     buildHoldingSnapshotPreview: () => buildHoldingSnapshotPreview,
     buildMetaVersionFields: () => buildMetaVersionFields,
     buildStockRows: () => buildStockRows,
+    buildTpexQuoteFromListing: () => buildTpexQuoteFromListing,
+    buildTwseQuoteFromListing: () => buildTwseQuoteFromListing,
     checkCompatibility: () => checkCompatibility,
     cleanPledgeStockRows: () => cleanPledgeStockRows,
     clearStockTransactionsFromData: () => clearStockTransactionsFromData,
@@ -163,6 +166,8 @@ var CatLogCore = (() => {
     getStockMarketCounts: () => getStockMarketCounts,
     getStockMarketLabel: () => getStockMarketLabel,
     getStockOverview: () => getStockOverview,
+    getStockQuote: () => getStockQuote,
+    getStockQuoteEstimate: () => getStockQuoteEstimate,
     getStockSnapshotFullKey: () => getStockSnapshotFullKey,
     getStockSnapshotIdentityKey: () => getStockSnapshotIdentityKey,
     getStockStats: () => getStockStats,
@@ -175,6 +180,7 @@ var CatLogCore = (() => {
     getStockTransactionFullKey: () => getStockTransactionFullKey,
     getStockTransactionIdentityKey: () => getStockTransactionIdentityKey,
     getUSBrokerTradeType: () => getUSBrokerTradeType,
+    getYahooChartUrl: () => getYahooChartUrl,
     getYearAssetGrowthRange: () => getYearAssetGrowthRange,
     getYearEndAssets: () => getYearEndAssets,
     getYearEndDebt: () => getYearEndDebt,
@@ -186,12 +192,16 @@ var CatLogCore = (() => {
     isArchivedUSRealizedCSVHeaders: () => isArchivedUSRealizedCSVHeaders,
     isDuplicateAsset: () => isDuplicateAsset,
     isIdleExpired: () => isIdleExpired,
+    isNumericTWSymbol: () => isNumericTWSymbol,
     isUSBrokerTransactionCSVHeaders: () => isUSBrokerTransactionCSVHeaders,
     looksLikeUSBrokerPastedRows: () => looksLikeUSBrokerPastedRows,
     maskAmount: () => maskAmount,
+    matchTpexListing: () => matchTpexListing,
+    matchTwseListing: () => matchTwseListing,
     maxVersion: () => maxVersion,
     mergeDebtMaps: () => mergeDebtMaps,
     mergeExpenseImport: () => mergeExpenseImport,
+    mergeListingIntoQuote: () => mergeListingIntoQuote,
     mergePledgeRateRows: () => mergePledgeRateRows,
     migrateData: () => migrateData,
     normalizeAppData: () => normalizeAppData,
@@ -201,6 +211,7 @@ var CatLogCore = (() => {
     normalizeTradeDescription: () => normalizeTradeDescription,
     normalizeUSBrokerDate: () => normalizeUSBrokerDate,
     normalizeUSDate: () => normalizeUSDate,
+    normalizeYahooSymbol: () => normalizeYahooSymbol,
     parseAmount: () => parseAmount,
     parseBackupText: () => parseBackupText,
     parseCSV: () => parseCSV,
@@ -208,6 +219,7 @@ var CatLogCore = (() => {
     parseExpenseCSV: () => parseExpenseCSV,
     parseLegacyChunks: () => parseLegacyChunks,
     parseStockImport: () => parseStockImport,
+    parseYahooChart: () => parseYahooChart,
     processArchivedUSRealizedCSVRows: () => processArchivedUSRealizedCSVRows,
     processExpenseCSVText: () => processExpenseCSVText,
     processStockCSVText: () => processStockCSVText,
@@ -221,7 +233,8 @@ var CatLogCore = (() => {
     summarizeExpenseImport: () => summarizeExpenseImport,
     summarizeStockImport: () => summarizeStockImport,
     updateIncomeSourceField: () => updateIncomeSourceField,
-    updateMonthDetails: () => updateMonthDetails
+    updateMonthDetails: () => updateMonthDetails,
+    validateQuoteParams: () => validateQuoteParams
   });
 
   // src/schema.js
@@ -2032,6 +2045,38 @@ var CatLogCore = (() => {
     title: getStockTradeTitle(trade),
     description: getStockTradeDescription(trade)
   }));
+  var getStockQuoteEstimate = (data = {}, options = {}, quotes = {}) => {
+    const overview = getStockOverview(data, options);
+    const estimate = getLatestSnapshotEstimate({
+      rows: overview.rows,
+      holdings: overview.holdings,
+      quotes,
+      totalPnl: overview.stats.totalPnl,
+      marketPledgeDebt: overview.debtStats.marketPledgeDebt
+    });
+    const holdings = overview.holdings.map((holding) => {
+      const quote = quotes[holding.id];
+      const shares = Number(holding.shares) || 0;
+      const snapshotValue = Number(holding.marketValue) || 0;
+      const latestPrice = quote ? Number(quote.price) || 0 : null;
+      const latestValue = quote ? latestPrice * shares : null;
+      const diff = quote ? latestValue - snapshotValue : null;
+      return {
+        id: holding.id || "",
+        market: marketOf(holding),
+        symbol: holding.symbol || "",
+        name: holding.name || holding.symbol || "",
+        shares,
+        snapshotPrice: Number(holding.marketPrice) || 0,
+        snapshotValue,
+        latestPrice,
+        latestValue,
+        diff,
+        diffRate: quote && snapshotValue ? diff / snapshotValue : null
+      };
+    });
+    return { ...estimate, holdings };
+  };
 
   // src/storageFormat.js
   var CHUNK_SIZE = 25e4;
@@ -2641,6 +2686,140 @@ var CatLogCore = (() => {
     if (remaining.length > 0) nextSnapshots[month] = remaining;
     else delete nextSnapshots[month];
     return { ...data, stockHoldingSnapshots: nextSnapshots };
+  };
+
+  // src/stockQuote.js
+  var STOCK_QUOTE_SOURCES = {
+    yahooChart: "https://query1.finance.yahoo.com/v8/finance/chart/",
+    twseListing: "https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_AVG_ALL",
+    tpexListing: "https://www.tpex.org.tw/openapi/v1/tpex_mainboard_quotes"
+  };
+  var SYMBOL_PATTERN = /^[\p{Script=Han}A-Za-z0-9.\-^=&*()（）]{1,24}$/u;
+  var validateQuoteParams = ({ market, symbol } = {}) => {
+    const normalizedMarket = String(market || "TW").toUpperCase();
+    if (!["TW", "US"].includes(normalizedMarket)) throw new Error("\u5E02\u5834\u53C3\u6578\u53EA\u652F\u63F4 TW \u6216 US");
+    const normalizedSymbol = String(symbol || "").trim();
+    if (!normalizedSymbol) throw new Error("\u8ACB\u5148\u8F38\u5165\u80A1\u7968\u4EE3\u865F");
+    if (!SYMBOL_PATTERN.test(normalizedSymbol)) throw new Error("\u80A1\u7968\u4EE3\u865F\u683C\u5F0F\u4E0D\u6B63\u78BA");
+    return { market: normalizedMarket, symbol: normalizedSymbol };
+  };
+  var parseNumber = (value) => {
+    const parsed = Number(String(value || "").replace(/,/g, ""));
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+  var matchTwseListing = (rows, rawSymbol) => {
+    const keyword = String(rawSymbol || "").trim();
+    if (!keyword) throw new Error("\u8ACB\u5148\u8F38\u5165\u80A1\u7968\u4EE3\u865F");
+    const normalizedKeyword = keyword.replace(/\.TW$/i, "");
+    const list = rows || [];
+    const matched = list.find((row) => row.Code === normalizedKeyword) || list.find((row) => row.Name === normalizedKeyword) || list.find((row) => row.Code?.replace(/\.TW$/i, "") === normalizedKeyword) || list.find((row) => row.Name?.includes(normalizedKeyword));
+    if (!matched) throw new Error(`\u627E\u4E0D\u5230 ${keyword} \u7684\u53F0\u80A1\u80A1\u50F9`);
+    return matched;
+  };
+  var matchTpexListing = (rows, rawSymbol) => {
+    const keyword = String(rawSymbol || "").trim();
+    if (!keyword) throw new Error("\u8ACB\u5148\u8F38\u5165\u80A1\u7968\u4EE3\u865F");
+    const normalizedKeyword = keyword.replace(/\.(TW|TWO)$/i, "");
+    const list = rows || [];
+    const matched = list.find((row) => row.SecuritiesCompanyCode === normalizedKeyword) || list.find((row) => row.CompanyName === normalizedKeyword) || list.find((row) => row.CompanyName?.includes(normalizedKeyword));
+    if (!matched) throw new Error(`\u627E\u4E0D\u5230 ${keyword} \u7684\u4E0A\u6AC3\u80A1\u50F9`);
+    return matched;
+  };
+  var buildTwseQuoteFromListing = (matched, rawSymbol, fetchedAt) => {
+    const price = parseNumber(matched?.ClosingPrice);
+    if (!price) throw new Error(`${matched?.Name || rawSymbol} \u76EE\u524D\u6C92\u6709\u53EF\u7528\u6536\u76E4\u50F9`);
+    return {
+      symbol: `${matched?.Code}.TW`,
+      displaySymbol: matched?.Code,
+      name: matched?.Name,
+      price,
+      currency: "TWD",
+      source: "TWSE",
+      fetchedAt,
+      priceType: "close"
+    };
+  };
+  var buildTpexQuoteFromListing = (matched, rawSymbol, fetchedAt) => {
+    const price = parseNumber(matched?.Close);
+    if (!price) throw new Error(`${matched?.CompanyName || rawSymbol} \u76EE\u524D\u6C92\u6709\u53EF\u7528\u6536\u76E4\u50F9`);
+    return {
+      symbol: `${matched?.SecuritiesCompanyCode}.TWO`,
+      displaySymbol: matched?.SecuritiesCompanyCode,
+      name: matched?.CompanyName,
+      price,
+      currency: "TWD",
+      source: "TPEX",
+      fetchedAt,
+      priceType: "close"
+    };
+  };
+  var normalizeYahooSymbol = (market, rawSymbol) => {
+    const symbol = String(rawSymbol || "").trim();
+    if (!symbol) return "";
+    if (market === "TW") {
+      if (/^\d{4,6}$/.test(symbol)) return `${symbol}.TW`;
+      return symbol;
+    }
+    return symbol.toUpperCase();
+  };
+  var getYahooChartUrl = (market, rawSymbol) => {
+    const symbol = normalizeYahooSymbol(market, rawSymbol);
+    if (!symbol) throw new Error("\u8ACB\u5148\u8F38\u5165\u80A1\u7968\u4EE3\u865F");
+    return `${STOCK_QUOTE_SOURCES.yahooChart}${encodeURIComponent(symbol)}`;
+  };
+  var parseYahooChart = (payload, market, rawSymbol, fetchedAt) => {
+    const symbol = normalizeYahooSymbol(market, rawSymbol);
+    const meta = payload?.chart?.result?.[0]?.meta || {};
+    const price = Number(meta.regularMarketPrice);
+    if (!price || !Number.isFinite(price)) throw new Error(`\u627E\u4E0D\u5230 ${rawSymbol} \u7684\u6700\u65B0\u80A1\u50F9`);
+    return {
+      symbol: meta.symbol || symbol,
+      displaySymbol: meta.symbol || symbol,
+      name: meta.longName || meta.shortName || meta.symbol || symbol,
+      price,
+      currency: meta.currency || (market === "US" ? "USD" : "TWD"),
+      source: "Yahoo Finance",
+      fetchedAt,
+      marketTime: meta.regularMarketTime ? new Date(meta.regularMarketTime * 1e3).toISOString() : "",
+      priceType: "market"
+    };
+  };
+  var mergeListingIntoQuote = (quote, displaySymbol, name) => ({
+    ...quote,
+    displaySymbol: displaySymbol || quote.displaySymbol,
+    name: name || quote.name
+  });
+  var isNumericTWSymbol = (symbol) => /^\d{4,6}(\.TW)?$/i.test(String(symbol || "").trim());
+  var getStockQuote = async ({ market = "TW", symbol = "" } = {}, { requestJson, requestListing = requestJson, now }) => {
+    const normalizedMarket = market === "US" ? "US" : "TW";
+    const yahoo = async (sym) => parseYahooChart(await requestJson(getYahooChartUrl(normalizedMarket, sym)), normalizedMarket, sym, now());
+    if (normalizedMarket !== "TW") return yahoo(symbol);
+    try {
+      const listing = matchTwseListing(await requestListing(STOCK_QUOTE_SOURCES.twseListing), symbol);
+      try {
+        return mergeListingIntoQuote(await yahoo(listing.Code || symbol), listing.Code, listing.Name);
+      } catch {
+        return buildTwseQuoteFromListing(listing, symbol, now());
+      }
+    } catch (error) {
+      try {
+        const listing = matchTpexListing(await requestListing(STOCK_QUOTE_SOURCES.tpexListing), symbol);
+        try {
+          return mergeListingIntoQuote(await yahoo(`${listing.SecuritiesCompanyCode}.TWO`), listing.SecuritiesCompanyCode, listing.CompanyName);
+        } catch {
+          return buildTpexQuoteFromListing(listing, symbol, now());
+        }
+      } catch {
+        if (isNumericTWSymbol(symbol)) {
+          try {
+            return await yahoo(symbol);
+          } catch {
+            return yahoo(`${String(symbol).trim().replace(/\.TW$/i, "")}.TWO`);
+          }
+        }
+        throw error;
+      }
+    }
   };
   return __toCommonJS(src_exports);
 })();

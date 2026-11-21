@@ -21,6 +21,14 @@ struct StocksView: View {
     @State private var confirmClear = false
     @State private var confirmDeleteSnapshot: HoldingSnapshotSummary?
     @State private var saveError: String?
+    // 最新估值：持股 id → 最新價（只用來試算，不寫回快照）。
+    @State private var quotes: [String: Double] = [:]
+    @State private var estimate: StockQuoteEstimate?
+    @State private var isFetchingQuotes = false
+    @State private var quoteMessage: String?
+    // 美股損益可切換成台幣顯示（與 web 相同）。
+    @State private var pnlCurrency = "USD"
+    @State private var usdToTwdRate: Double?
 
     private var currencySuffix: String { market == "US" ? "（USD）" : "" }
 
@@ -30,6 +38,20 @@ struct StocksView: View {
 
     private func signed(_ value: Double) -> String {
         isPrivacyMode ? "****" : "\(value >= 0 ? "+" : "")\(core.formatMoney(value, market: market))"
+    }
+
+    private var rate: Double { usdToTwdRate ?? core.defaultExchangeRate("USD") ?? 32 }
+    private var showsTWD: Bool { market == "US" && pnlCurrency == "TWD" }
+
+    /// 總覽卡的金額：美股切成台幣時依匯率換算。
+    private func summaryMoney(_ value: Double) -> String {
+        if isPrivacyMode { return "****" }
+        return showsTWD ? core.formatMoney(value * rate, market: "TW") : core.formatMoney(value, market: market)
+    }
+
+    /// 損益標籤（core: formatStockPnlLabel）。
+    private func pnlLabel(_ value: Double) -> String {
+        isPrivacyMode ? "****" : core.stockPnlLabel(value, market: market, usdToTwdRate: rate, currency: pnlCurrency)
     }
 
     private var reloadKey: String {
@@ -99,7 +121,11 @@ struct StocksView: View {
             Text(saveError ?? "")
         }
         .task(id: reloadKey) { load() }
-        .onChange(of: market) { _, _ in snapshotId = nil }
+        .onChange(of: market) { _, new in
+            snapshotId = nil
+            if new == "US" && usdToTwdRate == nil { Task { usdToTwdRate = await ExchangeRateFetcher.rateToTWD("USD") } }
+        }
+        .onChange(of: overview?.selectedSnapshotId) { _, _ in quotes = [:]; quoteMessage = nil; loadEstimate() }
         .navigationDestination(for: StockRow.self) { row in
             StockTradesView(core: core, row: row,
                             rangeStart: useRange ? CatLogCore.todayKey(rangeStart) : "",
@@ -150,25 +176,45 @@ struct StocksView: View {
         let debt = overview.debtStats
         return Section {
             VStack(alignment: .leading, spacing: 4) {
-                Text("總損益\(currencySuffix)").font(.caption).foregroundStyle(.secondary)
-                Text(signed(stats.totalPnl))
+                HStack {
+                    Text("總損益").font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    if market == "US" {
+                        Button(pnlCurrency == "USD" ? "轉台幣" : "轉美金") { pnlCurrency = pnlCurrency == "USD" ? "TWD" : "USD" }
+                            .font(.caption.bold())
+                            .buttonStyle(.bordered)
+                            .controlSize(.mini)
+                    }
+                }
+                Text(pnlLabel(stats.totalPnl))
                     .font(.title.bold().monospacedDigit())
                     .foregroundStyle(stats.totalPnl >= 0 ? .green : .red)
+                if market == "US" && !isPrivacyMode {
+                    Text("匯率 USD/TWD \(core.formatExchangeRate(rate))\(usdToTwdRate == nil ? "（預設）" : "")")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
             }
             .padding(.vertical, 4)
-            StockStatRow(title: "目前市值", value: money(stats.totalMarketValue))
-            StockStatRow(title: "累計買入", value: money(stats.totalBuy))
-            StockStatRow(title: "累計股息", value: money(stats.totalDividends))
+            if let estimate, estimate.hasEstimate, !useRange {
+                StockStatRow(title: "若未賣出試算", value: pnlLabel(estimate.estimatedTotalPnl),
+                             detail: "最新估值 \(summaryMoney(estimate.latestMarketValue))")
+            }
+            StockStatRow(title: "目前市值", value: summaryMoney(stats.totalMarketValue))
+            StockStatRow(title: "累計買入", value: summaryMoney(stats.totalBuy))
+            StockStatRow(title: "累計股息", value: summaryMoney(stats.totalDividends))
             if market == "US" {
-                StockStatRow(title: "利息", value: money(stats.totalInterest))
-                StockStatRow(title: "匯款淨額", value: signed(stats.totalDeposits - stats.totalWithdrawals))
+                StockStatRow(title: "利息", value: summaryMoney(stats.totalInterest))
+                StockStatRow(title: "匯款淨額", value: summaryMoney(stats.totalDeposits - stats.totalWithdrawals))
             }
             if debt.marketPledgeDebt > 0 {
-                StockStatRow(title: "股票質押負債", value: money(debt.marketPledgeDebt),
+                StockStatRow(title: "股票質押負債", value: summaryMoney(debt.marketPledgeDebt),
                              detail: debt.debtSnapshotDate.map { "快照 \($0)" })
-                StockStatRow(title: "扣除質押後淨損益", value: signed(debt.netPnlAfterDebt))
+                StockStatRow(title: "扣除質押後淨損益", value: pnlLabel(debt.netPnlAfterDebt))
+                if let estimate, estimate.hasEstimate, !useRange {
+                    StockStatRow(title: "若未賣出（扣質押）", value: pnlLabel(estimate.estimatedNetPnlAfterDebt))
+                }
                 if debt.marketEstimatedMonthlyInterest > 0 {
-                    StockStatRow(title: "預估月息", value: money(debt.marketEstimatedMonthlyInterest))
+                    StockStatRow(title: "預估月息", value: summaryMoney(debt.marketEstimatedMonthlyInterest))
                 }
             }
         } header: {
@@ -217,21 +263,70 @@ struct StocksView: View {
     }
 
     private func holdingsSection(_ overview: StockOverview) -> some View {
-        Section("快照持股") {
-            ForEach(Array(overview.holdings.enumerated()), id: \.offset) { _, holding in
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(holding.displayName)
-                        Text("\(holding.shares.formatted()) 股").font(.caption).foregroundStyle(.secondary)
+        Section {
+            ForEach(Array((estimate?.holdings ?? []).enumerated()), id: \.offset) { _, holding in
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(holding.name)
+                            Text("快照價 \(isPrivacyMode ? "****" : core.formatPrice(holding.snapshotPrice)) × \(holding.shares.formatted()) 股")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Text(money(holding.snapshotValue)).monospacedDigit()
                     }
-                    Spacer()
-                    Text(money(holding.marketValue)).monospacedDigit()
+                    if let latestPrice = holding.latestPrice, let latestValue = holding.latestValue, let diff = holding.diff {
+                        HStack {
+                            Text("最新價 \(isPrivacyMode ? "****" : core.formatPrice(latestPrice))")
+                            Spacer()
+                            Text("估值 \(money(latestValue))")
+                            Text("\(signed(diff))\(holding.diffRate.map { "・\(core.formatRate($0))" } ?? "")")
+                                .foregroundStyle(diff >= 0 ? .green : .red)
+                        }
+                        .font(.caption.monospacedDigit())
+                    }
                 }
             }
+        } header: {
+            HStack {
+                Text("快照持股")
+                Spacer()
+                Button(isFetchingQuotes ? "抓取中…" : "最新估值") { Task { await fetchQuotes() } }
+                    .font(.caption.bold())
+                    .disabled(isFetchingQuotes || (estimate?.holdings.isEmpty ?? true))
+            }
+        } footer: {
+            Text(quoteMessage ?? "快照價為當時記錄；最新估值只是試算，不會改寫快照。")
         }
     }
 
     // MARK: - Helpers
+
+    private func loadEstimate() {
+        estimate = try? core.stockQuoteEstimate(market: market, snapshotId: overview?.selectedSnapshotId, today: CatLogCore.todayKey(), quotes: quotes)
+    }
+
+    /// 每檔持股抓最新價（同時抓，失敗的保留快照價）。
+    private func fetchQuotes() async {
+        guard let holdings = estimate?.holdings, !holdings.isEmpty else { return }
+        isFetchingQuotes = true
+        quoteMessage = nil
+        let service = StockQuoteService(core: core)
+        var next: [String: Double] = [:]
+        var failures: [String] = []
+        await withTaskGroup(of: (String, String, Double?).self) { group in
+            for holding in holdings {
+                group.addTask { (holding.id, holding.name, try? await service.quote(market: holding.market, symbol: holding.querySymbol).price) }
+            }
+            for await (id, name, price) in group {
+                if let price { next[id] = price } else { failures.append(name) }
+            }
+        }
+        quotes.merge(next) { _, new in new }
+        if !failures.isEmpty { quoteMessage = "有 \(failures.count) 檔無法抓取最新股價（\(failures.joined(separator: "、"))），仍保留快照價顯示。" }
+        isFetchingQuotes = false
+        loadEstimate()
+    }
 
     private func load() {
         do {
@@ -243,6 +338,7 @@ struct StocksView: View {
                 today: CatLogCore.todayKey()
             )
             errorMessage = nil
+            loadEstimate()
         } catch {
             errorMessage = error.localizedDescription
         }
