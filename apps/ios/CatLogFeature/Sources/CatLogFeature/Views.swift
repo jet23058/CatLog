@@ -145,9 +145,12 @@ struct DashboardView: View {
                 if let fire = model.fire, let core = model.core {
                     Section("FIRE 目標（提領率 \(fire.rate.formatted())%）") {
                         VStack(alignment: .leading, spacing: 8) {
-                            ProgressView(value: min(max(fire.progress, 0), 1))
+                            // 隱私模式連進度一起隱藏：達成率加上提領率就能推算出資產規模。
+                            if !isPrivacyMode {
+                                ProgressView(value: min(max(fire.progress, 0), 1))
+                            }
                             HStack {
-                                Text(Self.percent(fire.progress)).bold()
+                                Text(isPrivacyMode ? "****" : Self.percent(fire.progress)).bold()
                                 Spacer()
                                 Text(money("\(core.formatWan(fire.currentAssets)) / \(core.formatWan(fire.fireTarget))"))
                                     .foregroundStyle(.secondary)
