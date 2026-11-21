@@ -2,7 +2,7 @@
 
 SwiftUI 原生版。畫面是 SwiftUI，計算邏輯在 JavaScriptCore 裡執行 `packages/core`，與 web 共用同一份程式碼，所以兩邊數字一定一致。
 
-> 目前可以檢視所有統計，**新增**資產、收入、負債與負債異動，並在月份明細**編輯 / 刪除**當月資料；匯入匯出請先用網頁版。
+> 目前可以檢視所有統計，**新增**資產、收入、負債與負債異動，在月份明細**編輯 / 刪除**當月資料，並**匯出 / 匯入備份**與**匯入 MOZE 花費**；證券交易匯入請先用網頁版。
 >
 > 寫入規則與 web 相同：帶著上次讀到的版本號寫入，雲端已被其他裝置更新時不覆蓋，讓你選擇載入雲端版本或用這台覆蓋；資料版本不相容時不寫入。
 
@@ -81,6 +81,17 @@ App 依建置設定連到不同的 Firebase 專案，開發時不會碰到正式
    ```
    會建置 Debug 版（連測試站）、簽章、安裝並打開。簽章需要登入鑰匙圈，遠端連線（SSH）沒辦法簽。
 4. 第一次打開若顯示「未信任的開發者」：iPhone 設定 → 一般 → VPN 與裝置管理 → 信任。
+
+#### 從遠端（SSH）安裝
+
+SSH 讀不到登入鑰匙圈，所以改由 Mac 登入環境裡的 LaunchAgent 執行 `install-device.sh`：
+
+```sh
+apps/ios/scripts/setup-launch-agent.sh   # 只需一次；移除：setup-launch-agent.sh remove
+apps/ios/scripts/remote-install.sh       # 之後每次安裝
+```
+
+LaunchAgent 只有在執行 `remote-install.sh` 時才會跑（不會開機自動執行或排程）。需要 Mac 保持登入（螢幕鎖定沒關係）、iPhone 接著線；紀錄在 `~/Library/Logs/catlog-install-device.log`。
 
 ### 不用 Firebase 檢查畫面
 

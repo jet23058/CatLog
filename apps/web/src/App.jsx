@@ -15,7 +15,7 @@ import {
     buildHoldingMap,
     buildStockRows,
     checkCompatibility,
-    createBackupFile,
+    createBackupText,
     createDebtEntry,
     createDebtEvent,
     createHoldingRow,
@@ -35,6 +35,7 @@ import {
     getAssetExtremes,
     getAssetNameOptions,
     getAvailableYears,
+    getBackupFileName,
     getDebtAccountOptions,
     getDebtCategoryLabel,
     getDebtEstimatedAnnualInterest,
@@ -80,6 +81,7 @@ import {
     isDuplicateAsset,
     isIdleExpired,
     maskAmount,
+    mergeExpenseImport,
     migrateData,
     normalizeAppData,
     normalizeMonthValue,
@@ -4456,13 +4458,13 @@ const MainApp = ({ user, logout }) => {
                 setCurrentYear(new Date().getFullYear());
                 handleShowAlert("匯入成功", "資料已同步至雲端");
             } else if (type === 'csv') {
-                // Merge logic: Overwrite only the months present in pendingData, keep others
-                const newData = { 
-                    ...data, 
-                    expenses: { ...data.expenses, ...pendingData } 
-                };
+                // 只覆蓋 CSV 裡出現的月份，其他月份保留（規則在 core）。等存檔結果，失敗時還原。
+                const newData = mergeExpenseImport(data, pendingData);
                 setData(newData);
-                saveToFirestoreChunks(newData);
+                if (!(await saveToFirestoreChunks(newData))) {
+                    revertUnsavedAdd(data);
+                    return;
+                }
                 handleShowAlert("匯入成功", "花費細項已成功覆蓋");
             }
             setImportConfirmation({ show: false, type: null, summary: null, pendingData: null });
@@ -4491,13 +4493,15 @@ const MainApp = ({ user, logout }) => {
     const handleShowAlert = (title, message) => setAlertInfo({ show: true, title, message });
 
     const handleExportData = () => {
-        const jsonString = JSON.stringify(createBackupFile(data), null, 2);
+        const jsonString = createBackupText(data);
         const blob = new Blob([jsonString], { type: "application/json" });
         const href = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = href;
-        const dateStr = new Date().toISOString().split('T')[0].replace(/-/g, '');
-        link.download = `meow-assets-backup-${dateStr}.json`;
+        // 本地日期（toISOString 會換算成 UTC，台灣早上 8 點前會變成前一天）。
+        const now = new Date();
+        const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+        link.download = getBackupFileName(today);
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);

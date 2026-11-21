@@ -222,6 +222,7 @@ struct DashboardView: View {
                             Label("區間統計", systemImage: "calendar.badge.clock")
                         }
                     }
+                    DataToolsSection(model: model, core: core)
                     Section("每月") {
                         // 只要該月有任何資料（含只有備忘錄或負債快照的月份）就列出，才能打開月份明細。
                         ForEach(model.months.filter { model.dataMonths.contains(Self.monthKey(year: model.year, month: $0.month)) }) { month in
@@ -403,7 +404,7 @@ private struct PreviewNotice: View {
                 Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
             }
         } else {
-            Label("iOS 可以新增資產、收入、負債與負債異動；編輯、刪除與匯入請先使用網頁版。", systemImage: "info.circle")
+            Label("iOS 可以新增、編輯、刪除，並匯入備份與 MOZE 花費；證券交易匯入請先使用網頁版。", systemImage: "info.circle")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }

@@ -52,6 +52,7 @@ var CatLogCore = (() => {
     convertToTWD: () => convertToTWD,
     createAssetEntry: () => createAssetEntry,
     createBackupFile: () => createBackupFile,
+    createBackupText: () => createBackupText,
     createDebtEntry: () => createDebtEntry,
     createDebtEvent: () => createDebtEvent,
     createHoldingRow: () => createHoldingRow,
@@ -82,6 +83,7 @@ var CatLogCore = (() => {
     getAssetNameOptions: () => getAssetNameOptions,
     getAssetRecordDatesInYear: () => getAssetRecordDatesInYear,
     getAvailableYears: () => getAvailableYears,
+    getBackupFileName: () => getBackupFileName,
     getDataMonths: () => getDataMonths,
     getDebtAccountOptions: () => getDebtAccountOptions,
     getDebtCategoryLabel: () => getDebtCategoryLabel,
@@ -182,6 +184,7 @@ var CatLogCore = (() => {
     maskAmount: () => maskAmount,
     maxVersion: () => maxVersion,
     mergeDebtMaps: () => mergeDebtMaps,
+    mergeExpenseImport: () => mergeExpenseImport,
     mergePledgeRateRows: () => mergePledgeRateRows,
     migrateData: () => migrateData,
     normalizeAppData: () => normalizeAppData,
@@ -192,8 +195,10 @@ var CatLogCore = (() => {
     normalizeUSBrokerDate: () => normalizeUSBrokerDate,
     normalizeUSDate: () => normalizeUSDate,
     parseAmount: () => parseAmount,
+    parseBackupText: () => parseBackupText,
     parseCSV: () => parseCSV,
     parseCollateralText: () => parseCollateralText,
+    parseExpenseCSV: () => parseExpenseCSV,
     parseLegacyChunks: () => parseLegacyChunks,
     processArchivedUSRealizedCSVRows: () => processArchivedUSRealizedCSVRows,
     processExpenseCSVText: () => processExpenseCSVText,
@@ -204,6 +209,8 @@ var CatLogCore = (() => {
     processUSBrokerTransactionRows: () => processUSBrokerTransactionRows,
     shouldLockOnResume: () => shouldLockOnResume,
     splitIntoChunks: () => splitIntoChunks,
+    summarizeBackupImport: () => summarizeBackupImport,
+    summarizeExpenseImport: () => summarizeExpenseImport,
     updateIncomeSourceField: () => updateIncomeSourceField,
     updateMonthDetails: () => updateMonthDetails
   });
@@ -2454,5 +2461,77 @@ var CatLogCore = (() => {
     };
   };
   var getMonthDebtEventTargets = (data = {}, monthKey) => getDebtEventTargets(getMonthDetail(data, monthKey).debts);
+
+  // src/importExport.js
+  var getBackupFileName = (today) => `meow-assets-backup-${String(today).replace(/-/g, "")}.json`;
+  var createBackupText = (data) => JSON.stringify(createBackupFile(data), null, 2);
+  var parseBackupText = (text) => {
+    let parsed;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      throw new Error("\u6A94\u6848\u4E0D\u662F\u6709\u6548\u7684 JSON");
+    }
+    const backupData = extractBackupData(parsed);
+    if (!backupData || !backupData.records) throw new Error("\u7F3A\u5C11 records \u6B04\u4F4D\uFF0C\u9019\u4E0D\u662F\u6975\u7C21\u8C93\u8CC7\u7522\u7684\u5099\u4EFD\u6A94");
+    return backupData;
+  };
+  var parseExpenseCSV = (text) => {
+    let result = null;
+    let error = null;
+    processExpenseCSVText(text, (expensesByMonth) => {
+      result = expensesByMonth;
+    }, (message) => {
+      error = message;
+    });
+    if (error) throw new Error(error);
+    if (!result) throw new Error("CSV \u6C92\u6709\u53EF\u532F\u5165\u7684\u82B1\u8CBB");
+    return result;
+  };
+  var mergeExpenseImport = (data = {}, expensesByMonth = {}) => ({
+    ...data,
+    expenses: { ...data.expenses || {}, ...expensesByMonth }
+  });
+  var SECTION_LABELS = {
+    records: "\u8CC7\u7522\u7D00\u9304",
+    incomes: "\u6536\u5165",
+    expenses: "\u82B1\u8CBB",
+    memos: "\u5099\u5FD8\u9304",
+    debts: "\u8CA0\u50B5",
+    debtEvents: "\u8CA0\u50B5\u7570\u52D5",
+    stockTransactions: "\u80A1\u7968\u4EA4\u6613",
+    stockHoldingSnapshots: "\u6301\u5009\u5FEB\u7167"
+  };
+  var summarizeBackupImport = (currentData = {}, backupData = {}) => {
+    const summary = getJsonImportSummary(currentData, backupData);
+    return {
+      hasChanges: summary.hasChanges,
+      sections: Object.entries(summary.sections).map(([key, section]) => ({
+        key,
+        label: SECTION_LABELS[key] || key,
+        currentCount: section.currentCount,
+        nextCount: section.nextCount,
+        changed: section.changed,
+        added: section.diff?.added?.length || 0,
+        removed: section.diff?.removed?.length || 0,
+        modified: section.diff?.modified?.length || 0
+      }))
+    };
+  };
+  var summarizeExpenseImport = (currentExpenses = {}, expensesByMonth = {}) => {
+    const summary = getExpenseImportSummary(currentExpenses, expensesByMonth);
+    const changedMonths = summary.changedMonths.map((month) => ({
+      month: month.month,
+      added: month.diff?.added?.length || 0,
+      removed: month.diff?.removed?.length || 0,
+      modified: month.diff?.modified?.length || 0
+    }));
+    return {
+      months: summary.months,
+      totalRecords: summary.totalRecords,
+      changedMonths,
+      hasChanges: changedMonths.some((m) => m.added || m.removed || m.modified)
+    };
+  };
   return __toCommonJS(src_exports);
 })();

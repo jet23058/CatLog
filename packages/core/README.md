@@ -27,6 +27,7 @@ web 與 iOS 共用的計算核心：資料格式、負債與質押利息、持�
 | `stockAnalysis.js` | 持倉快照、個股損益、市場統計、質押分攤、最新估值、損益標籤；`getStockOverview` 一次取得整頁資料 |
 | `monthDetail.js` | 月份明細：當月資產、有效負債與異動、預估利息、花費類別、前後月份與比較 |
 | `records.js` | 新增資產 / 收入 / 負債 / 負債異動，月份明細的編輯與刪除：幣別換算、重複檢查、帶入上次資產、負債合併與延續、欄位檢查、寫入資料 |
+| `importExport.js` | 備份檔名、備份匯出 / 解析、MOZE 花費 CSV 解析與合併、匯入差異摘要 |
 | `appLock.js` | Face ID 自動上鎖時間（背景 30 秒、閒置 5 分鐘）、隱私模式遮罩 |
 | `storageFormat.js` | 雲端儲存格式 v3：切塊、checksum、舊格式解析（web 與 iOS 共用） |
 | `index.js` | 公開入口 |
