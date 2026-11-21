@@ -45,6 +45,14 @@ final class MonthEditTests: XCTestCase {
         XCTAssertEqual(debt["category"] as? String, "stock_pledge")
     }
 
+    func testEditCanRemoveDebtEvents() throws {
+        var draft = try core.monthEditDraft("2026-03")
+        XCTAssertEqual(draft.debtEvents.count, 2)
+        draft.debtEvents.removeFirst()
+        try core.load(dataJSON: try core.updatingMonth(draft))
+        XCTAssertEqual(try core.monthDetail("2026-03").debtEvents.map(\.id), [.text("e2")])
+    }
+
     func testDeleteDebtEventByNumericOrTextId() throws {
         let events = try core.monthDetail("2026-03").debtEvents
         XCTAssertEqual(events.map(\.id), [.number(1767225600000), .text("e2")])

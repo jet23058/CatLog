@@ -31,6 +31,8 @@ public struct MonthEditDraft {
     public var assets: [EditableRecord]
     public var incomes: [EditableRecord]
     public var debts: [EditableRecord]
+    /// 這個月的負債異動；在編輯畫面刪除後，存檔時一起寫回。
+    public var debtEvents: [EditableRecord]
     public var memo: String
 }
 
@@ -77,6 +79,7 @@ extension CatLogCore {
             assets: records(detail["assets"]),
             incomes: records(detail["incomes"]),
             debts: records(detail["debts"]),
+            debtEvents: records(detail["debtEvents"]),
             memo: detail["memo"] as? String ?? ""
         )
     }
@@ -95,6 +98,7 @@ extension CatLogCore {
         let payload: [String: Any] = [
             "month": draft.month, "assetDate": draft.assetDate, "debtDate": draft.debtDate, "memoDate": draft.memoDate,
             "assets": draft.assets.map(\.raw), "incomes": draft.incomes.map(\.raw), "debts": draft.debts.map(\.raw),
+            "debtEvents": draft.debtEvents.map(\.raw),
             "memo": draft.memo,
         ]
         return try bridge.callJSON("updateMonthDetails", [.data, .json(try jsonText(payload))])

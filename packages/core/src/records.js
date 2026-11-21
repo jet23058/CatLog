@@ -306,7 +306,8 @@ export const updateIncomeSourceField = (source = {}, field, value) => {
  * assetDate / debtDate / memoDate 為要寫入的日期（當月沒有紀錄時用 getMonthDetail 的 writeDate）。
  * 金額欄位一律轉成數字；暫存用的 _tempId 不寫入。
  */
-export const updateMonthDetails = (data = {}, { month, assetDate, debtDate, memoDate, assets = [], memo = '', incomes = [], debts = [] }) => {
+// debtEvents：有傳入時（iOS 在編輯畫面刪除異動），一起寫回該月的負債異動；沒傳時不動（web 另外處理）。
+export const updateMonthDetails = (data = {}, { month, assetDate, debtDate, memoDate, assets = [], memo = '', incomes = [], debts = [], debtEvents }) => {
     const cleanAssets = assets.map(({ _tempId, ...asset }) => ({ ...asset, amount: toNumber(asset.amount) }));
     const cleanIncomes = incomes.map(({ _tempId, ...source }) => ({
         ...source,
@@ -325,7 +326,8 @@ export const updateMonthDetails = (data = {}, { month, assetDate, debtDate, memo
         incomes: {
             ...(data.incomes || {}),
             [month]: { ...existingIncomeMonth, totalAmount: newTotal, sources: cleanIncomes }
-        }
+        },
+        ...(Array.isArray(debtEvents) ? { debtEvents: { ...(data.debtEvents || {}), [month]: debtEvents } } : {})
     };
 };
 

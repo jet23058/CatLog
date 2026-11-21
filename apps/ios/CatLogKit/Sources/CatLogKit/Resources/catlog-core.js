@@ -2297,7 +2297,7 @@ var CatLogCore = (() => {
     }
     return updated;
   };
-  var updateMonthDetails = (data = {}, { month, assetDate, debtDate, memoDate, assets = [], memo = "", incomes = [], debts = [] }) => {
+  var updateMonthDetails = (data = {}, { month, assetDate, debtDate, memoDate, assets = [], memo = "", incomes = [], debts = [], debtEvents }) => {
     const cleanAssets = assets.map(({ _tempId, ...asset }) => ({ ...asset, amount: toNumber(asset.amount) }));
     const cleanIncomes = incomes.map(({ _tempId, ...source }) => ({
       ...source,
@@ -2316,7 +2316,8 @@ var CatLogCore = (() => {
       incomes: {
         ...data.incomes || {},
         [month]: { ...existingIncomeMonth, totalAmount: newTotal, sources: cleanIncomes }
-      }
+      },
+      ...Array.isArray(debtEvents) ? { debtEvents: { ...data.debtEvents || {}, [month]: debtEvents } } : {}
     };
   };
   var deleteMonthData = (data = {}, monthKey) => {

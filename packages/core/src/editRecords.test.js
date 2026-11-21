@@ -27,6 +27,15 @@ describe('編輯月份明細', () => {
     });
 });
 
+describe('編輯時一起刪除負債異動', () => {
+    it('有傳 debtEvents 才寫回該月異動，沒傳時保持原樣', () => {
+        const data = { debtEvents: { '2026-03': [{ id: 1 }, { id: 2 }], '2026-04': [{ id: 3 }] } };
+        const base = { month: '2026-03', assetDate: '2026-03-31', debtDate: '2026-03-31', memoDate: '2026-03-31' };
+        expect(updateMonthDetails(data, base).debtEvents).toBe(data.debtEvents);
+        expect(updateMonthDetails(data, { ...base, debtEvents: [{ id: 2 }] }).debtEvents).toEqual({ '2026-03': [{ id: 2 }], '2026-04': [{ id: 3 }] });
+    });
+});
+
 describe('刪除', () => {
     const data = {
         records: { '2026-03-01': [1], '2026-03-31': [2], '2026-04-01': [3] },

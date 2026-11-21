@@ -14,8 +14,6 @@ struct MonthDetailView: View {
         #endif
         return false
     }()
-    @State private var pendingDeleteEvent: DebtEvent?
-    @State private var actionError: String?
     @Environment(\.dismiss) private var dismissView
     @State private var showAddDebtEvent: Bool = {
         #if DEBUG
@@ -71,23 +69,6 @@ struct MonthDetailView: View {
         .task(id: "\(monthKey)#\(model.dataVersion)") { load() }
         .sheet(isPresented: $showEdit) {
             EditMonthSheet(model: model, core: core, monthKey: monthKey) { dismissView() }
-        }
-        // 用 presenting：按鈕直接拿到要刪的那一筆。原本靠 pendingDeleteEvent，
-        // 但按下按鈕時 SwiftUI 會先關掉對話框、把它清成 nil，結果什麼都沒刪。
-        .confirmationDialog("刪除這筆負債異動？", isPresented: Binding(get: { pendingDeleteEvent != nil }, set: { if !$0 { pendingDeleteEvent = nil } }), titleVisibility: .visible, presenting: pendingDeleteEvent) { event in
-            Button("刪除", role: .destructive) {
-                guard let id = event.id else { return }
-                Task {
-                    if case .failed(let message) = await model.deleteDebtEvent(month: monthKey, id: id) { actionError = message }
-                }
-            }
-        } message: { event in
-            Text([core.debtEventLabel(event.type), event.date, event.name].compactMap { $0 }.joined(separator: "・"))
-        }
-        .alert("刪除失敗", isPresented: Binding(get: { actionError != nil }, set: { if !$0 { actionError = nil } })) {
-            Button("好") { actionError = nil }
-        } message: {
-            Text(actionError ?? "")
         }
         .sheet(isPresented: $showAddDebtEvent) {
             AddDebtEventSheet(model: model, core: core, monthKey: monthKey)
@@ -185,11 +166,6 @@ struct MonthDetailView: View {
                         Text(money(event.amount)).monospacedDigit()
                     } else {
                         Text("依新利率重算").font(.caption).foregroundStyle(.orange)
-                    }
-                }
-                .swipeActions {
-                    if event.id != nil && model.compatibility.canWrite {
-                        Button("刪除", role: .destructive) { pendingDeleteEvent = event }
                     }
                 }
             }

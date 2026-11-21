@@ -228,11 +228,6 @@ public final class AppModel: ObservableObject {
         do { return await save(dataJSON: try core.deletingMonth(monthKey)) } catch { return .failed(error.localizedDescription) }
     }
 
-    public func deleteDebtEvent(month: String, id: RecordID) async -> SaveOutcome {
-        guard let core else { return .failed("core 無法載入") }
-        do { return await save(dataJSON: try core.deletingDebtEvent(month: month, id: id)) } catch { return .failed(error.localizedDescription) }
-    }
-
     /// 寫入雲端；成功後才更新畫面資料。
     /// - basedOn：資料是以這份雲端版本為基礎做出來的（新增負債會先重新讀取雲端）；nil 時用本機最後讀到 / 寫入的版本。
     public func save(dataJSON: String, force: Bool = false, basedOn base: (revision: Int, chunkIds: [String])? = nil) async -> SaveOutcome {
