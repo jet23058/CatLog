@@ -6,7 +6,13 @@ final class InMemoryChunkStore: ChunkStore, @unchecked Sendable {
     private let lock = NSLock()
     private(set) var meta: CloudMeta?
     private(set) var chunks: [String: StoredChunk] = [:]
+    private(set) var history: [String: HistoryEntry] = [:]
     var failTransaction: Error?
+
+    func readHistory() async throws -> [HistoryEntry] { lock.withLock { Array(history.values) } }
+    func writeHistory(_ entries: [HistoryEntry]) async throws { lock.withLock { entries.forEach { history[$0.generation] = $0 } } }
+    func deleteHistory(generation: String) async throws { lock.withLock { _ = history.removeValue(forKey: generation) } }
+    func setHistory(_ entry: HistoryEntry) { lock.withLock { history[entry.generation] = entry } }
 
     func readMeta() async throws -> CloudMeta? {
         lock.withLock { meta }

@@ -294,6 +294,21 @@ public final class AppModel: ObservableObject {
         }
     }
 
+    // MARK: - 雲端歷史版本
+
+    /// 雲端歷史版本，新到舊。
+    public func cloudHistory() async throws -> [HistoryEntry] {
+        guard let core, !isDemo, let uid = Auth.auth().currentUser?.uid else { return [] }
+        return try await CloudRepository(store: FirestoreChunkStore(uid: uid), core: core.bridge).listHistory()
+    }
+
+    /// 某個歷史版本的完整資料，包成備份檔格式（匯出與預覽還原共用）。
+    public func historyBackupText(_ entry: HistoryEntry) async throws -> String {
+        guard let core, let uid = Auth.auth().currentUser?.uid else { throw CoreBridgeError.coreNotLoaded }
+        let dataJSON = try await CloudRepository(store: FirestoreChunkStore(uid: uid), core: core.bridge).readVersion(entry)
+        return try core.bridge.callString("createBackupText", [.json(dataJSON)])
+    }
+
     // MARK: - 診斷與修復（開發版）
 
     /// 只讀不寫，回報雲端資料塊、checksum 與解析狀態。

@@ -34,7 +34,30 @@ final class CloudRepositoryTests: XCTestCase {
 
         let second = try await repository.write(dataJSON: #"{"records":{"a":2}}"#, expectedRevision: 1, previousChunkIds: snapshot.chunkIds)
         XCTAssertEqual(second.revision, 2)
-        XCTAssertEqual(store.chunkCount, 1) // 舊 generation 已清除
+        // 上一份保留成歷史版本：兩份資料塊都在，各有一筆紀錄，可以讀回舊內容。
+        XCTAssertEqual(store.chunkCount, first.chunkIds.count + second.chunkIds.count)
+        let history = try await repository.listHistory()
+        XCTAssertEqual(history.map(\.revision), [2, 1])
+        let oldVersion = try await repository.readVersion(history[1])
+        XCTAssertTrue(oldVersion.contains("🐱🎉 中文"))
+    }
+
+    func testPrunesHistoryButKeepsCurrent() async throws {
+        var revision = 0
+        var chunkIds: [String] = []
+        let start = Date(timeIntervalSince1970: 1_767_225_600)
+        for i in 0..<25 {
+            let result = try await repository.write(dataJSON: #"{"records":{"i":\#(i)}}"#, expectedRevision: revision,
+                                                   previousChunkIds: chunkIds, now: start.addingTimeInterval(Double(i) * 60))
+            revision = result.revision
+            chunkIds = result.chunkIds
+        }
+        let history = try await repository.listHistory()
+        XCTAssertEqual(history.count, 20)
+        XCTAssertEqual(history.first?.revision, 25)
+        XCTAssertEqual(store.chunkCount, 20)
+        let current = try await repository.read()
+        XCTAssertTrue(try XCTUnwrap(current.dataJSON).contains(#""i":24"#))
     }
 
     func testRejectsStaleWrites() async throws {
@@ -114,7 +137,9 @@ final class CloudRepositoryTests: XCTestCase {
         let docs = try XCTUnwrap(fixture["docs"] as? [String: [String: Any]])
 
         for (path, value) in docs {
-            if path.hasSuffix("/meta/storage") {
+            if path.contains("/history/") {
+                store.setHistory(try JSONDecoder().decode(HistoryEntry.self, from: JSONSerialization.data(withJSONObject: value)))
+            } else if path.hasSuffix("/meta/storage") {
                 let metaData = try JSONSerialization.data(withJSONObject: value)
                 store.setMeta(try JSONDecoder().decode(CloudMeta.self, from: metaData))
             } else {

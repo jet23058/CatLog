@@ -10,7 +10,17 @@ import {
     where,
     writeBatch
 } from 'firebase/firestore';
-import { CHUNK_SIZE, buildMetaVersionFields, hashString, parseLegacyChunks, splitIntoChunks } from '@catlog/core';
+import {
+    CHUNK_SIZE,
+    assembleHistoryVersion,
+    buildMetaVersionFields,
+    createHistoryEntry,
+    hashString,
+    parseLegacyChunks,
+    selectHistoryToPrune,
+    sortHistoryEntries,
+    splitIntoChunks
+} from '@catlog/core';
 
 // 切塊、checksum 等純函式放在 core，web 與 iOS 共用同一份實作。
 export { CHUNK_SIZE, hashString, parseLegacyChunks, splitIntoChunks };
@@ -23,6 +33,7 @@ const MAX_BATCH_DELETES = 400;
  * users/{uid}/meta/storage           指標文件：revision、generation、chunkCount、checksum、length、
  *                                     schemaVersion、minClientVersion（相容性，見 docs/DATA_FORMAT.md）
  * users/{uid}/chunks/{generation}_{i} 資料塊：{ index, content, generation }
+ * users/{uid}/history/{generation}   歷史版本：每次存檔一筆，資料塊保留到被保留規則清掉為止（core: selectHistoryToPrune）
  *
  * 寫入流程：先寫完新 generation 的所有資料塊，再用 transaction 檢查 revision 並切換指標。
  * 寫到一半中斷時指標仍指向舊 generation，所以雲端資料永遠是完整的一份。
@@ -50,6 +61,7 @@ export const createGenerationId = () =>
 
 const metaRefFor = (db, uid) => doc(db, 'users', uid, 'meta', 'storage');
 const chunksRefFor = (db, uid) => collection(db, 'users', uid, 'chunks');
+const historyRefFor = (db, uid) => collection(db, 'users', uid, 'history');
 
 const snapshotExists = (snapshot) => {
     if (!snapshot) return false;
@@ -155,16 +167,19 @@ export const writeCloudData = async (db, uid, data, {
     }
 
     let revision;
+    let previousMeta = null;
+    let nextMeta = null;
     try {
         revision = await runTransaction(db, async (transaction) => {
             const snapshot = await transaction.get(metaRef);
             const meta = snapshotExists(snapshot) ? snapshot.data() : null;
+            previousMeta = meta;
             const remoteRevision = meta?.revision || 0;
             if (!force && remoteRevision !== expectedRevision) {
                 throw new CloudConflictError(remoteRevision, expectedRevision);
             }
             const nextRevision = remoteRevision + 1;
-            transaction.set(metaRef, {
+            nextMeta = {
                 schema: 3,
                 revision: nextRevision,
                 generation,
@@ -174,7 +189,8 @@ export const writeCloudData = async (db, uid, data, {
                 updatedAt: Date.now(),
                 deviceId,
                 ...buildMetaVersionFields(meta)
-            });
+            };
+            transaction.set(metaRef, nextMeta);
             return nextRevision;
         });
     } catch (error) {
@@ -183,12 +199,60 @@ export const writeCloudData = async (db, uid, data, {
         throw error;
     }
 
-    const staleIds = previousChunkIds.filter((id) => !newChunkIds.includes(id));
-    await deleteDocIds(db, uid, staleIds).catch((error) => {
-        console.warn('Failed to clean up old chunks', error);
-    });
+    // 上一份保留成歷史版本。舊格式資料塊（沒有 generation）無法列入歷史，或歷史紀錄寫不進去
+    // （例如 Firestore 規則還沒部署）時，照舊刪除上一份，避免資料塊無限累積。
+    let keepPrevious = Boolean(previousMeta?.generation);
+    if (keepPrevious) {
+        keepPrevious = await recordHistory(db, uid, [nextMeta, previousMeta], generation)
+            .then(() => true)
+            .catch((error) => {
+                console.warn('Failed to record history', error);
+                return false;
+            });
+    }
+    if (!previousMeta?.generation) {
+        await recordHistory(db, uid, [nextMeta], generation).catch((error) => console.warn('Failed to record history', error));
+    }
+    if (!keepPrevious) {
+        const staleIds = previousChunkIds.filter((id) => !newChunkIds.includes(id));
+        await deleteDocIds(db, uid, staleIds).catch((error) => {
+            console.warn('Failed to clean up old chunks', error);
+        });
+    }
 
     return { revision: revision ?? expectedRevision + 1, chunkIds: newChunkIds };
+};
+
+/** 雲端歷史版本，新到舊。 */
+export const listHistory = async (db, uid) => {
+    const snapshot = await getDocs(query(historyRefFor(db, uid)));
+    return sortHistoryEntries(docsOf(snapshot).map((d) => d.data()));
+};
+
+/** 讀出某個歷史版本的資料（驗證 checksum）。 */
+export const readHistoryVersion = async (db, uid, entry) => {
+    const snapshot = await getDocs(query(chunksRefFor(db, uid), where('generation', '==', entry.generation)));
+    const chunks = docsOf(snapshot).map((d) => d.data());
+    return JSON.parse(assembleHistoryVersion(entry, chunks));
+};
+
+const deleteGeneration = async (db, uid, generation) => {
+    const snapshot = await getDocs(query(chunksRefFor(db, uid), where('generation', '==', generation)));
+    await deleteDocIds(db, uid, docsOf(snapshot).map((d) => d.id));
+    const batch = writeBatch(db);
+    batch.delete(doc(historyRefFor(db, uid), generation));
+    await batch.commit();
+};
+
+/** 記錄新版本（並補記上一份），再依保留規則刪除太舊的版本。失敗不影響這次存檔。 */
+const recordHistory = async (db, uid, metas, currentGeneration) => {
+    const batch = writeBatch(db);
+    metas.map(createHistoryEntry).filter(Boolean).forEach((entry) => batch.set(doc(historyRefFor(db, uid), entry.generation), entry));
+    await batch.commit();
+    const prune = selectHistoryToPrune(await listHistory(db, uid), { now: Date.now(), currentGeneration });
+    for (const generation of prune) {
+        await deleteGeneration(db, uid, generation);
+    }
 };
 
 export const getMetaRef = metaRefFor;

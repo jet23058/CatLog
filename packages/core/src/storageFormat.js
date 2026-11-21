@@ -77,3 +77,76 @@ export const summarizeDataCounts = (data) => {
         stockSnapshotVersions: countItems(data?.stockHoldingSnapshots)
     };
 };
+
+// ── 雲端歷史版本 ───────────────────────────────────────────────
+// 每次存檔的資料塊不再立刻刪除，而是記一筆 users/{uid}/history/{generation}，之後可以預覽、匯出或還原。
+// 保留規則：最近 HISTORY_KEEP_RECENT 份全部保留；更早的，在 HISTORY_KEEP_DAYS 天內每天保留最後一份；
+// 目前使用中的版本永遠不刪。其他的資料塊與紀錄一起刪除。
+
+export const HISTORY_KEEP_RECENT = 20;
+export const HISTORY_KEEP_DAYS = 30;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** 由指標文件（meta/storage）產生一筆歷史紀錄；沒有 generation（舊格式）時回傳 null。 */
+export const createHistoryEntry = (meta) => {
+    if (!meta?.generation) return null;
+    return {
+        generation: String(meta.generation),
+        revision: Number(meta.revision) || 0,
+        chunkCount: Number(meta.chunkCount) || 0,
+        checksum: String(meta.checksum || ''),
+        length: Number(meta.length) || 0,
+        savedAt: Number(meta.updatedAt) || 0,
+        deviceId: String(meta.deviceId || ''),
+        schemaVersion: Number(meta.schemaVersion) || 0
+    };
+};
+
+/** 歷史紀錄新到舊排序（同時間依 revision），並略過格式不對的資料。 */
+export const sortHistoryEntries = (entries = []) => (entries || [])
+    .filter((entry) => entry && typeof entry.generation === 'string' && entry.generation)
+    .sort((a, b) => (b.savedAt - a.savedAt) || (b.revision - a.revision));
+
+const localDayKey = (ms) => {
+    const date = new Date(ms);
+    return `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
+};
+
+/** 依保留規則回傳要刪除的 generation（不含 currentGeneration）。 */
+export const selectHistoryToPrune = (entries = [], {
+    now,
+    currentGeneration = '',
+    keepRecent = HISTORY_KEEP_RECENT,
+    keepDays = HISTORY_KEEP_DAYS
+} = {}) => {
+    const sorted = sortHistoryEntries(entries);
+    const keptDays = new Set();
+    const prune = [];
+    sorted.forEach((entry, index) => {
+        if (entry.generation === currentGeneration) return;
+        if (index < keepRecent) {
+            keptDays.add(localDayKey(entry.savedAt));
+            return;
+        }
+        const day = localDayKey(entry.savedAt);
+        if (now - entry.savedAt <= keepDays * DAY_MS && !keptDays.has(day)) {
+            keptDays.add(day);
+            return;
+        }
+        prune.push(entry.generation);
+    });
+    return prune;
+};
+
+/** 把某個歷史版本的資料塊組回 JSON 並驗證；不完整時丟錯。 */
+export const assembleHistoryVersion = (entry, chunks = []) => {
+    const sorted = [...chunks].sort((a, b) => (a.index ?? 0) - (b.index ?? 0));
+    if (sorted.length !== entry.chunkCount) {
+        throw new Error(`這個版本的資料塊不完整（預期 ${entry.chunkCount}，實際 ${sorted.length}）`);
+    }
+    const json = sorted.map((chunk) => chunk.content || '').join('');
+    if (json.length !== entry.length || hashString(json) !== entry.checksum) {
+        throw new Error('這個版本的 checksum 驗證失敗，無法還原');
+    }
+    return json;
+};

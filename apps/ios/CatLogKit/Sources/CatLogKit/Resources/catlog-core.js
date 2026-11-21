@@ -29,6 +29,8 @@ var CatLogCore = (() => {
     CURRENT_SCHEMA_VERSION: () => CURRENT_SCHEMA_VERSION,
     DEBT_CATEGORIES: () => DEBT_CATEGORIES,
     DEFAULT_EXCHANGE_RATES: () => DEFAULT_EXCHANGE_RATES,
+    HISTORY_KEEP_DAYS: () => HISTORY_KEEP_DAYS,
+    HISTORY_KEEP_RECENT: () => HISTORY_KEEP_RECENT,
     INITIAL_DATA: () => INITIAL_DATA,
     PRIVACY_MASK: () => PRIVACY_MASK,
     SCHEMA_MIN_CLIENT_VERSION: () => SCHEMA_MIN_CLIENT_VERSION,
@@ -44,6 +46,7 @@ var CatLogCore = (() => {
     addIncomeToData: () => addIncomeToData,
     addStockTransactionsToData: () => addStockTransactionsToData,
     areDataStructuresEqual: () => areDataStructuresEqual,
+    assembleHistoryVersion: () => assembleHistoryVersion,
     buildCollectionDiff: () => buildCollectionDiff,
     buildExpenseDiff: () => buildExpenseDiff,
     buildHoldingMap: () => buildHoldingMap,
@@ -62,6 +65,7 @@ var CatLogCore = (() => {
     createBackupText: () => createBackupText,
     createDebtEntry: () => createDebtEntry,
     createDebtEvent: () => createDebtEvent,
+    createHistoryEntry: () => createHistoryEntry,
     createHoldingRow: () => createHoldingRow,
     createIncomeSource: () => createIncomeSource,
     deleteDebtEventFromData: () => deleteDebtEventFromData,
@@ -229,8 +233,10 @@ var CatLogCore = (() => {
     processUSBrokerTransactionCSVRows: () => processUSBrokerTransactionCSVRows,
     processUSBrokerTransactionPastedRows: () => processUSBrokerTransactionPastedRows,
     processUSBrokerTransactionRows: () => processUSBrokerTransactionRows,
+    selectHistoryToPrune: () => selectHistoryToPrune,
     setFireWithdrawalRate: () => setFireWithdrawalRate,
     shouldLockOnResume: () => shouldLockOnResume,
+    sortHistoryEntries: () => sortHistoryEntries,
     splitIntoChunks: () => splitIntoChunks,
     summarizeBackupImport: () => summarizeBackupImport,
     summarizeDataCounts: () => summarizeDataCounts,
@@ -2176,6 +2182,62 @@ var CatLogCore = (() => {
       stockSnapshotMonths: Object.keys(data?.stockHoldingSnapshots || {}).length,
       stockSnapshotVersions: countItems(data?.stockHoldingSnapshots)
     };
+  };
+  var HISTORY_KEEP_RECENT = 20;
+  var HISTORY_KEEP_DAYS = 30;
+  var DAY_MS = 24 * 60 * 60 * 1e3;
+  var createHistoryEntry = (meta) => {
+    if (!meta?.generation) return null;
+    return {
+      generation: String(meta.generation),
+      revision: Number(meta.revision) || 0,
+      chunkCount: Number(meta.chunkCount) || 0,
+      checksum: String(meta.checksum || ""),
+      length: Number(meta.length) || 0,
+      savedAt: Number(meta.updatedAt) || 0,
+      deviceId: String(meta.deviceId || ""),
+      schemaVersion: Number(meta.schemaVersion) || 0
+    };
+  };
+  var sortHistoryEntries = (entries = []) => (entries || []).filter((entry) => entry && typeof entry.generation === "string" && entry.generation).sort((a, b) => b.savedAt - a.savedAt || b.revision - a.revision);
+  var localDayKey = (ms) => {
+    const date = new Date(ms);
+    return `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
+  };
+  var selectHistoryToPrune = (entries = [], {
+    now,
+    currentGeneration = "",
+    keepRecent = HISTORY_KEEP_RECENT,
+    keepDays = HISTORY_KEEP_DAYS
+  } = {}) => {
+    const sorted = sortHistoryEntries(entries);
+    const keptDays = /* @__PURE__ */ new Set();
+    const prune = [];
+    sorted.forEach((entry, index) => {
+      if (entry.generation === currentGeneration) return;
+      if (index < keepRecent) {
+        keptDays.add(localDayKey(entry.savedAt));
+        return;
+      }
+      const day = localDayKey(entry.savedAt);
+      if (now - entry.savedAt <= keepDays * DAY_MS && !keptDays.has(day)) {
+        keptDays.add(day);
+        return;
+      }
+      prune.push(entry.generation);
+    });
+    return prune;
+  };
+  var assembleHistoryVersion = (entry, chunks = []) => {
+    const sorted = [...chunks].sort((a, b) => (a.index ?? 0) - (b.index ?? 0));
+    if (sorted.length !== entry.chunkCount) {
+      throw new Error(`\u9019\u500B\u7248\u672C\u7684\u8CC7\u6599\u584A\u4E0D\u5B8C\u6574\uFF08\u9810\u671F ${entry.chunkCount}\uFF0C\u5BE6\u969B ${sorted.length}\uFF09`);
+    }
+    const json = sorted.map((chunk) => chunk.content || "").join("");
+    if (json.length !== entry.length || hashString(json) !== entry.checksum) {
+      throw new Error("\u9019\u500B\u7248\u672C\u7684 checksum \u9A57\u8B49\u5931\u6557\uFF0C\u7121\u6CD5\u9084\u539F");
+    }
+    return json;
   };
 
   // src/appLock.js

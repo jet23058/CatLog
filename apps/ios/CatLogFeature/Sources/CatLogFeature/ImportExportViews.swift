@@ -43,10 +43,15 @@ struct DataToolsSection: View {
                 Label("匯入 MOZE 花費（CSV）", systemImage: "tablecells")
             }
             .disabled(!model.compatibility.canWrite)
+            NavigationLink {
+                CloudHistoryView(model: model, core: core)
+            } label: {
+                Label("雲端歷史版本", systemImage: "clock.arrow.circlepath")
+            }
         } header: {
             Text("資料")
         } footer: {
-            Text("匯入前會先顯示差異，確認後才寫入。匯入備份會取代整份資料；匯入花費只覆蓋 CSV 裡出現的月份。")
+            Text("匯入前會先顯示差異，確認後才寫入。匯入備份會取代整份資料；匯入花費只覆蓋 CSV 裡出現的月份。每次存檔都會在雲端保留歷史版本，可以還原。")
         }
         .fileImporter(
             isPresented: $showImporter,
@@ -102,6 +107,8 @@ private struct PreviewBox: Identifiable {
 private struct BackupImportSheet: View {
     @ObservedObject var model: AppModel
     let preview: BackupImportPreview
+    var title = "匯入備份"
+    var confirmTitle = "確認匯入"
     let onDone: () -> Void
     @State private var errorMessage: String?
 
@@ -135,12 +142,12 @@ private struct BackupImportSheet: View {
                     Section { Text(errorMessage).foregroundStyle(.red) }
                 }
             }
-            .navigationTitle("匯入備份")
+            .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("取消", action: onDone) }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("確認匯入") {
+                    Button(confirmTitle) {
                         Task {
                             switch await model.importBackup(preview) {
                             case .saved, .conflict: onDone()
@@ -206,5 +213,109 @@ private struct ExpenseImportSheet: View {
             }
             .overlay { if model.isSaving { ProgressView("匯入中…").padding().background(.regularMaterial, in: .rect(cornerRadius: 12)) } }
         }
+    }
+}
+
+// MARK: - 雲端歷史版本
+
+/// 匯出某個歷史版本：分享時才讀取資料。
+struct HistoryVersionFile: Transferable {
+    let model: AppModel
+    let entry: HistoryEntry
+
+    static var transferRepresentation: some TransferRepresentation {
+        FileRepresentation(exportedContentType: .json) { file in
+            let text = try await file.model.historyBackupText(file.entry)
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent("meow-assets-history-r\(file.entry.revision).json")
+            try text.write(to: url, atomically: true, encoding: .utf8)
+            return SentTransferredFile(url)
+        }
+    }
+}
+
+/// 雲端歷史版本：每次存檔保留一份（最近 20 份，加上 30 天內每天最後一份），可以預覽差異後還原或匯出。
+struct CloudHistoryView: View {
+    @ObservedObject var model: AppModel
+    let core: CatLogCore
+    @State private var entries: [HistoryEntry]?
+    @State private var errorMessage: String?
+    @State private var loadingGeneration: String?
+    @State private var restoreBox: RestoreBox?
+
+    private struct RestoreBox: Identifiable {
+        let id = UUID()
+        let preview: BackupImportPreview
+        let revision: Int
+    }
+
+    var body: some View {
+        List {
+            if let errorMessage {
+                Section { Text(errorMessage).foregroundStyle(.red) }
+            }
+            Section {
+                if entries == nil && errorMessage == nil {
+                    ProgressView("讀取中…")
+                } else if entries?.isEmpty == true {
+                    Text("還沒有歷史版本，下次存檔後就會開始保留。").foregroundStyle(.secondary)
+                }
+                ForEach(Array((entries ?? []).enumerated()), id: \.element.id) { index, entry in
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack(spacing: 6) {
+                                Text(entry.savedDate.formatted(date: .abbreviated, time: .shortened))
+                                if index == 0 { Text("目前").font(.caption2.bold()).foregroundStyle(.teal) }
+                            }
+                            Text("版本 \(entry.revision)・\(Self.size(entry.length))\(entry.deviceId.isEmpty ? "" : "・\(entry.deviceId)")")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        ShareLink(item: HistoryVersionFile(model: model, entry: entry), preview: SharePreview("版本 \(entry.revision)")) {
+                            Image(systemName: "square.and.arrow.up")
+                        }
+                        .buttonStyle(.borderless)
+                        if index > 0 {
+                            Button(loadingGeneration == entry.generation ? "讀取中" : "預覽還原") { Task { await preview(entry) } }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                                .disabled(loadingGeneration != nil || !model.compatibility.canWrite)
+                        }
+                    }
+                }
+            } footer: {
+                Text("還原前會先顯示和目前資料的差異；確認後存成新的版本，所以還原本身也能再還原回來。")
+            }
+        }
+        .navigationTitle("雲端歷史版本")
+        .navigationBarTitleDisplayMode(.inline)
+        .task(id: model.dataVersion) { await load() }
+        .refreshable { await load() }
+        .sheet(item: $restoreBox) { box in
+            BackupImportSheet(model: model, preview: box.preview, title: "還原到版本 \(box.revision)", confirmTitle: "確認還原") { restoreBox = nil }
+        }
+    }
+
+    private func load() async {
+        do {
+            entries = try await model.cloudHistory()
+            errorMessage = nil
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func preview(_ entry: HistoryEntry) async {
+        loadingGeneration = entry.generation
+        defer { loadingGeneration = nil }
+        do {
+            let text = try await model.historyBackupText(entry)
+            restoreBox = RestoreBox(preview: try core.previewBackupImport(text: text), revision: entry.revision)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    static func size(_ length: Int) -> String {
+        length >= 1_048_576 ? String(format: "%.1f MB", Double(length) / 1_048_576) : "\(max(1, length / 1024)) KB"
     }
 }

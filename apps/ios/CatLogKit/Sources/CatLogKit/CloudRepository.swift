@@ -4,6 +4,7 @@ import Foundation
 //
 //   users/{uid}/meta/storage             指標文件
 //   users/{uid}/chunks/{generation}_{i}  資料塊 { index, content, generation }
+//   users/{uid}/history/{generation}     歷史版本（每次存檔一筆；保留規則在 core 的 selectHistoryToPrune）
 //
 // 切塊、checksum、舊格式解析、版本欄位都呼叫 packages/core，確保與 web 結果一致。
 // Firestore 的存取放在 ChunkStore 協定後面，App 端提供 Firestore 實作，測試用記憶體實作。
@@ -56,8 +57,37 @@ public struct StoredChunk: Equatable, Sendable {
     }
 }
 
+/// users/{uid}/history/{generation}：一個可以還原的歷史版本（core: createHistoryEntry）。
+public struct HistoryEntry: Codable, Equatable, Sendable, Identifiable {
+    public let generation: String
+    public let revision: Int
+    public let chunkCount: Int
+    public let checksum: String
+    public let length: Int
+    public let savedAt: Double
+    public let deviceId: String
+    public let schemaVersion: Int
+    public var id: String { generation }
+
+    public init(generation: String, revision: Int, chunkCount: Int, checksum: String, length: Int, savedAt: Double, deviceId: String, schemaVersion: Int) {
+        self.generation = generation
+        self.revision = revision
+        self.chunkCount = chunkCount
+        self.checksum = checksum
+        self.length = length
+        self.savedAt = savedAt
+        self.deviceId = deviceId
+        self.schemaVersion = schemaVersion
+    }
+
+    public var savedDate: Date { Date(timeIntervalSince1970: savedAt / 1000) }
+}
+
 /// 雲端儲存的最小操作集合（對應 Firestore 的呼叫）。
 public protocol ChunkStore: Sendable {
+    func readHistory() async throws -> [HistoryEntry]
+    func writeHistory(_ entries: [HistoryEntry]) async throws
+    func deleteHistory(generation: String) async throws
     func readMeta() async throws -> CloudMeta?
     func readChunks(generation: String) async throws -> [StoredChunk]
     func readAllChunksOrderedByIndex() async throws -> [StoredChunk]
@@ -171,8 +201,10 @@ public final class CloudRepository: @unchecked Sendable {
 
         let core = self.core
         let meta: CloudMeta
+        let previousBox = MetaCapture()
         do {
             meta = try await store.updateMeta { previous in
+                previousBox.value = previous
                 let remoteRevision = previous?.revision ?? 0
                 if !force && remoteRevision != expectedRevision {
                     throw CloudStorageError.conflict(remoteRevision: remoteRevision, expectedRevision: expectedRevision)
@@ -200,10 +232,56 @@ public final class CloudRepository: @unchecked Sendable {
             throw error
         }
 
-        let stale = previousChunkIds.filter { !newChunkIds.contains($0) }
-        try? await store.deleteChunks(ids: stale)
+        // 上一份保留成歷史版本（與 web 相同）。舊格式資料塊（沒有 generation）無法列入歷史，或歷史紀錄寫不進去
+        // （例如 Firestore 規則還沒部署）時，照舊刪除上一份，避免資料塊無限累積。歷史失敗不影響這次存檔。
+        let previous = previousBox.value
+        var keepPrevious = false
+        do {
+            try await recordHistory(metas: [meta, previous].compactMap { $0 }, currentGeneration: generation, now: now)
+            keepPrevious = previous?.generation != nil
+        } catch {
+            keepPrevious = false
+        }
+        if !keepPrevious {
+            let stale = previousChunkIds.filter { !newChunkIds.contains($0) }
+            try? await store.deleteChunks(ids: stale)
+        }
 
         return CloudWriteResult(revision: meta.revision ?? expectedRevision + 1, chunkIds: newChunkIds)
+    }
+
+    // MARK: - 歷史版本
+
+    /// 雲端歷史版本，新到舊。
+    public func listHistory() async throws -> [HistoryEntry] {
+        let text = String(decoding: try JSONEncoder().encode(try await store.readHistory()), as: UTF8.self)
+        return try core.call("sortHistoryEntries", [.json(text)])
+    }
+
+    /// 讀出某個歷史版本的資料 JSON（驗證 checksum）。
+    public func readVersion(_ entry: HistoryEntry) async throws -> String {
+        let chunks = try await store.readChunks(generation: entry.generation)
+        let chunksJSON = try JSONSerialization.data(withJSONObject: chunks.map { ["index": $0.index, "content": $0.content] })
+        let entryJSON = String(decoding: try JSONEncoder().encode(entry), as: UTF8.self)
+        return try core.callString("assembleHistoryVersion", [.json(entryJSON), .json(String(decoding: chunksJSON, as: UTF8.self))])
+    }
+
+    private func recordHistory(metas: [CloudMeta], currentGeneration: String, now: Date) async throws {
+        var entries: [HistoryEntry] = []
+        for meta in metas {
+            let text = try core.callJSON("createHistoryEntry", [.json(try meta.jsonString())])
+            if text != "null" { entries.append(try JSONDecoder().decode(HistoryEntry.self, from: Data(text.utf8))) }
+        }
+        try await store.writeHistory(entries)
+        let all = String(decoding: try JSONEncoder().encode(try await store.readHistory()), as: UTF8.self)
+        let prune: [String] = try core.call("selectHistoryToPrune", [.json(all), .object([
+            "now": .number((now.timeIntervalSince1970 * 1000).rounded()), "currentGeneration": .string(currentGeneration),
+        ])])
+        for generation in prune {
+            let ids = try await store.readChunks(generation: generation).map(\.id)
+            try await store.deleteChunks(ids: ids)
+            try await store.deleteHistory(generation: generation)
+        }
     }
 
     /// 與 web 的 createGenerationId 相同格式：g + 時間（36 進位）+ 6 位亂數。
@@ -218,4 +296,14 @@ public final class CloudRepository: @unchecked Sendable {
 private struct MetaVersionFields: Decodable {
     let schemaVersion: Int
     let minClientVersion: String?
+}
+
+/// 在交易中記下切換前的指標文件（交易可能重試，以最後一次為準）。
+private final class MetaCapture: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: CloudMeta?
+    var value: CloudMeta? {
+        get { lock.withLock { stored } }
+        set { lock.withLock { stored = newValue } }
+    }
 }

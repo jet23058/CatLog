@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, PieChart, Pie, Cell } from 'recharts';
-import { Cat, ChevronLeft, ChevronRight, Plus, Upload, Wallet, TrendingUp, DollarSign, Calendar, X, Save, FileJson, ArrowUpRight, ArrowDownRight, ArrowLeft, ArrowRight, Edit2, Trash2, Info, Check, TrendingDown, RefreshCw, FileText, Mountain, ArrowDown, AlertCircle, AlertTriangle, Building2, Lock, PieChart as PieChartIcon, Download, StickyNote, ShoppingBag, Filter, ChevronDown, PiggyBank, Activity, Sparkles, LogOut, Coins, ClipboardCheck, LayoutGrid, Package, Box, Footprints, Eye, EyeOff, ScanFace, ShieldCheck, ShieldAlert, Search } from 'lucide-react';
+import { Cat, ChevronLeft, ChevronRight, Plus, Upload, Wallet, TrendingUp, DollarSign, Calendar, X, Save, FileJson, ArrowUpRight, ArrowDownRight, ArrowLeft, ArrowRight, Edit2, Trash2, Info, Check, TrendingDown, RefreshCw, FileText, Mountain, ArrowDown, AlertCircle, AlertTriangle, Building2, Lock, PieChart as PieChartIcon, Download, StickyNote, ShoppingBag, Filter, ChevronDown, PiggyBank, Activity, Sparkles, LogOut, Coins, ClipboardCheck, LayoutGrid, Package, Box, Footprints, Eye, EyeOff, ScanFace, ShieldCheck, ShieldAlert, Search, History } from 'lucide-react';
 import {
     AUTO_LOCK_IDLE_MS,
     CURRENT_SCHEMA_VERSION,
@@ -2596,6 +2596,79 @@ const DetailView = ({ monthKey, data, onBack, onUpdateData, assetNames, isPrivac
     );
 };
 
+const HistoryModal = ({ uid, onClose, onPreviewRestore }) => {
+    const [entries, setEntries] = useState(null);
+    const [error, setError] = useState('');
+    const [busyGeneration, setBusyGeneration] = useState('');
+
+    useEffect(() => {
+        let cancelled = false;
+        listHistory(db, uid)
+            .then((list) => { if (!cancelled) setEntries(list); })
+            .catch((err) => { if (!cancelled) setError(err.message || '無法讀取歷史版本'); });
+        return () => { cancelled = true; };
+    }, [uid]);
+
+    const loadVersion = async (entry, action) => {
+        setError('');
+        setBusyGeneration(entry.generation);
+        try {
+            const versionData = await readHistoryVersion(db, uid, entry);
+            if (action === 'download') {
+                const blob = new Blob([createBackupText(versionData)], { type: 'application/json' });
+                const href = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = href;
+                link.download = `meow-assets-history-r${entry.revision}.json`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(href);
+            } else {
+                onPreviewRestore(versionData);
+            }
+        } catch (err) {
+            setError(err.message || '無法讀取這個版本');
+        } finally {
+            setBusyGeneration('');
+        }
+    };
+
+    const formatTime = (ms) => ms ? new Date(ms).toLocaleString('zh-TW', { hour12: false }) : '時間不明';
+    const formatSize = (length) => length >= 1024 * 1024 ? `${(length / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(length / 1024))} KB`;
+
+    return (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-6">
+            <div className="bg-white w-full max-w-md rounded-2xl p-6 shadow-2xl relative flex flex-col max-h-[85vh]">
+                <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600" aria-label="關閉"><X size={20} /></button>
+                <h3 className="text-xl font-serif-tc font-bold text-slate-800 mb-1 flex items-center gap-2"><History size={18} /> 雲端歷史版本</h3>
+                <p className="text-xs text-slate-400 mb-4">還原會先顯示和目前資料的差異；確認後存成新的版本，所以還原本身也能再還原回來。</p>
+                {error && <div className="bg-rose-50 text-rose-500 text-xs p-3 rounded-xl mb-3">{error}</div>}
+                <div className="flex-1 overflow-y-auto border border-slate-100 rounded-xl divide-y divide-slate-50">
+                    {entries === null && !error && <div className="p-6 text-center text-slate-400 text-sm">讀取中…</div>}
+                    {entries?.length === 0 && <div className="p-6 text-center text-slate-300 text-sm">還沒有歷史版本，下次存檔後就會開始保留。</div>}
+                    {entries?.map((entry, index) => (
+                        <div key={entry.generation} className="p-3 flex items-center justify-between gap-3">
+                            <div className="min-w-0">
+                                <div className="font-bold text-sm text-slate-700">{formatTime(entry.savedAt)}{index === 0 && <span className="ml-2 text-[10px] text-teal-600">目前</span>}</div>
+                                <div className="text-[11px] text-slate-400 font-inter">版本 {entry.revision} · {formatSize(entry.length)}{entry.deviceId ? ` · ${entry.deviceId}` : ''}</div>
+                            </div>
+                            <div className="flex gap-1 shrink-0">
+                                <button onClick={() => loadVersion(entry, 'download')} disabled={Boolean(busyGeneration)} className="p-2 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 disabled:opacity-40" aria-label={`下載版本 ${entry.revision}`}><Download size={14} /></button>
+                                {index > 0 && (
+                                    <button onClick={() => loadVersion(entry, 'restore')} disabled={Boolean(busyGeneration)} className="px-3 py-1.5 rounded-lg bg-indigo-50 text-indigo-700 text-xs font-bold hover:bg-indigo-100 disabled:opacity-40">
+                                        {busyGeneration === entry.generation ? '讀取中' : '預覽還原'}
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        </div>
+    );
+};
+
 const StatementModal = ({ data, onClose }) => {
     // 預設上個月 15 日到這個月 16 日（規則在 core，用本地日期）。
     const [defaultRange] = useState(() => getStatementDefaultRange(getLocalDateKey()));
@@ -3900,8 +3973,8 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
 import { AuthProvider, useAuth } from './AuthContext';
 import LoginPage from './LoginPage';
 import { auth, db } from './firebase';
-import { collection, getDocs, query, orderBy, onSnapshot } from 'firebase/firestore';
-import { readCloudData, writeCloudData, getMetaRef, CloudConflictError } from './cloudStorage';
+import { collection, getDoc, getDocs, query, orderBy, onSnapshot, where } from 'firebase/firestore';
+import { readCloudData, writeCloudData, getMetaRef, CloudConflictError, listHistory, readHistoryVersion } from './cloudStorage';
 
 const AuthenticatedApp = () => {
     const { user, loading, logout } = useAuth();
@@ -4221,6 +4294,7 @@ const MainApp = ({ user, logout }) => {
     const [isSyncing, setIsSyncing] = useState(false);
 
     const [showStatementModal, setShowStatementModal] = useState(false);
+    const [showHistoryModal, setShowHistoryModal] = useState(false);
     const [showFIREModal, setShowFIREModal] = useState(false);
     const [showRangeStatsModal, setShowRangeStatsModal] = useState(false);
     const [showAdvancedMenu, setShowAdvancedMenu] = useState(false);
@@ -4323,9 +4397,12 @@ const MainApp = ({ user, logout }) => {
         setDiagnostics({ show: true, loading: true, error: '', result: null });
         try {
             const chunksRef = collection(db, "users", user.uid, "chunks");
-            const q = query(chunksRef, orderBy("index"));
+            // 有歷史版本後 chunks 裡會有多個 generation；只讀指標指向的那一份（舊格式沒有指標時讀全部）。
+            const metaSnapshot = await getDoc(getMetaRef(db, user.uid));
+            const generation = metaSnapshot.exists() ? metaSnapshot.data()?.generation : null;
+            const q = generation ? query(chunksRef, where("generation", "==", generation)) : query(chunksRef, orderBy("index"));
             const snapshot = await getDocs(q);
-            const chunks = snapshot.docs.map((doc) => doc.data().content || "");
+            const chunks = snapshot.docs.map((doc) => doc.data()).sort((a, b) => (a.index ?? 0) - (b.index ?? 0)).map((d) => d.content || "");
             const fullString = chunks.join('');
             let parsed = null;
             let parseError = '';
@@ -4380,6 +4457,14 @@ const MainApp = ({ user, logout }) => {
         );
     }
 
+
+    // 還原歷史版本：沿用 JSON 備份匯入的差異預覽與確認流程（確認後整份取代並存成新版本，可再還原回來）。
+    const handlePreviewHistoryRestore = (versionData) => {
+        if (!ensureWritable()) return;
+        const summary = getJsonImportSummary(data, versionData);
+        setImportConfirmation({ show: true, type: 'json', summary, pendingData: versionData });
+        setShowHistoryModal(false);
+    };
 
     const handleConfirmImport = async () => {
         if (!ensureWritable()) return;
@@ -4922,6 +5007,7 @@ const MainApp = ({ user, logout }) => {
             {showAddDebtModal && <AddDebtModal onClose={() => setShowAddDebtModal(false)} onSave={handleSaveNewDebt} debtNames={allDebtNames} accountOptions={debtAccountOptions} assetRecords={data.records} debts={data.debts} />}
 
             {showStatementModal && <StatementModal data={data} onClose={() => setShowStatementModal(false)} />}
+            {showHistoryModal && user && <HistoryModal uid={user.uid} onClose={() => setShowHistoryModal(false)} onPreviewRestore={handlePreviewHistoryRestore} />}
             {showFIREModal && <FIREModal fireStats={fireStats} yearlyStats={fireYearlyStats} onRateChange={handleFireRateChange} onClose={() => setShowFIREModal(false)} isPrivacyMode={isPrivacyMode} />}
             {showRangeStatsModal && <RangeStatsModal data={data} onClose={() => setShowRangeStatsModal(false)} />}
             {/* Global Loading Overlay */}
@@ -5341,6 +5427,13 @@ const MainApp = ({ user, logout }) => {
                                                 <span className="text-xs font-bold">Dropbox</span>
                                             </button>
                                         </div>
+                                    </div>
+
+                                    {/* Section 3: Cloud history */}
+                                    <div className="border border-slate-100 rounded-xl p-4 bg-slate-50/50">
+                                        <h4 className="text-sm font-bold text-slate-700 mb-2 flex items-center gap-2"><History size={14} /> 雲端歷史版本</h4>
+                                        <p className="text-xs text-slate-400 mb-3">每次存檔都會保留一份：最近 20 份，加上 30 天內每天最後一份。可以預覽差異後還原，或下載成備份檔。</p>
+                                        <button onClick={() => { setShowImportModal(false); setShowHistoryModal(true); }} className="w-full py-2.5 rounded-lg bg-white border border-slate-200 text-slate-600 font-bold text-sm hover:border-indigo-300 hover:text-indigo-700 transition-colors">查看歷史版本</button>
                                     </div>
                                 </div>
                             )}

@@ -19,13 +19,17 @@ web 與 iOS 讀寫同一份雲端資料，這份文件是兩邊共同遵守的�
 users/{uid}/meta/storage             指標文件：revision、generation、chunkCount、checksum、length、
                                      schemaVersion、minClientVersion
 users/{uid}/chunks/{generation}_{i}  資料塊：{ index, content, generation }
+users/{uid}/history/{generation}     歷史版本：generation、revision、chunkCount、checksum、length、
+                                     savedAt、deviceId、schemaVersion
 ```
 
 - 整份 App 資料序列化成 JSON 字串，每 250,000 字元切一塊。
 - **寫入**：先寫完新 generation 的所有資料塊，再用 transaction 確認 `revision` 沒變、切換指標並 `revision + 1`。中途斷線時指標仍指向舊 generation。
 - **讀取**：依指標讀出資料塊，檢查數量、長度與 checksum（cyrb53），不符就停止寫入。
 - **衝突**：雲端 `revision` 比本機新時，不覆蓋，讓使用者選擇載入雲端或覆蓋。
-- 權限與欄位限制見 `firebase/firestore.rules`。
+- **歷史版本**：切換指標後，上一份資料塊不刪除，新舊兩份都記在 `history`。保留最近 20 份，更早的在 30 天內每天保留最後一份，目前版本永遠保留；其餘連同資料塊一起刪除（core：`selectHistoryToPrune`）。歷史紀錄寫不進去（例如規則還沒部署）時，照舊刪除上一份，避免資料塊累積。
+- **還原**：讀出某個歷史版本的資料塊並驗證 checksum（core：`assembleHistoryVersion`），預覽差異後當成一次新的存檔寫入，所以還原也能再還原回來。
+- 權限與欄位限制見 `firebase/firestore.rules`。新增 `history` 後，**正式站要先部署規則**，否則歷史版本不會生效（存檔不受影響）。
 
 ## 資料內容
 
