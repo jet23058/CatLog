@@ -8,7 +8,7 @@ SwiftUI 原生版。畫面是 SwiftUI，計算邏輯在 JavaScriptCore 裡執行
 
 規則與 web 相同（時間定義在 `packages/core/src/appLock.js`）：
 
-- **Face ID 鎖定**：右上角帳號選單開啟。開啟時先驗證一次；之後 App 啟動時第一個畫面就是鎖定，切到背景超過 30 秒或閒置 5 分鐘會重新上鎖。Face ID 失敗可改輸入裝置密碼。鎖定時不建立任何資料畫面，多工切換畫面也會蓋上遮罩。
+- **Face ID 鎖定**：右上角帳號選單開啟。開啟時先驗證一次；之後 App 啟動時第一個畫面就是鎖定，切到背景超過 30 秒或閒置 5 分鐘會重新上鎖（短暫切到背景不會重算閒置時間），登出後也會重新上鎖。Face ID 失敗可改輸入裝置密碼。鎖定時不建立任何資料畫面，多工切換畫面也會蓋上遮罩。
 - **隱私模式**：右上角眼睛圖示，金額顯示為 `****`，比例照常顯示。
 - 兩個設定都只存在這台裝置，不同步到雲端。
 
@@ -70,9 +70,16 @@ Debug 建置以 `-CatLogDemo` 啟動會載入範例資料（Xcode：Scheme → R
 # CatLogKit：JavaScriptCore 橋接、雲端讀寫、與 web 共用的 fixture（直接在 Mac 上跑）
 swift test --package-path apps/ios/CatLogKit
 
-# App 建置
+# App 建置（CI 用；不簽章，只確認能編譯）
 xcodebuild build -project apps/ios/CatLog.xcodeproj -scheme CatLog \
   -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO
+```
+
+要裝進模擬器實際使用時，**不要**加 `CODE_SIGNING_ALLOWED=NO`：沒有簽章的 App 在模擬器無法使用鑰匙圈，Firebase 存不了登入狀態，每次開啟都要重新登入。改用本機簽章（不需要 Apple 開發者帳號）：
+
+```bash
+xcodebuild build -project apps/ios/CatLog.xcodeproj -scheme CatLog \
+  -destination 'platform=iOS Simulator,name=iPhone 17' CODE_SIGN_IDENTITY=-
 ```
 
 `CloudRepositoryTests` 直接讀取 `packages/core/fixtures/cloud-storage-v3.json`：這個檔案由 web 的 `writeCloudData` 實際寫出，iOS 測試必須讀出相同內容，確保兩邊讀寫格式一致。

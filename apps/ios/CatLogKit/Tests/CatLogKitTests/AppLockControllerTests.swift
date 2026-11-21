@@ -119,6 +119,44 @@ final class AppLockControllerTests: XCTestCase {
         XCTAssertTrue(lock.isLocked)
     }
 
+    func testShortBackgroundDoesNotExtendIdleDeadline() async {
+        defaults.set(true, forKey: AppLockController.enabledKey)
+        let lock = makeController()
+        auth.results = [true]
+        await lock.unlock()
+
+        clock += 4 * 60 + 50       // 閒置將近 5 分鐘
+        lock.didEnterBackground()
+        clock += 15                // 背景不到 30 秒
+        lock.willEnterForeground()
+        XCTAssertTrue(lock.isLocked, "閒置期限在背景期間已到，回來時要上鎖")
+    }
+
+    func testShortBackgroundKeepsRemainingIdleTime() async {
+        defaults.set(true, forKey: AppLockController.enabledKey)
+        let lock = makeController()
+        auth.results = [true]
+        await lock.unlock()
+
+        clock += 60
+        lock.didEnterBackground()
+        clock += 10
+        lock.willEnterForeground()
+        XCTAssertFalse(lock.isLocked)
+        clock += 3 * 60 + 50       // 合計閒置 5 分鐘，沒有因為切背景而重算
+        lock.checkIdle()
+        XCTAssertTrue(lock.isLocked)
+    }
+
+    func testLockNowRelocksForNextSignIn() async {
+        defaults.set(true, forKey: AppLockController.enabledKey)
+        let lock = makeController()
+        auth.results = [true]
+        await lock.unlock()
+        lock.lockNow()
+        XCTAssertTrue(lock.isLocked)
+    }
+
     func testDisableUnlocksAndForgets() {
         defaults.set(true, forKey: AppLockController.enabledKey)
         let lock = makeController()

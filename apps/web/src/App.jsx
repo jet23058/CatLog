@@ -64,6 +64,7 @@ import {
     getStockTradeTitle,
     getYearStats,
     getYearlyTrendData,
+    isIdleExpired,
     mergeDebtMaps,
     migrateData,
     normalizeAppData,
@@ -4233,19 +4234,27 @@ const MainApp = ({ user, logout }) => {
         if (!biometricEnabled) return undefined;
         let hiddenAt = null;
         let idleTimer = null;
+        let lastActivityAt = Date.now();
         const lock = () => setIsAppLocked(true);
-        const resetIdleTimer = () => {
+        const scheduleIdleLock = () => {
             clearTimeout(idleTimer);
-            idleTimer = setTimeout(lock, AUTO_LOCK_IDLE_MS);
+            const remaining = AUTO_LOCK_IDLE_MS - (Date.now() - lastActivityAt);
+            idleTimer = setTimeout(lock, Math.max(0, remaining));
+        };
+        const resetIdleTimer = () => {
+            lastActivityAt = Date.now();
+            scheduleIdleLock();
         };
         const handleVisibilityChange = () => {
             if (document.visibilityState === 'hidden') {
                 hiddenAt = Date.now();
                 return;
             }
-            if (shouldLockOnResume(hiddenAt, Date.now())) lock();
+            // 回到前景不重設閒置計時：背景超過 30 秒、或閒置期限已到，都要上鎖。
+            const now = Date.now();
+            if (shouldLockOnResume(hiddenAt, now) || isIdleExpired(lastActivityAt, now)) lock();
+            else scheduleIdleLock();
             hiddenAt = null;
-            resetIdleTimer();
         };
         const activityEvents = ['pointerdown', 'keydown', 'touchstart', 'scroll'];
         document.addEventListener('visibilitychange', handleVisibilityChange);

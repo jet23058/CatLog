@@ -123,13 +123,15 @@ public final class AppLockController: ObservableObject {
         backgroundedAt = now()
     }
 
+    /// 回到前景：背景超過 30 秒，或閒置期限在背景期間已經到了，都要上鎖。
+    /// 不重設閒置計時，否則短暫切到背景就能延長閒置時間。
     public func willEnterForeground() {
         defer { backgroundedAt = nil }
-        guard isEnabled, let backgroundedAt else { return }
-        if now().timeIntervalSince(backgroundedAt) >= policy.backgroundLockInterval {
+        guard isEnabled, !isLocked, let backgroundedAt else { return }
+        let current = now()
+        if current.timeIntervalSince(backgroundedAt) >= policy.backgroundLockInterval
+            || current.timeIntervalSince(lastActivityAt) >= policy.idleLockInterval {
             isLocked = true
-        } else {
-            lastActivityAt = now()
         }
     }
 
@@ -147,6 +149,7 @@ public final class AppLockController: ObservableObject {
         }
     }
 
+    /// 立即上鎖（例如登出時，確保下次登入要重新驗證）。
     public func lockNow() {
         guard isEnabled else { return }
         isLocked = true

@@ -39,6 +39,10 @@ public struct RootView: View {
         .tint(.teal)
         .background(ActivityTracker { lock.recordActivity() })
         .onReceive(idleTimer) { _ in lock.checkIdle() }
+        // 登出後重新上鎖，下次登入要再過一次 Face ID（與 web 相同）。
+        .onChange(of: model.phase) { _, phase in
+            if phase == .signedOut { lock.lockNow() }
+        }
         // 用系統的 App 生命週期通知判斷進出背景（scenePhase 只用來決定要不要蓋上多工畫面遮罩）。
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)) { _ in
             lock.didEnterBackground()
