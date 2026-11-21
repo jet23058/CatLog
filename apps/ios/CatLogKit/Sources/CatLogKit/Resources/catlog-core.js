@@ -56,6 +56,7 @@ var CatLogCore = (() => {
     detectDelimitedTextSeparator: () => detectDelimitedTextSeparator,
     extractBackupData: () => extractBackupData,
     filterTransactionsByRange: () => filterTransactionsByRange,
+    findDuplicateAsset: () => findDuplicateAsset,
     flattenDebtEvents: () => flattenDebtEvents,
     flattenDebts: () => flattenDebts,
     flattenIncomeSources: () => flattenIncomeSources,
@@ -2257,6 +2258,15 @@ var CatLogCore = (() => {
         [monthKey]: { ...existingMonthData, totalAmount: newTotal, sources: [...existingSources, newIncomeSource] }
       }
     };
+  };
+  var findDuplicateAsset = (records = {}, dateKey, entries = []) => {
+    const seen = new Set((records?.[dateKey] || []).map((asset) => `${asset.name}-${asset.currency || "TWD"}`));
+    for (const entry of entries) {
+      const key = `${(entry.name || "").trim()}-${entry.currency || "TWD"}`;
+      if (seen.has(key)) return `${(entry.name || "").trim()} (${entry.currency || "TWD"})`;
+      seen.add(key);
+    }
+    return null;
   };
   return __toCommonJS(src_exports);
 })();

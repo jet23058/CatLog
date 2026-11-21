@@ -42,9 +42,9 @@ private struct CurrencyAmountFields: View {
         Picker("幣別", selection: $currency) {
             ForEach(core.supportedCurrencies, id: \.self) { Text($0).tag($0) }
         }
-        .onChange(of: currency) { _, new in
-            exchangeRate = new == "TWD" ? "1" : (ExchangeRateMemory.rate(month: month, currency: new) ?? exchangeRate)
-        }
+        .onChange(of: currency) { _, _ in restoreRate() }
+        // 換到別的月份時，改用那個月份記住的匯率（與 web 相同）。
+        .onChange(of: month) { _, _ in restoreRate() }
         TextField(currency == "TWD" ? "金額" : "原幣金額（\(currency)）", text: $originalAmount)
             .keyboardType(.decimalPad)
         if currency != "TWD" {
@@ -66,6 +66,14 @@ private struct CurrencyAmountFields: View {
                 Text(core.formatMoney(core.convertToTWD(originalAmount: originalAmount, exchangeRate: exchangeRate, currency: currency)))
                     .monospacedDigit()
             }
+        }
+    }
+
+    private func restoreRate() {
+        if currency == "TWD" {
+            exchangeRate = "1"
+        } else if let remembered = ExchangeRateMemory.rate(month: month, currency: currency) {
+            exchangeRate = remembered
         }
     }
 
@@ -202,15 +210,17 @@ struct AddAssetSheet: View {
             errorMessage = "請填寫名稱與金額"
             return nil
         }
-        if (try? core.isDuplicateAsset(date: dateKey, pending: pending, name: cleanName, currency: currency)) == true {
-            errorMessage = "「\(cleanName) (\(currency))」在 \(dateKey) 已存在，請使用編輯功能。"
-            return nil
-        }
-        return try? core.createAssetEntry(
+        guard let draft = try? core.createAssetEntry(
             id: "asset-\(Int(Date().timeIntervalSince1970 * 1000))-\(pending.count)",
             type: type, name: cleanName, originalAmount: originalAmount,
             currency: currency, exchangeRate: exchangeRate, date: dateKey
-        )
+        ) else { return nil }
+        // 用實際要存的日期檢查：清單裡的項目可能是改日期前加的。
+        if let duplicate = try? core.findDuplicateAsset(dateKey: dateKey, entries: pending + [draft]) {
+            errorMessage = "「\(duplicate)」在 \(dateKey) 已存在，請使用編輯功能。"
+            return nil
+        }
+        return draft
     }
 
     private func addDraft() {
@@ -235,6 +245,10 @@ struct AddAssetSheet: View {
             entries.append(draft)
         }
         guard !entries.isEmpty else { errorMessage = "請先加入至少一筆資產"; return }
+        if let duplicate = try? core.findDuplicateAsset(dateKey: dateKey, entries: entries) {
+            errorMessage = "「\(duplicate)」在 \(dateKey) 重複，請刪除其中一筆或改用編輯功能。"
+            return
+        }
         switch await model.addAssets(entries, dateKey: dateKey) {
         case .saved, .conflict: dismiss()
         case .failed(let message): errorMessage = message

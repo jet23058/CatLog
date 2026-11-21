@@ -248,6 +248,33 @@ describe('App Integration Tests', () => {
         expect(setDoc).not.toHaveBeenCalled();
     });
 
+    test('retrying a failed income save does not count the income twice', async () => {
+        setDoc.mockRejectedValueOnce(new Error('network down'));
+        const user = userEvent.setup();
+        render(<App />);
+        await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
+
+        await user.click(document.querySelector('button.fixed.bottom-8.right-6'));
+        await user.click(await screen.findByText('新增收入'));
+        fireEvent.change(document.querySelector('input[type="date"]'), { target: { value: '2026-03-15' } });
+        await user.type(screen.getByPlaceholderText('例如：Google, 永豐銀行...'), 'Test Company');
+        await user.type(screen.getAllByPlaceholderText('0.00')[0], '5000');
+
+        await user.click(screen.getByText('確認新增'));
+        await waitFor(() => expect(screen.getByText('儲存失敗', { selector: 'h3' })).toBeInTheDocument());
+        expect(screen.queryByText('新增成功')).not.toBeInTheDocument();
+        await user.click(screen.getByText('知道了'));
+
+        // 視窗還開著，直接再送一次
+        await user.click(screen.getByText('確認新增'));
+        await waitFor(() => expect(screen.getByText('新增成功')).toBeInTheDocument());
+
+        const savedJson = setDoc.mock.calls.map(([, value]) => value.content).filter(Boolean).slice(-1)[0];
+        const march = JSON.parse(savedJson).incomes['2026-03'];
+        expect(march.sources).toHaveLength(1);
+        expect(march.totalAmount).toBe(5000);
+    });
+
     test('read-only mode does not apply or report unsaved income', async () => {
         getDocs.mockResolvedValue(createMockSnapshot({ schemaVersion: 99, records: {} }));
         const user = userEvent.setup();

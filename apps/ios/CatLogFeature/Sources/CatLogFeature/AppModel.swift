@@ -300,13 +300,24 @@ public final class AppModel: ObservableObject {
     }
 }
 
-/// Firebase 初始化。沒有 GoogleService-Info.plist 時不初始化，App 會顯示設定說明。
+/// Firebase 初始化：Debug 連測試站（GoogleService-Info-Debug.plist），Release 連正式站（-Release）。
+/// 找不到設定檔時不初始化，App 會顯示設定說明。
 public enum FirebaseBootstrap {
+    #if DEBUG
+    public static let configFileName = "GoogleService-Info-Debug"
+    #else
+    public static let configFileName = "GoogleService-Info-Release"
+    #endif
+
     public static func configure() {
         guard FirebaseApp.app() == nil,
-              Bundle.main.path(forResource: "GoogleService-Info", ofType: "plist") != nil else { return }
-        FirebaseApp.configure()
+              let path = Bundle.main.path(forResource: configFileName, ofType: "plist"),
+              let options = FirebaseOptions(contentsOfFile: path) else { return }
+        FirebaseApp.configure(options: options)
     }
+
+    /// 目前連線的 Firebase 專案（顯示在帳號選單，避免分不清測試站與正式站）。
+    public static var projectID: String? { FirebaseApp.app()?.options.projectID }
 
     public static var isConfigured: Bool { FirebaseApp.app() != nil }
 

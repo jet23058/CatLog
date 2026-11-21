@@ -44,6 +44,14 @@ final class RecordsTests: XCTestCase {
         XCTAssertNil(day[2]["date"])                          // 資產本身不存 date
     }
 
+    func testFindDuplicateUsesSaveDateNotStaleEntryDate() throws {
+        let stale = try core.createAssetEntry(id: "a", type: "fixed", name: "台新", originalAmount: "1", currency: "TWD", exchangeRate: "1", date: "2026-05-01")
+        // 清單項目的日期是 5/1，但要存到 1/31，當天已經有台新 TWD
+        XCTAssertEqual(try core.findDuplicateAsset(dateKey: "2026-01-31", entries: [stale]), "台新 (TWD)")
+        XCTAssertNil(try core.findDuplicateAsset(dateKey: "2026-06-01", entries: [stale]))
+        XCTAssertEqual(try core.findDuplicateAsset(dateKey: "2026-06-01", entries: [stale, stale]), "台新 (TWD)")
+    }
+
     func testAddIncome() throws {
         let entry = try core.createIncomeSource(date: "2026-03-05", company: "公司", bank: "台新", currency: "USD", originalAmount: "1000", exchangeRate: "32", memo: " 獎金 ")
         XCTAssertEqual(entry.amount, 32_000)

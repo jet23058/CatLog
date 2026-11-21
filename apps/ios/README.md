@@ -50,17 +50,26 @@ CI 會檢查這個檔案有沒有跟 core 同步。
 
 需要 Xcode 16 以上（以 Xcode 27.2 測試）。
 
-1. **在 Firebase 註冊 iOS App**：Firebase Console → 專案設定 → 新增應用程式 → iOS，Bundle ID 填 `Config/Base.xcconfig` 的 `CATLOG_BUNDLE_ID`（預設 `work.cloudjet.catlog`）。
-2. 下載 `GoogleService-Info.plist`，放到 `apps/ios/CatLog/`（已列入 `.gitignore`）。
+App 依建置設定連到不同的 Firebase 專案，開發時不會碰到正式資料：
+
+| 建置設定 | Firebase 專案 | 設定檔 |
+|---|---|---|
+| Debug（模擬器、Xcode 執行） | 測試站 `assets-e4a73` | `CatLog/GoogleService-Info-Debug.plist` |
+| Release（TestFlight、上架） | 正式站 `asset-prod` | `CatLog/GoogleService-Info-Release.plist` |
+
+每個建置設定只打包自己那一份（`Base.xcconfig` 的 `EXCLUDED_SOURCE_FILE_NAMES`）。App 帳號選單會顯示目前連的是「測試站」還是「正式站」。
+
+1. **在兩個 Firebase 專案都註冊 iOS App**：Firebase Console → 專案設定 → 新增應用程式 → iOS，Bundle ID 填 `Config/Base.xcconfig` 的 `CATLOG_BUNDLE_ID`（預設 `work.cloudjet.catlog`）。
+2. 下載兩份 `GoogleService-Info.plist`，分別改名成 `GoogleService-Info-Debug.plist`（測試站）與 `GoogleService-Info-Release.plist`（正式站），放到 `apps/ios/CatLog/`（已列入 `.gitignore`）。
 3. 複製設定範本並填入：
    ```bash
    cp apps/ios/Config/Local.xcconfig.example apps/ios/Config/Local.xcconfig
    ```
-   - `GOOGLE_REVERSED_CLIENT_ID`：`GoogleService-Info.plist` 裡的 `REVERSED_CLIENT_ID`（Google 登入回到 App 用）
+   - `GOOGLE_REVERSED_CLIENT_ID_Debug` / `_Release`：兩份設定檔各自的 `REVERSED_CLIENT_ID`（Google 登入回到 App 用）
    - `CATLOG_DEVELOPMENT_TEAM`：Apple Developer Team ID（實機執行與上架需要）
 4. 用 Xcode 開啟 `apps/ios/CatLog.xcodeproj`，選 `CatLog` scheme 執行。
 
-沒有 `GoogleService-Info.plist` 時 App 仍可執行，會顯示設定說明。
+沒有對應的設定檔時 App 仍可執行，會顯示設定說明。
 
 ### 不用 Firebase 檢查畫面
 

@@ -121,3 +121,15 @@ export const addIncomeToData = (data = {}, dateKey, newIncomeSource) => {
         }
     };
 };
+
+// 存檔前的最後檢查：這些資產全部寫到 dateKey 時，有沒有和當天既有資產、或彼此之間「名稱 + 幣別」重複。
+// 回傳第一個重複的「名稱 (幣別)」，沒有重複時回傳 null。待新增清單裡的日期可能已經過時（使用者改過日期），所以不看 entry.date。
+export const findDuplicateAsset = (records = {}, dateKey, entries = []) => {
+    const seen = new Set((records?.[dateKey] || []).map((asset) => `${asset.name}-${asset.currency || 'TWD'}`));
+    for (const entry of entries) {
+        const key = `${(entry.name || '').trim()}-${entry.currency || 'TWD'}`;
+        if (seen.has(key)) return `${(entry.name || '').trim()} (${entry.currency || 'TWD'})`;
+        seen.add(key);
+    }
+    return null;
+};

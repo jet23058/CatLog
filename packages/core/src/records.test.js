@@ -10,6 +10,7 @@ import {
     getImportablePreviousAssets,
     getLatestAssetByName,
     getPreviousAssetSnapshot,
+    findDuplicateAsset,
     isDuplicateAsset,
 } from './index.js';
 
@@ -41,6 +42,12 @@ describe('新增資產', () => {
         expect(isDuplicateAsset(records, '2026-02-28', [], ' 台新 ', 'TWD')).toBe(true);
         expect(isDuplicateAsset(records, '2026-02-28', [], '台新', 'JPY')).toBe(false);
         expect(isDuplicateAsset(records, '2026-03-01', [{ name: 'A', currency: 'TWD', date: '2026-03-01' }], 'A', 'TWD')).toBe(true);
+    });
+
+    it('存檔前檢查：與當天既有資產或彼此之間重複（不看清單裡過時的日期）', () => {
+        expect(findDuplicateAsset(records, '2026-02-28', [{ name: '台新', currency: 'TWD', date: '2026-01-01' }])).toBe('台新 (TWD)');
+        expect(findDuplicateAsset(records, '2026-03-31', [{ name: 'A', currency: 'USD' }, { name: 'A ', currency: 'USD' }])).toBe('A (USD)');
+        expect(findDuplicateAsset(records, '2026-03-31', [{ name: 'A', currency: 'USD' }, { name: 'A', currency: 'TWD' }])).toBeNull();
     });
 
     it('帶入上次資產時略過已存在的項目', () => {

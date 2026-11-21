@@ -19,6 +19,7 @@ import {
     describeIncompatibility,
     extractBackupData,
     filterTransactionsByRange,
+    findDuplicateAsset,
     formatExchangeRate,
     formatMoney,
     formatMoneyByMarket,
@@ -1510,6 +1511,9 @@ const AddAssetModal = ({ onClose, onSave, historyRecords, exchangeRateCache }) =
         if ((name || originalAmount || amount) && !draftAsset) return;
         const assetsToSave = draftAsset ? [...pendingAssets, draftAsset] : pendingAssets;
         if (assetsToSave.length === 0) return setErrorMsg("請先加入至少一筆資產");
+        // 清單裡的項目可能是改日期前加的，用實際要存的日期再檢查一次重複。
+        const duplicate = findDuplicateAsset(historyRecords, date, assetsToSave);
+        if (duplicate) return setErrorMsg(`「${duplicate}」在 ${date} 重複，請刪除其中一筆或改用編輯功能。`);
         onSave(assetsToSave, date);
     };
 
@@ -4287,6 +4291,7 @@ const MainApp = ({ user, logout }) => {
         setSyncState((prev) => ({ ...prev, status: 'saving', message: '' }));
         try {
             await writeFirestoreChunks(pendingData, { force: true });
+            setData(pendingData);
             setSyncState({ status: 'saved', lastSavedAt: Date.now(), message: '' });
             handleShowAlert("已覆蓋雲端", "已用這台裝置的資料覆蓋雲端版本。");
         } catch (error) {
@@ -4850,13 +4855,24 @@ const MainApp = ({ user, logout }) => {
         }
     };
 
+    // 新增視窗存檔失敗時，把畫面資料還原成新增前的狀態，視窗保持開著讓使用者重送。
+    // 否則再按一次會疊在「已經加過一次」的資料上，造成重複。重送由視窗負責，所以清掉上方的「重試」。
+    // （衝突時 syncConflict 仍保留這次的資料，使用者選「用這台覆蓋」時會寫入並更新畫面。）
+    const revertUnsavedAdd = (previousData) => {
+        setData(previousData);
+        lastFailedSaveRef.current = null;
+    };
+
     const handleSaveNewAsset = async (newAssets, dateKey) => {
         if (!ensureWritable()) return;
         const assetsToAdd = Array.isArray(newAssets) ? newAssets : [newAssets];
         const newData = addAssetsToData(data, dateKey, assetsToAdd);
         setData(newData);
         const didSave = await saveToFirestoreChunks(newData);
-        if (!didSave) return;
+        if (!didSave) {
+            revertUnsavedAdd(data);
+            return;
+        }
         handleShowAlert("新增成功", assetsToAdd.length === 1 ? `資產 ${assetsToAdd[0].name} 已新增到 ${dateKey}` : `已新增 ${assetsToAdd.length} 筆資產到 ${dateKey}`);
         setShowAddAssetModal(false);
         setShowAddModal(false);
@@ -4868,7 +4884,10 @@ const MainApp = ({ user, logout }) => {
         setData(newData);
         // 等存檔結果：失敗時 saveToFirestoreChunks 會自己顯示錯誤，不再同時顯示「新增成功」。
         const didSave = await saveToFirestoreChunks(newData);
-        if (!didSave) return;
+        if (!didSave) {
+            revertUnsavedAdd(data);
+            return;
+        }
         handleShowAlert("新增成功", `已新增一筆收入至 ${dateKey.substring(0, 7)}`);
         setShowAddIncomeModal(false);
         setShowAddModal(false);

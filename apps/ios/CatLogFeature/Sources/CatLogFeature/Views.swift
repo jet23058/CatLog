@@ -301,6 +301,9 @@ struct DashboardView: View {
                     Menu {
                         if let email = model.userEmail { Text(email) }
                         Text("版本 \(model.appVersion)")
+                        if let project = FirebaseBootstrap.projectID {
+                            Text(project == "asset-prod" ? "正式站" : "測試站（\(project)）")
+                        }
                         if lock.isEnabled {
                             Button("關閉 Face ID 鎖定", systemImage: "faceid") { lock.disable() }
                         } else {
@@ -453,7 +456,7 @@ struct SetupNeededView: View {
         ContentUnavailableView {
             Label("尚未設定 Firebase", systemImage: "gearshape.2")
         } description: {
-            Text("請依 apps/ios/README.md 把 GoogleService-Info.plist 放進 apps/ios/CatLog/，並在 Config/Local.xcconfig 設定 Bundle ID 與 GOOGLE_REVERSED_CLIENT_ID。")
+            Text("請依 apps/ios/README.md 把 GoogleService-Info-Debug.plist（測試站）與 -Release.plist（正式站）放進 apps/ios/CatLog/，並在 Config/Local.xcconfig 設定 GOOGLE_REVERSED_CLIENT_ID_Debug / _Release。")
         }
     }
 }

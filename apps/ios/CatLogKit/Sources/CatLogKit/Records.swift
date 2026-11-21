@@ -132,6 +132,12 @@ extension CatLogCore {
         return try AssetEntry.list(fromJSONArray: text)
     }
 
+    /// 這些資產全部寫到 dateKey 時，第一個重複的「名稱 (幣別)」；沒有重複時為 nil。
+    /// 清單裡的日期可能已經過時（使用者改過日期），所以只看實際要存的日期。
+    public func findDuplicateAsset(dateKey: String, entries: [AssetEntry]) throws -> String? {
+        try bridge.call("findDuplicateAsset", [.dataField("records"), .string(dateKey), .json(AssetEntry.jsonArray(entries))])
+    }
+
     /// 回傳加入資產後的完整資料 JSON（尚未寫入雲端）。
     public func addingAssets(_ entries: [AssetEntry], to dateKey: String) throws -> String {
         try bridge.callJSON("addAssetsToData", [.data, .string(dateKey), .json(AssetEntry.jsonArray(entries))])
