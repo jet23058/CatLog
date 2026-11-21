@@ -223,12 +223,12 @@ export const getStatementDefaultRange = (today) => {
 };
 
 // 對帳單畫面資料：帳戶清單、區間內的花費（新到舊，附顯示標題與穩定 key）與總金額。
-// key 用原始 id，沒有 id 的舊資料用日期與序號，讓勾選不會互相影響。
+// key 用原始 id，沒有 id 的舊資料用帳戶、日期與序號，換帳戶時勾選不會互相影響。
 export const getStatementView = (expenses = {}, account, startDate, endDate) => {
     const accounts = getExpenseAccounts(expenses);
     const selected = account && accounts.includes(account) ? account : (accounts[0] || '');
     const items = getStatementExpenses(expenses, selected, startDate, endDate).map((item, index) => ({
-        key: item.id != null ? String(item.id) : `${item.date}#${index}`,
+        key: item.id != null ? String(item.id) : `${selected}|${item.date}#${index}`,
         title: item.name || item.subCategory || item.category || '',
         date: item.date || '',
         category: item.category || '',

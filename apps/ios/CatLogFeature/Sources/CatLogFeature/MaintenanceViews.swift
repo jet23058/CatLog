@@ -71,6 +71,7 @@ struct StatementCheckView: View {
         .navigationTitle("對帳單核對")
         .navigationBarTitleDisplayMode(.inline)
         .task(id: "\(CatLogCore.todayKey(startDate))|\(CatLogCore.todayKey(endDate))|\(account)") { load() }
+        .onChange(of: account) { _, _ in checked = [] }
     }
 
     private func load() {

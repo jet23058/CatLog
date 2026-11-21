@@ -352,15 +352,18 @@ struct StocksView: View {
         let service = StockQuoteService(core: core)
         var next: [String: Double] = [:]
         var failures: [String] = []
+        var failedIds: [String] = []
         await withTaskGroup(of: (String, String, Double?).self) { group in
             for holding in holdings {
                 group.addTask { (holding.id, holding.name, try? await service.quote(market: holding.market, symbol: holding.querySymbol).price) }
             }
             for await (id, name, price) in group {
-                if let price { next[id] = price } else { failures.append(name) }
+                if let price { next[id] = price } else { failures.append(name); failedIds.append(id) }
             }
         }
+        // 這次抓不到的不沿用上次的價格，回到快照價（與提示文字一致）。
         quotes.merge(next) { _, new in new }
+        failedIds.forEach { quotes.removeValue(forKey: $0) }
         if !failures.isEmpty { quoteMessage = "有 \(failures.count) 檔無法抓取最新股價（\(failures.joined(separator: "、"))），仍保留快照價顯示。" }
         isFetchingQuotes = false
         loadEstimate()

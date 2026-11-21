@@ -1834,7 +1834,7 @@ var CatLogCore = (() => {
     const accounts = getExpenseAccounts(expenses);
     const selected = account && accounts.includes(account) ? account : accounts[0] || "";
     const items = getStatementExpenses(expenses, selected, startDate, endDate).map((item, index) => ({
-      key: item.id != null ? String(item.id) : `${item.date}#${index}`,
+      key: item.id != null ? String(item.id) : `${selected}|${item.date}#${index}`,
       title: item.name || item.subCategory || item.category || "",
       date: item.date || "",
       category: item.category || "",

@@ -109,3 +109,12 @@ extension CloudRepository {
                                 checksumMatches: checksumMatches, parseError: parseError, counts: counts)
     }
 }
+
+extension CatLogCore {
+    /// 資料的 schemaVersion 是否比這個 App 支援的還新（core: getSchemaVersion、CURRENT_SCHEMA_VERSION）。
+    public func isNewerSchema(dataJSON: String) throws -> Bool {
+        let version: Int = try bridge.call("getSchemaVersion", [.json(dataJSON)])
+        let current: Int = try bridge.constant("CURRENT_SCHEMA_VERSION", as: Int.self)
+        return version > current
+    }
+}

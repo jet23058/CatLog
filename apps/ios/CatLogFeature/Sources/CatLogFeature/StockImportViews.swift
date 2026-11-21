@@ -276,10 +276,12 @@ struct HoldingSnapshotSheet: View {
 
     @ViewBuilder private func previewSections(_ preview: HoldingSnapshotPreview) -> some View {
         Section {
-            HStack {
-                Text("目前市值").foregroundStyle(.secondary)
-                Spacer()
-                Text(isPrivacyMode ? "****" : core.formatMoney(preview.totalMarketValue, market: market)).bold().monospacedDigit()
+            ForEach(preview.totalsByMarket, id: \.market) { total in
+                HStack {
+                    Text("\(total.market == "US" ? "美股" : "台股")目前市值").foregroundStyle(.secondary)
+                    Spacer()
+                    Text(isPrivacyMode ? "****" : core.formatMoney(total.value, market: total.market)).bold().monospacedDigit()
+                }
             }
         } header: {
             Text("將新增 \(preview.month) 的新版本，共 \(preview.holdings.count) 檔")
@@ -307,7 +309,11 @@ struct HoldingSnapshotSheet: View {
         defer { fetchingRowId = nil }
         do {
             let quote = try await StockQuoteService(core: core).quote(market: row.market, symbol: row.name)
-            if let index = rows.firstIndex(where: { $0.id == row.id }) { rows[index].price = CatLogCore.plain(quote.price) }
+            // 抓價期間改了這列的代號或市場時不套用，避免把別檔股票的價格填進去。
+            if let index = rows.firstIndex(where: { $0.id == row.id }),
+               rows[index].name == row.name, rows[index].market == row.market {
+                rows[index].price = CatLogCore.plain(quote.price)
+            }
         } catch {
             errorMessage = error.localizedDescription
         }
