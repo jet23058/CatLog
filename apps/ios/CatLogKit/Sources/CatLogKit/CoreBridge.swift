@@ -20,6 +20,8 @@ public final class CoreBridge: @unchecked Sendable {
         indirect case object([String: Argument])
         /// 已載入資料的某個欄位，例如 `.dataField("records")`，不必把整份資料傳回 Swift。
         case dataField(String)
+        /// 在 JS 端組成陣列。
+        indirect case array([Argument])
     }
 
     private let context: JSContext
@@ -146,6 +148,12 @@ public final class CoreBridge: @unchecked Sendable {
         case .dataField(let key):
             guard let loadedData else { throw CoreBridgeError.dataNotLoaded }
             return loadedData.objectForKeyedSubscript(key) ?? JSValue(undefinedIn: context)
+        case .array(let items):
+            guard let array = JSValue(newArrayIn: context) else { throw CoreBridgeError.contextUnavailable }
+            for (index, item) in items.enumerated() {
+                array.setObject(try toJSValue(item), atIndexedSubscript: index)
+            }
+            return array
         case .object(let fields):
             guard let object = JSValue(newObjectIn: context) else { throw CoreBridgeError.contextUnavailable }
             for (key, value) in fields {

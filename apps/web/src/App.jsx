@@ -48,6 +48,7 @@ import {
     getFireStats,
     getFireYearlyStats,
     getHoldingSnapshots,
+    getImportablePreviousAssets,
     getJsonImportSummary,
     getLatestAssetByName,
     getLatestSnapshotEstimate,

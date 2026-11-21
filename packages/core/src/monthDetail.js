@@ -2,6 +2,7 @@
 // 從 App.jsx 的 DetailView 搬出，邏輯保持原樣；web 與 iOS 共用。
 import { getDebtEventImpact, getDebtTotal, getEffectiveDebtSnapshotAtDate, getMonthEndDateKey, getMonthlyDebtInterestEstimate } from './debts.js';
 import { getLatestSnapshotDate } from './snapshots.js';
+import { getDebtEventTargets } from './records.js';
 
 const sumAmounts = (items = []) => items.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
 
@@ -145,3 +146,6 @@ export const getMonthDetail = (data = {}, monthKey) => {
         summary: getMonthSummary({ assets, debts, incomes, expenses, prevTotalAssets, prevTotalDebts, prevMonthIncome }),
     };
 };
+
+// 某個月可以做「利率調整」的對象：該月月底有效的股票質押（web 用編輯中的負債清單算，iOS 用這個）。
+export const getMonthDebtEventTargets = (data = {}, monthKey) => getDebtEventTargets(getMonthDetail(data, monthKey).debts);

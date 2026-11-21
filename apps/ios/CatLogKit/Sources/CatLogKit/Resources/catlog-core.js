@@ -36,6 +36,8 @@ var CatLogCore = (() => {
     SUPPORTED_CURRENCIES: () => SUPPORTED_CURRENCIES,
     addAssetsToData: () => addAssetsToData,
     addDebtAndCarryForward: () => addDebtAndCarryForward,
+    addDebtEventToData: () => addDebtEventToData,
+    addDebtToData: () => addDebtToData,
     addDebtToSnapshot: () => addDebtToSnapshot,
     addIncomeToData: () => addIncomeToData,
     areDataStructuresEqual: () => areDataStructuresEqual,
@@ -45,10 +47,13 @@ var CatLogCore = (() => {
     buildMetaVersionFields: () => buildMetaVersionFields,
     buildStockRows: () => buildStockRows,
     checkCompatibility: () => checkCompatibility,
+    cleanPledgeStockRows: () => cleanPledgeStockRows,
     compareVersions: () => compareVersions,
     convertToTWD: () => convertToTWD,
     createAssetEntry: () => createAssetEntry,
     createBackupFile: () => createBackupFile,
+    createDebtEntry: () => createDebtEntry,
+    createDebtEvent: () => createDebtEvent,
     createHoldingRow: () => createHoldingRow,
     createIncomeSource: () => createIncomeSource,
     describeIncompatibility: () => describeIncompatibility,
@@ -76,17 +81,22 @@ var CatLogCore = (() => {
     getAssetRecordDatesInYear: () => getAssetRecordDatesInYear,
     getAvailableYears: () => getAvailableYears,
     getDataMonths: () => getDataMonths,
+    getDebtAccountOptions: () => getDebtAccountOptions,
     getDebtCategoryLabel: () => getDebtCategoryLabel,
     getDebtEffectiveDate: () => getDebtEffectiveDate,
     getDebtEstimatedAnnualInterest: () => getDebtEstimatedAnnualInterest,
     getDebtEstimatedMonthlyInterest: () => getDebtEstimatedMonthlyInterest,
+    getDebtEventDefaultDate: () => getDebtEventDefaultDate,
     getDebtEventFullKey: () => getDebtEventFullKey,
     getDebtEventIdentityKey: () => getDebtEventIdentityKey,
     getDebtEventImpact: () => getDebtEventImpact,
+    getDebtEventInputError: () => getDebtEventInputError,
     getDebtEventLabel: () => getDebtEventLabel,
+    getDebtEventTargets: () => getDebtEventTargets,
     getDebtFullKey: () => getDebtFullKey,
     getDebtIdentity: () => getDebtIdentity,
     getDebtIdentityKey: () => getDebtIdentityKey,
+    getDebtInputError: () => getDebtInputError,
     getDebtMarketAllocation: () => getDebtMarketAllocation,
     getDebtTargetKey: () => getDebtTargetKey,
     getDebtTotal: () => getDebtTotal,
@@ -114,6 +124,7 @@ var CatLogCore = (() => {
     getMarketSnapshots: () => getMarketSnapshots,
     getMemoFullKey: () => getMemoFullKey,
     getMemoIdentityKey: () => getMemoIdentityKey,
+    getMonthDebtEventTargets: () => getMonthDebtEventTargets,
     getMonthDetail: () => getMonthDetail,
     getMonthEndDateKey: () => getMonthEndDateKey,
     getMonthSummary: () => getMonthSummary,
@@ -180,6 +191,7 @@ var CatLogCore = (() => {
     normalizeUSDate: () => normalizeUSDate,
     parseAmount: () => parseAmount,
     parseCSV: () => parseCSV,
+    parseCollateralText: () => parseCollateralText,
     parseLegacyChunks: () => parseLegacyChunks,
     processArchivedUSRealizedCSVRows: () => processArchivedUSRealizedCSVRows,
     processExpenseCSVText: () => processExpenseCSVText,
@@ -2056,6 +2068,217 @@ var CatLogCore = (() => {
   var isIdleExpired = (lastActivityAt, now) => lastActivityAt !== null && lastActivityAt !== void 0 && now - lastActivityAt >= AUTO_LOCK_IDLE_MS;
   var maskAmount = (text, isPrivacyMode) => isPrivacyMode ? PRIVACY_MASK : text;
 
+  // src/records.js
+  var SUPPORTED_CURRENCIES = Object.keys(DEFAULT_EXCHANGE_RATES);
+  var convertToTWD = (originalAmount, exchangeRate, currency = "TWD") => {
+    if (currency === "TWD") return Number(originalAmount) || 0;
+    const value = parseFloat(originalAmount) * parseFloat(exchangeRate);
+    return Number.isFinite(value) ? Number(value.toFixed(0)) : 0;
+  };
+  var getAssetNameOptions = (records = {}) => {
+    const map = /* @__PURE__ */ new Map();
+    Object.keys(records || {}).sort().forEach((date) => {
+      (records[date] || []).forEach((r) => map.set(r.name, r.type));
+    });
+    return Array.from(map.entries()).map(([name, type]) => ({ name, type }));
+  };
+  var getLatestAssetByName = (records = {}, name) => {
+    const dates = Object.keys(records || {}).sort().reverse();
+    for (const d of dates) {
+      const record = (records[d] || []).find((r) => r.name === name);
+      if (record) return record;
+    }
+    return null;
+  };
+  var getPreviousAssetSnapshot = (records = {}, date) => {
+    if (!date) return { date: null, assets: [] };
+    const currentTimestamp = new Date(date).getTime();
+    const dates = Object.keys(records || {}).filter((d) => new Date(d).getTime() < currentTimestamp && (records[d] || []).length > 0).sort((a, b) => new Date(b) - new Date(a));
+    if (dates.length === 0) return { date: null, assets: [] };
+    return { date: dates[0], assets: records[dates[0]] || [] };
+  };
+  var isDuplicateAsset = (records = {}, date, pending = [], name, currency) => {
+    const cleanName = (name || "").trim();
+    const assetsInDate = records?.[date] || [];
+    const pendingInDate = pending.filter((asset) => asset.date === date);
+    return [...assetsInDate, ...pendingInDate].some((asset) => asset.name === cleanName && asset.currency === currency);
+  };
+  var createAssetEntry = ({ id, type = "fixed", name, originalAmount, currency = "TWD", exchangeRate = 1, date }) => {
+    const amount = convertToTWD(originalAmount, exchangeRate, currency);
+    return {
+      id,
+      type,
+      name: (name || "").trim(),
+      amount,
+      currency,
+      originalAmount: Number(originalAmount) || amount,
+      exchangeRate: Number(exchangeRate),
+      date
+    };
+  };
+  var getImportablePreviousAssets = (records = {}, date, pending = [], idPrefix = "asset-import") => {
+    const snapshot = getPreviousAssetSnapshot(records, date);
+    const assetsInDate = records?.[date] || [];
+    const existingKeys = new Set([...assetsInDate, ...pending].map((asset) => `${asset.name}-${asset.currency || "TWD"}`));
+    return snapshot.assets.filter((asset) => !existingKeys.has(`${asset.name}-${asset.currency || "TWD"}`)).map((asset, index) => ({
+      ...asset,
+      id: `${idPrefix}-${index}`,
+      date,
+      amount: Number(asset.amount) || 0,
+      originalAmount: Number(asset.originalAmount) || Number(asset.amount) || 0,
+      exchangeRate: Number(asset.exchangeRate) || 1
+    }));
+  };
+  var addAssetsToData = (data = {}, dateKey, newAssets) => {
+    const assetsToAdd = (Array.isArray(newAssets) ? newAssets : [newAssets]).map(({ date, ...asset }) => asset);
+    const existing = data.records?.[dateKey] || [];
+    return {
+      ...data,
+      records: { ...data.records || {}, [dateKey]: [...existing, ...assetsToAdd] }
+    };
+  };
+  var createIncomeSource = ({ date, company, bank = "", currency = "TWD", originalAmount, exchangeRate = 1, memo = "" }) => {
+    const amount = convertToTWD(originalAmount, exchangeRate, currency);
+    return {
+      date,
+      company,
+      bank,
+      currency,
+      originalAmount: Number(originalAmount) || amount,
+      exchangeRate: Number(exchangeRate),
+      amount,
+      memo: (memo || "").trim()
+    };
+  };
+  var addIncomeToData = (data = {}, dateKey, newIncomeSource) => {
+    const monthKey = dateKey.substring(0, 7);
+    const existingMonthData = data.incomes?.[monthKey] || { totalAmount: 0, sources: [] };
+    const existingSources = existingMonthData.sources || [];
+    const newTotal = (existingMonthData.totalAmount || 0) + newIncomeSource.amount;
+    return {
+      ...data,
+      incomes: {
+        ...data.incomes || {},
+        [monthKey]: { ...existingMonthData, totalAmount: newTotal, sources: [...existingSources, newIncomeSource] }
+      }
+    };
+  };
+  var findDuplicateAsset = (records = {}, dateKey, entries = []) => {
+    const seen = new Set((records?.[dateKey] || []).map((asset) => `${asset.name}-${asset.currency || "TWD"}`));
+    for (const entry of entries) {
+      const key = `${(entry.name || "").trim()}-${entry.currency || "TWD"}`;
+      if (seen.has(key)) return `${(entry.name || "").trim()} (${entry.currency || "TWD"})`;
+      seen.add(key);
+    }
+    return null;
+  };
+  var getDebtAccountOptions = (records = {}, debts = {}, date, extraOptions = []) => {
+    const options = [];
+    const seen = /* @__PURE__ */ new Set();
+    const addOption = (value) => {
+      const cleanValue = String(value || "").trim();
+      if (!cleanValue || seen.has(cleanValue)) return;
+      seen.add(cleanValue);
+      options.push(cleanValue);
+    };
+    const addAssetOptions = (assets = []) => {
+      (assets || []).forEach((asset) => {
+        addOption(asset.account);
+        addOption(asset.broker);
+        addOption(asset.bank);
+        addOption(asset.lender);
+        if (!asset.account && !asset.broker && !asset.bank && !asset.lender) addOption(asset.name);
+      });
+    };
+    const targetDate = new Date(date);
+    const recordEntries = Object.entries(records || {}).filter(([dateStr]) => new Date(dateStr) <= targetDate).sort(([a], [b]) => new Date(b) - new Date(a));
+    const sameMonthEntry = recordEntries.find(([dateStr]) => dateStr.substring(0, 7) === String(date).substring(0, 7));
+    if (sameMonthEntry) addAssetOptions(sameMonthEntry[1]);
+    if (recordEntries[0] && recordEntries[0] !== sameMonthEntry) addAssetOptions(recordEntries[0][1]);
+    Object.values(debts || {}).forEach((items) => (items || []).forEach((debt) => addOption(debt.lender)));
+    extraOptions.forEach(addOption);
+    return options;
+  };
+  var cleanPledgeStockRows = (rows = []) => rows.map((row) => ({ symbol: String(row.symbol || "").trim(), shares: Math.trunc(Number(row.shares)) || 0, rate: Number(row.rate) || 0 })).filter((row) => row.symbol);
+  var getDebtInputError = ({ date, name, amount, category, pledgeStocks = [] }) => {
+    if (!date) return "\u8ACB\u9078\u64C7\u65E5\u671F";
+    if (!String(name || "").trim()) return "\u8ACB\u8F38\u5165\u8CA0\u50B5\u540D\u7A31";
+    if (!amount || Number(amount) <= 0) return "\u8ACB\u8F38\u5165\u6709\u6548\u91D1\u984D";
+    if (category === "stock_pledge" && cleanPledgeStockRows(pledgeStocks).length === 0) return "\u8ACB\u81F3\u5C11\u8F38\u5165\u4E00\u7B46\u8CEA\u62BC\u80A1\u7968";
+    return null;
+  };
+  var createDebtEntry = ({ id, category = "other", name, lender = "", amount, pledgeStocks = [], memo = "" }) => ({
+    id,
+    category,
+    name: String(name || "").trim(),
+    lender: String(lender || "").trim(),
+    amount: Number(amount),
+    pledgeStocks: category === "stock_pledge" ? cleanPledgeStockRows(pledgeStocks) : [],
+    memo: String(memo || "").trim()
+  });
+  var addDebtToData = (localData = {}, cloudData = null, dateKey, newDebt) => {
+    const mergedDebts = mergeDebtMaps(cloudData?.debts, localData.debts);
+    const baseData = cloudData ? { ...localData, ...cloudData, debts: mergedDebts } : { ...localData, debts: mergedDebts };
+    return { ...baseData, debts: addDebtAndCarryForward(mergedDebts, dateKey, newDebt) };
+  };
+  var pad22 = (n) => String(n).padStart(2, "0");
+  var getDebtEventDefaultDate = (monthKey, today) => {
+    if (String(today).startsWith(monthKey)) return today;
+    const [year, month] = monthKey.split("-").map(Number);
+    return `${monthKey}-${pad22(new Date(year, month, 0).getDate())}`;
+  };
+  var parseCollateralText = (text = "") => String(text).split(",").map((part) => part.trim()).filter(Boolean).map((part) => {
+    const [symbol, shares] = part.split(/[:xX* ]+/).filter(Boolean);
+    return { symbol: symbol || part, shares: Number(shares) || 0 };
+  });
+  var getDebtEventTargets = (debts = []) => (debts || []).filter((item) => item.category === "stock_pledge").map((item) => ({ ...item, targetKey: getDebtTargetKey(item) }));
+  var getDebtEventInputError = ({ monthKey, date, type, name, amount, rateRows = [], target = null }) => {
+    if (!date || !String(date).startsWith(monthKey)) return "\u65E5\u671F\u9700\u5728\u76EE\u524D\u6708\u4EFD\u5167";
+    if (!String(name || "").trim() && type !== "rate_change") return "\u8ACB\u8F38\u5165\u8CA0\u50B5\u540D\u7A31";
+    if (type === "rate_change") {
+      if (!target) return "\u8ACB\u5148\u9078\u64C7\u8981\u8ABF\u6574\u5229\u7387\u7684\u80A1\u7968\u8CEA\u62BC";
+      if (cleanPledgeStockRows(rateRows).filter((row) => row.rate > 0).length === 0) return "\u8ACB\u81F3\u5C11\u8F38\u5165\u4E00\u7B46\u65B0\u7684\u5229\u7387\u8CC7\u6599";
+      return null;
+    }
+    if (type !== "collateral" && (!amount || Number(amount) <= 0)) return "\u8ACB\u8F38\u5165\u6709\u6548\u91D1\u984D";
+    return null;
+  };
+  var createDebtEvent = ({ id, date, type, name = "", lender = "", amount, collateralText = "", rateRows = [], target = null, memo = "" }) => {
+    if (type === "rate_change") {
+      return {
+        id,
+        date,
+        type,
+        name: target?.name || String(name).trim(),
+        lender: target?.lender || String(lender).trim(),
+        category: target?.category || "stock_pledge",
+        targetDebtId: target?.id || "",
+        targetDebtKey: target?.targetKey,
+        amount: 0,
+        collateral: [],
+        pledgeStocks: cleanPledgeStockRows(rateRows).filter((row) => row.rate > 0),
+        memo: String(memo).trim()
+      };
+    }
+    return {
+      id,
+      date,
+      type,
+      name: String(name).trim(),
+      lender: String(lender).trim(),
+      amount: type === "collateral" ? 0 : Number(amount),
+      collateral: parseCollateralText(collateralText),
+      memo: String(memo).trim()
+    };
+  };
+  var addDebtEventToData = (data = {}, month, event) => ({
+    ...data,
+    debtEvents: {
+      ...data.debtEvents || {},
+      [month]: [...data.debtEvents?.[month] || [], event]
+    }
+  });
+
   // src/monthDetail.js
   var sumAmounts2 = (items = []) => items.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
   var getLatestDateInMonth = (records = {}, month) => Object.keys(records || {}).filter((date) => date.startsWith(month)).sort().pop() || null;
@@ -2163,110 +2386,6 @@ var CatLogCore = (() => {
       summary: getMonthSummary({ assets, debts, incomes, expenses, prevTotalAssets, prevTotalDebts, prevMonthIncome })
     };
   };
-
-  // src/records.js
-  var SUPPORTED_CURRENCIES = Object.keys(DEFAULT_EXCHANGE_RATES);
-  var convertToTWD = (originalAmount, exchangeRate, currency = "TWD") => {
-    if (currency === "TWD") return Number(originalAmount) || 0;
-    const value = parseFloat(originalAmount) * parseFloat(exchangeRate);
-    return Number.isFinite(value) ? Number(value.toFixed(0)) : 0;
-  };
-  var getAssetNameOptions = (records = {}) => {
-    const map = /* @__PURE__ */ new Map();
-    Object.keys(records || {}).sort().forEach((date) => {
-      (records[date] || []).forEach((r) => map.set(r.name, r.type));
-    });
-    return Array.from(map.entries()).map(([name, type]) => ({ name, type }));
-  };
-  var getLatestAssetByName = (records = {}, name) => {
-    const dates = Object.keys(records || {}).sort().reverse();
-    for (const d of dates) {
-      const record = (records[d] || []).find((r) => r.name === name);
-      if (record) return record;
-    }
-    return null;
-  };
-  var getPreviousAssetSnapshot = (records = {}, date) => {
-    if (!date) return { date: null, assets: [] };
-    const currentTimestamp = new Date(date).getTime();
-    const dates = Object.keys(records || {}).filter((d) => new Date(d).getTime() < currentTimestamp && (records[d] || []).length > 0).sort((a, b) => new Date(b) - new Date(a));
-    if (dates.length === 0) return { date: null, assets: [] };
-    return { date: dates[0], assets: records[dates[0]] || [] };
-  };
-  var isDuplicateAsset = (records = {}, date, pending = [], name, currency) => {
-    const cleanName = (name || "").trim();
-    const assetsInDate = records?.[date] || [];
-    const pendingInDate = pending.filter((asset) => asset.date === date);
-    return [...assetsInDate, ...pendingInDate].some((asset) => asset.name === cleanName && asset.currency === currency);
-  };
-  var createAssetEntry = ({ id, type = "fixed", name, originalAmount, currency = "TWD", exchangeRate = 1, date }) => {
-    const amount = convertToTWD(originalAmount, exchangeRate, currency);
-    return {
-      id,
-      type,
-      name: (name || "").trim(),
-      amount,
-      currency,
-      originalAmount: Number(originalAmount) || amount,
-      exchangeRate: Number(exchangeRate),
-      date
-    };
-  };
-  var getImportablePreviousAssets = (records = {}, date, pending = [], idPrefix = "asset-import") => {
-    const snapshot = getPreviousAssetSnapshot(records, date);
-    const assetsInDate = records?.[date] || [];
-    const existingKeys = new Set([...assetsInDate, ...pending].map((asset) => `${asset.name}-${asset.currency || "TWD"}`));
-    return snapshot.assets.filter((asset) => !existingKeys.has(`${asset.name}-${asset.currency || "TWD"}`)).map((asset, index) => ({
-      ...asset,
-      id: `${idPrefix}-${index}`,
-      date,
-      amount: Number(asset.amount) || 0,
-      originalAmount: Number(asset.originalAmount) || Number(asset.amount) || 0,
-      exchangeRate: Number(asset.exchangeRate) || 1
-    }));
-  };
-  var addAssetsToData = (data = {}, dateKey, newAssets) => {
-    const assetsToAdd = (Array.isArray(newAssets) ? newAssets : [newAssets]).map(({ date, ...asset }) => asset);
-    const existing = data.records?.[dateKey] || [];
-    return {
-      ...data,
-      records: { ...data.records || {}, [dateKey]: [...existing, ...assetsToAdd] }
-    };
-  };
-  var createIncomeSource = ({ date, company, bank = "", currency = "TWD", originalAmount, exchangeRate = 1, memo = "" }) => {
-    const amount = convertToTWD(originalAmount, exchangeRate, currency);
-    return {
-      date,
-      company,
-      bank,
-      currency,
-      originalAmount: Number(originalAmount) || amount,
-      exchangeRate: Number(exchangeRate),
-      amount,
-      memo: (memo || "").trim()
-    };
-  };
-  var addIncomeToData = (data = {}, dateKey, newIncomeSource) => {
-    const monthKey = dateKey.substring(0, 7);
-    const existingMonthData = data.incomes?.[monthKey] || { totalAmount: 0, sources: [] };
-    const existingSources = existingMonthData.sources || [];
-    const newTotal = (existingMonthData.totalAmount || 0) + newIncomeSource.amount;
-    return {
-      ...data,
-      incomes: {
-        ...data.incomes || {},
-        [monthKey]: { ...existingMonthData, totalAmount: newTotal, sources: [...existingSources, newIncomeSource] }
-      }
-    };
-  };
-  var findDuplicateAsset = (records = {}, dateKey, entries = []) => {
-    const seen = new Set((records?.[dateKey] || []).map((asset) => `${asset.name}-${asset.currency || "TWD"}`));
-    for (const entry of entries) {
-      const key = `${(entry.name || "").trim()}-${entry.currency || "TWD"}`;
-      if (seen.has(key)) return `${(entry.name || "").trim()} (${entry.currency || "TWD"})`;
-      seen.add(key);
-    }
-    return null;
-  };
+  var getMonthDebtEventTargets = (data = {}, monthKey) => getDebtEventTargets(getMonthDetail(data, monthKey).debts);
   return __toCommonJS(src_exports);
 })();
