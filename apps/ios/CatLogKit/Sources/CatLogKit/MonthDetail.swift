@@ -52,6 +52,7 @@ public struct DebtItem: Decodable, Equatable, Sendable {
 }
 
 public struct DebtEvent: Decodable, Equatable, Sendable {
+    public let id: RecordID?
     public let date: String?
     public let type: String?
     public let name: String?

@@ -6,6 +6,17 @@ struct MonthDetailView: View {
     @ObservedObject var model: AppModel
     let core: CatLogCore
     @State var monthKey: String
+    @State private var showEdit: Bool = {
+        #if DEBUG
+        // 開發用：`-CatLogDemoMonth YYYY-MM -CatLogDemoSheet edit` 直接打開編輯。
+        let args = ProcessInfo.processInfo.arguments
+        if let index = args.firstIndex(of: "-CatLogDemoSheet"), index + 1 < args.count { return args[index + 1] == "edit" }
+        #endif
+        return false
+    }()
+    @State private var pendingDeleteEvent: DebtEvent?
+    @State private var actionError: String?
+    @Environment(\.dismiss) private var dismissView
     @State private var showAddDebtEvent: Bool = {
         #if DEBUG
         // 開發用：`-CatLogDemoMonth YYYY-MM -CatLogDemoSheet debtEvent` 直接打開新增負債異動。
@@ -44,6 +55,8 @@ struct MonthDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
+                Button("編輯") { showEdit = true }
+                    .disabled(!model.compatibility.canWrite)
                 Button { showAddDebtEvent = true } label: { Image(systemName: "plus") }
                     .disabled(!model.compatibility.canWrite)
                     .accessibilityLabel("新增負債異動")
@@ -56,6 +69,23 @@ struct MonthDetailView: View {
             }
         }
         .task(id: "\(monthKey)#\(model.dataVersion)") { load() }
+        .sheet(isPresented: $showEdit) {
+            EditMonthSheet(model: model, core: core, monthKey: monthKey) { dismissView() }
+        }
+        .confirmationDialog("刪除這筆負債異動？", isPresented: Binding(get: { pendingDeleteEvent != nil }, set: { if !$0 { pendingDeleteEvent = nil } }), titleVisibility: .visible) {
+            Button("刪除", role: .destructive) {
+                guard let id = pendingDeleteEvent?.id else { return }
+                pendingDeleteEvent = nil
+                Task {
+                    if case .failed(let message) = await model.deleteDebtEvent(month: monthKey, id: id) { actionError = message }
+                }
+            }
+        }
+        .alert("刪除失敗", isPresented: Binding(get: { actionError != nil }, set: { if !$0 { actionError = nil } })) {
+            Button("好") { actionError = nil }
+        } message: {
+            Text(actionError ?? "")
+        }
         .sheet(isPresented: $showAddDebtEvent) {
             AddDebtEventSheet(model: model, core: core, monthKey: monthKey)
         }
@@ -152,6 +182,11 @@ struct MonthDetailView: View {
                         Text(money(event.amount)).monospacedDigit()
                     } else {
                         Text("依新利率重算").font(.caption).foregroundStyle(.orange)
+                    }
+                }
+                .swipeActions {
+                    if event.id != nil && model.compatibility.canWrite {
+                        Button("刪除", role: .destructive) { pendingDeleteEvent = event }
                     }
                 }
             }

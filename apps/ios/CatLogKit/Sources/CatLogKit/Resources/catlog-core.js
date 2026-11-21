@@ -56,6 +56,8 @@ var CatLogCore = (() => {
     createDebtEvent: () => createDebtEvent,
     createHoldingRow: () => createHoldingRow,
     createIncomeSource: () => createIncomeSource,
+    deleteDebtEventFromData: () => deleteDebtEventFromData,
+    deleteMonthData: () => deleteMonthData,
     describeIncompatibility: () => describeIncompatibility,
     describeStockTrades: () => describeStockTrades,
     detectDelimitedTextSeparator: () => detectDelimitedTextSeparator,
@@ -201,7 +203,9 @@ var CatLogCore = (() => {
     processUSBrokerTransactionPastedRows: () => processUSBrokerTransactionPastedRows,
     processUSBrokerTransactionRows: () => processUSBrokerTransactionRows,
     shouldLockOnResume: () => shouldLockOnResume,
-    splitIntoChunks: () => splitIntoChunks
+    splitIntoChunks: () => splitIntoChunks,
+    updateIncomeSourceField: () => updateIncomeSourceField,
+    updateMonthDetails: () => updateMonthDetails
   });
 
   // src/schema.js
@@ -2276,6 +2280,62 @@ var CatLogCore = (() => {
     debtEvents: {
       ...data.debtEvents || {},
       [month]: [...data.debtEvents?.[month] || [], event]
+    }
+  });
+  var toNumber = (value) => Number(value) || 0;
+  var updateIncomeSourceField = (source = {}, field, value) => {
+    const updated = { ...source, [field]: value };
+    if (field === "originalAmount" || field === "exchangeRate" || field === "currency") {
+      if (field === "currency" && value === "TWD") {
+        updated.exchangeRate = 1;
+        updated.amount = toNumber(updated.originalAmount);
+      } else {
+        const rate = field === "exchangeRate" ? value : updated.exchangeRate;
+        const orig = field === "originalAmount" ? value : updated.originalAmount;
+        updated.amount = Number((Number(orig) * Number(rate)).toFixed(0)) || 0;
+      }
+    }
+    return updated;
+  };
+  var updateMonthDetails = (data = {}, { month, assetDate, debtDate, memoDate, assets = [], memo = "", incomes = [], debts = [] }) => {
+    const cleanAssets = assets.map(({ _tempId, ...asset }) => ({ ...asset, amount: toNumber(asset.amount) }));
+    const cleanIncomes = incomes.map(({ _tempId, ...source }) => ({
+      ...source,
+      amount: toNumber(source.amount),
+      ...source.originalAmount !== void 0 ? { originalAmount: toNumber(source.originalAmount) } : {},
+      ...source.exchangeRate !== void 0 ? { exchangeRate: toNumber(source.exchangeRate) } : {}
+    }));
+    const cleanDebts = debts.map(({ _tempId, ...debt }) => ({ ...debt, amount: toNumber(debt.amount) }));
+    const newTotal = cleanIncomes.reduce((sum, item) => sum + item.amount, 0);
+    const existingIncomeMonth = data.incomes?.[month] || {};
+    return {
+      ...data,
+      records: { ...data.records || {}, [assetDate]: cleanAssets },
+      memos: { ...data.memos || {}, [memoDate]: memo },
+      debts: { ...data.debts || {}, [debtDate]: cleanDebts },
+      incomes: {
+        ...data.incomes || {},
+        [month]: { ...existingIncomeMonth, totalAmount: newTotal, sources: cleanIncomes }
+      }
+    };
+  };
+  var deleteMonthData = (data = {}, monthKey) => {
+    const withoutMonth = (map = {}) => Object.fromEntries(Object.entries(map || {}).filter(([date]) => !date.startsWith(monthKey)));
+    const debtEvents = { ...data.debtEvents || {} };
+    delete debtEvents[monthKey];
+    return {
+      ...data,
+      records: withoutMonth(data.records),
+      memos: withoutMonth(data.memos),
+      debts: withoutMonth(data.debts),
+      ...data.debtEvents ? { debtEvents } : {}
+    };
+  };
+  var deleteDebtEventFromData = (data = {}, month, id) => ({
+    ...data,
+    debtEvents: {
+      ...data.debtEvents || {},
+      [month]: (data.debtEvents?.[month] || []).filter((item) => item.id !== id)
     }
   });
 

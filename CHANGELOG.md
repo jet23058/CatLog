@@ -68,6 +68,12 @@
 - [iOS] 數字欄位（金額、匯率、利率、股數）過濾非數字字元：實體鍵盤或注音輸入法會打出「ㄅ」等字元；全形數字自動轉半形，股數只接受整數，資產原幣金額最多兩位小數。
 - [iOS] 月份明細右上角新增負債異動：借款增加、還本金、利息、手續費、只記擔保品、利率調整（帶入目前質押股票與利率）。
 
+- [core] 月份明細的編輯與刪除搬到 `records.js`：`updateMonthDetails`、`updateIncomeSourceField`、`deleteMonthData`、`deleteDebtEventFromData`，web 改為呼叫 core。
+- [web] 編輯月份明細存檔時，金額改存成數字（原本輸入框的文字 "1234" 會原樣存進資料）。
+- [web] 刪除整月不再直接改動原本的資料物件（原本會在存檔前就把記憶體裡的舊資料刪掉）。
+- [iOS] 月份明細「編輯」：修改或刪除當月的資產、收入（含幣別與匯率重算）、負債快照與備忘錄後一起存檔；未編輯的欄位（質押明細、幣別資訊等）原樣保留。可刪除整月紀錄（收入與花費保留）。
+- [iOS] 負債異動向左滑可以刪除。
+
 ### CI
 - 新增 iOS workflow（macOS）：CatLogKit 測試與 App 建置；Node CI 檢查 iOS 內建的 core bundle 是否與 core 同步。
 - CI 新增 core 測試與 JavaScriptCore 打包步驟。
