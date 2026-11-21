@@ -28,4 +28,5 @@ web 與 iOS 的功能必須一致。
 ## 本機開發
 
 - Node.js 22（CI 跑 20 / 22）。web 建議用 Docker：`cd apps/web && docker compose up -d`。
+- iOS 需要 Xcode 16 以上，設定見 [apps/ios/README.md](apps/ios/README.md)。改了 `packages/core` 後要執行 `npm run build:ios -w @catlog/core` 並 commit 產生的 `catlog-core.js`。
 - commit 前 husky 會跑 `npm run test:run`。

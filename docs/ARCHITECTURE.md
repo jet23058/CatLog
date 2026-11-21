@@ -3,7 +3,7 @@
 ## 總覽
 
 ```
-┌─────────── apps/web (React) ──────────┐   ┌────────── apps/ios (SwiftUI，規劃中) ─────────┐
+┌─────────── apps/web (React) ──────────┐   ┌────────── apps/ios (SwiftUI) ─────────────────┐
 │ UI：React + Recharts                  │   │ UI：SwiftUI + Swift Charts                    │
 │ 生物辨識：WebAuthn                     │   │ 生物辨識：Face ID（LocalAuthentication）        │
 │ 匯入：Dropbox Chooser / 貼上            │   │ 匯入：系統檔案選擇器 / 貼上                      │
@@ -28,11 +28,10 @@
 
 ## iOS 如何執行 core
 
-1. `npm run build:jsc -w @catlog/core` 用 esbuild 把 core 打包成單一檔 `packages/core/dist/catlog-core.js`，全域名稱是 `CatLogCore`。
-2. iOS 專案把這個檔案放進 App bundle，用 `JSContext` 載入。
-3. Swift 呼叫 `CatLogCore.<函式>`，傳入與回傳都是 JSON 相容的資料，再轉成 Swift 型別。
-
-CI 每次都會打包一次，確保 core 隨時能在 JavaScriptCore 執行。
+1. `npm run build:ios -w @catlog/core` 用 esbuild 把 core 打包成單一檔，輸出到 `apps/ios/CatLogKit/Sources/CatLogKit/Resources/catlog-core.js`（全域名稱 `CatLogCore`）。這個檔案進版控，CI 會檢查它與 core 同步。
+2. `CoreBridge` 用 `JSContext` 載入，所有呼叫經過同一把鎖。
+3. 資料以 JSON 文字進出：App 資料只在 JS 端解析一次（`loadData`），計算結果用 `JSON.stringify` 傳回 Swift 再解碼成 `YearStats`、`FireStats` 等型別。資料本身不轉成 Swift 型別，所以未知欄位一定會原樣保留。
+4. 雲端讀寫（`CloudRepository`）的切塊、checksum、版本欄位也呼叫 core，與 web 算出相同結果；`packages/core/fixtures/cloud-storage-v3.json` 由 web 的 writer 產生，iOS 測試必須讀出相同內容。
 
 ## 目前進度
 
@@ -40,4 +39,5 @@ CI 每次都會打包一次，確保 core 隨時能在 JavaScriptCore 執行。
 - ✅ 元件內的主要計算搬到 core：年度統計、每月資產趨勢、FIRE、區間統計、對帳單核對、個股損益彙總、質押分攤、最新估值（`dashboard.js`、`rangeStats.js`、`stockAnalysis.js`）
 - ⏳ 仍在元件內的小型計算：月份明細頁（`DetailView`）的負債與收支彙整、新增負債視窗的質押利息預估、新增資產視窗的前次資產帶入。
 - ✅ 資料格式加入 `schemaVersion` / `minClientVersion`，版本不符時 App 切成唯讀（見 [DATA_FORMAT.md](DATA_FORMAT.md)）
-- ⏳ `apps/ios` 骨架
+- ✅ `apps/ios` 骨架：Google 登入、Firestore 讀取、JavaScriptCore 呼叫 core、年度統計 / FIRE / 每月資產（唯讀預覽）
+- ⏳ iOS 寫入與其他功能，依 README 功能對照表逐項移植

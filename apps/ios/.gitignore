@@ -1,0 +1,10 @@
+# Firebase 設定與個人設定（見 README）
+CatLog/GoogleService-Info.plist
+Config/Local.xcconfig
+
+# Xcode / SwiftPM
+xcuserdata/
+DerivedData/
+.build/
+.swiftpm/
+*.xcuserstate

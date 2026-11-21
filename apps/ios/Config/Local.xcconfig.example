@@ -1,0 +1,8 @@
+// 複製成 Local.xcconfig 後填入（Local.xcconfig 不會進版控）。
+
+// Firebase 註冊 iOS App 時使用的 Bundle ID
+CATLOG_BUNDLE_ID = work.cloudjet.catlog
+// Apple Developer Team ID（在實機執行或上架時需要）
+CATLOG_DEVELOPMENT_TEAM = ABCDE12345
+// GoogleService-Info.plist 裡的 REVERSED_CLIENT_ID
+GOOGLE_REVERSED_CLIENT_ID = com.googleusercontent.apps.1234567890-abcdefg

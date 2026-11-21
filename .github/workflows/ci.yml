@@ -35,5 +35,11 @@ jobs:
     - name: Build core bundle for iOS (JavaScriptCore)
       run: npm run build:jsc -w @catlog/core
 
+    - name: Check iOS core bundle is up to date
+      run: |
+        npm run build:ios -w @catlog/core
+        git diff --exit-code -- apps/ios/CatLogKit/Sources/CatLogKit/Resources/catlog-core.js \
+          || (echo "::error::apps/ios 的 catlog-core.js 過期，請執行 npm run build:ios -w @catlog/core 並 commit" && exit 1)
+
     - name: Audit production dependencies
       run: npm audit --omit=dev --audit-level=high

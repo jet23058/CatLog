@@ -105,6 +105,7 @@
 2. [x] 抽出第一批純函式到 `packages/core`，確認可在 JavaScriptCore 執行
 3. [x] 把 `App.jsx` 元件內的計算抽到 core：年度統計、FIRE、區間統計、個股損益彙總、對帳單核對（月份明細頁等小型計算待補）
 4. [x] 資料格式加入 `schemaVersion`、`minClientVersion`（[docs/DATA_FORMAT.md](docs/DATA_FORMAT.md)）
-5. [ ] `apps/ios` 骨架：Google 登入、Firestore 切塊讀寫、JSContext 呼叫 core、共用 fixtures 測試
+5. [x] `apps/ios` 骨架：Google 登入、Firestore 切塊讀寫、JSContext 呼叫 core、共用 fixtures 測試
 6. [ ] 依 README 功能對照表逐項移植到 iOS
-7. [ ] TestFlight 發布流程（tag `ios-v*` 觸發）
+7. [ ] 在 Firebase 註冊 iOS App、設定 Google 登入，實機測試
+8. [ ] TestFlight 發布流程（tag `ios-v*` 觸發）

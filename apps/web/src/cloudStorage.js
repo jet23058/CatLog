@@ -10,10 +10,11 @@ import {
     where,
     writeBatch
 } from 'firebase/firestore';
-import { buildMetaVersionFields } from '@catlog/core';
+import { CHUNK_SIZE, buildMetaVersionFields, hashString, parseLegacyChunks, splitIntoChunks } from '@catlog/core';
 
-// Firestore 單一文件上限 1MB；中文字在 UTF-8 最多 3 bytes，因此每塊保留在 250k 字元。
-export const CHUNK_SIZE = 250000;
+// 切塊、checksum 等純函式放在 core，web 與 iOS 共用同一份實作。
+export { CHUNK_SIZE, hashString, parseLegacyChunks, splitIntoChunks };
+
 const MAX_BATCH_DELETES = 400;
 
 /**
@@ -44,27 +45,6 @@ export class CloudIntegrityError extends Error {
     }
 }
 
-// cyrb53：快速、非加密用途的 53-bit 雜湊，用於偵測資料塊遺失或錯置。
-export const hashString = (str, seed = 0) => {
-    let h1 = 0xdeadbeef ^ seed;
-    let h2 = 0x41c6ce57 ^ seed;
-    for (let i = 0; i < str.length; i++) {
-        const ch = str.charCodeAt(i);
-        h1 = Math.imul(h1 ^ ch, 2654435761);
-        h2 = Math.imul(h2 ^ ch, 1597334677);
-    }
-    h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
-    h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
-    return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16);
-};
-
-export const splitIntoChunks = (str, size = CHUNK_SIZE) => {
-    const chunks = [];
-    for (let i = 0; i < str.length; i += size) chunks.push(str.slice(i, i + size));
-    if (chunks.length === 0) chunks.push('');
-    return chunks;
-};
-
 export const createGenerationId = () =>
     `g${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
 
@@ -80,25 +60,6 @@ const snapshotExists = (snapshot) => {
 export const readMeta = async (db, uid) => {
     const snapshot = await getDoc(metaRefFor(db, uid));
     return snapshotExists(snapshot) ? snapshot.data() : null;
-};
-
-// 舊格式：所有資料塊依 index 串接；若有殘留的尾端資料塊，逐一裁掉直到可解析。
-export const parseLegacyChunks = (chunks) => {
-    const fullString = chunks.join('');
-    try {
-        return JSON.parse(fullString);
-    } catch (error) {
-        let currentString = fullString;
-        for (let i = chunks.length - 1; i > 0; i--) {
-            currentString = currentString.slice(0, -chunks[i].length);
-            try {
-                return JSON.parse(currentString);
-            } catch {
-                continue;
-            }
-        }
-        throw error;
-    }
 };
 
 const docsOf = (snapshot) => (snapshot?.docs || []);
@@ -162,16 +123,18 @@ const deleteDocIds = async (db, uid, ids) => {
  * expectedRevision：本機最後一次讀到或寫入的版本；雲端版本不同時丟出 CloudConflictError。
  * force：略過版本檢查（用於使用者明確選擇「以本機覆蓋」或從備份修復）。
  * previousChunkIds：舊資料塊 ID，切換指標成功後刪除。
+ * chunkSize：每塊字元數，只有測試會改。
  */
 export const writeCloudData = async (db, uid, data, {
     expectedRevision = 0,
     force = false,
     previousChunkIds = [],
     deviceId = '',
-    onProgress
+    onProgress,
+    chunkSize = CHUNK_SIZE
 } = {}) => {
     const jsonString = JSON.stringify(data);
-    const chunks = splitIntoChunks(jsonString);
+    const chunks = splitIntoChunks(jsonString, chunkSize);
     const checksum = hashString(jsonString);
     const generation = createGenerationId();
     const metaRef = metaRefFor(db, uid);
