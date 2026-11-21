@@ -2200,6 +2200,26 @@ describe('App Integration Tests', () => {
         expect(screen.getByText('開始日期')).toBeInTheDocument();
     });
 
+    test('Range Statistics quick range starts on the 1st in local time', async () => {
+        const user = userEvent.setup();
+        render(<App />);
+        await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
+        await user.click(document.querySelector('.lucide-layout-grid').closest('button'));
+        await user.click(await screen.findByText('區間統計'));
+        await screen.findByText('區間統計 Report', { selector: 'h3' });
+
+        await user.click(screen.getByText('近 3 個月'));
+
+        const now = new Date();
+        const start = new Date(now.getFullYear(), now.getMonth() - 2, 1);
+        const pad = (n) => String(n).padStart(2, '0');
+        const [startInput, endInput] = document.querySelectorAll('input[type="date"]');
+        // 原本用 toISOString 換算成 UTC，在 UTC+ 時區會變成前一個月的最後一天。
+        expect(startInput).toHaveValue(`${start.getFullYear()}-${pad(start.getMonth() + 1)}-01`);
+        const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+        expect(endInput).toHaveValue(`${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(lastDay)}`);
+    });
+
     test('Range Statistics includes debt and finance estimate sections', async () => {
         const user = userEvent.setup();
         const mockData = {

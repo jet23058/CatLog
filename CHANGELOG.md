@@ -45,6 +45,13 @@
 - [iOS] 首頁新增年度資產趨勢圖（只畫有資產紀錄的月份，隱私模式隱藏金額刻度）。
 - [iOS] 點每月列表可開啟月份明細：摘要、資產與較上月變化、收入、負債（含延續與異動、預估利息）、花費類別與明細（可依帳戶篩選）、備忘錄，可切換上一月 / 下一月。
 
+- [core] 新增 `getStockOverview`、`getStockTrades`、`describeStockTrades`：個股績效整頁資料一次取得，web 與 iOS 共用。
+- [core] 新增 `getRangeStats`、`getRecentMonthsRange`。
+- [web] 修正區間統計「近 N 個月」的開始日期：原本用 `toISOString` 換算成 UTC，在台灣會變成前一個月的最後一天（例如 8/31 而不是 9/1）。
+- [iOS] 個股績效（唯讀）：台股 / 美股、持倉快照版本、日期區間、總損益與質押後淨損益、賺最多 / 虧最多、可搜尋的個股損益表、單一股票交易明細、快照持股。
+- [iOS] 區間統計：自訂日期與「近 3 個月 / 近半年 / 近 1 年」，現金流、資產負債變化、財務推估。
+- [iOS] 舊資料的文字金額依 JS `Number()` 的規則轉換，單筆金額與 core 算出的總額一致。
+
 ### CI
 - 新增 iOS workflow（macOS）：CatLogKit 測試與 App 建置；Node CI 檢查 iOS 內建的 core bundle 是否與 core 同步。
 - CI 新增 core 測試與 JavaScriptCore 打包步驟。
