@@ -176,12 +176,14 @@ public final class AppModel: ObservableObject {
     public func addDebt(_ input: DebtInput, dateKey: String) async -> SaveOutcome {
         guard let core else { return .failed("core 無法載入") }
         var cloudJSON: String?
+        var cloudRevision: (revision: Int, chunkIds: [String])?
         if !isDemo {
             guard let uid = Auth.auth().currentUser?.uid else { return .failed("尚未登入") }
             do {
                 let snapshot = try await CloudRepository(store: FirestoreChunkStore(uid: uid), core: core.bridge).read()
-                revision = snapshot.revision
-                chunkIds = snapshot.chunkIds
+                // 只用在這次寫入：寫入成功後 save() 才會更新本機的 revision 與資料，
+                // 失敗時兩者都維持原狀，不會出現「版本號是新的、資料是舊的」。
+                cloudRevision = (snapshot.revision, snapshot.chunkIds)
                 if let meta = try snapshot.meta?.jsonString() {
                     let result = try core.compatibility(appVersion: appVersion, metaJSON: meta)
                     if !result.canWrite {
@@ -197,7 +199,7 @@ public final class AppModel: ObservableObject {
         }
         do {
             let id = "debt-\(Int(Date().timeIntervalSince1970 * 1000))"
-            return await save(dataJSON: try core.addingDebt(input, id: id, cloudDataJSON: cloudJSON, dateKey: dateKey))
+            return await save(dataJSON: try core.addingDebt(input, id: id, cloudDataJSON: cloudJSON, dateKey: dateKey), basedOn: cloudRevision)
         } catch {
             return .failed(error.localizedDescription)
         }
@@ -215,7 +217,8 @@ public final class AppModel: ObservableObject {
     }
 
     /// 寫入雲端；成功後才更新畫面資料。
-    public func save(dataJSON: String, force: Bool = false) async -> SaveOutcome {
+    /// - basedOn：資料是以這份雲端版本為基礎做出來的（新增負債會先重新讀取雲端）；nil 時用本機最後讀到 / 寫入的版本。
+    public func save(dataJSON: String, force: Bool = false, basedOn base: (revision: Int, chunkIds: [String])? = nil) async -> SaveOutcome {
         guard let core else { return .failed("core 無法載入") }
         guard compatibility.canWrite else {
             return .failed(compatibilityMessage ?? "這個版本的 App 無法寫入雲端資料，請先更新。")
@@ -232,9 +235,9 @@ public final class AppModel: ObservableObject {
             let repository = CloudRepository(store: FirestoreChunkStore(uid: uid), core: core.bridge)
             let result = try await repository.write(
                 dataJSON: dataJSON,
-                expectedRevision: revision,
+                expectedRevision: base?.revision ?? revision,
                 force: force,
-                previousChunkIds: chunkIds,
+                previousChunkIds: base?.chunkIds ?? chunkIds,
                 deviceId: Self.deviceId
             )
             revision = result.revision
