@@ -33,8 +33,11 @@ var CatLogCore = (() => {
     PRIVACY_MASK: () => PRIVACY_MASK,
     SCHEMA_MIN_CLIENT_VERSION: () => SCHEMA_MIN_CLIENT_VERSION,
     STOCK_MARKETS: () => STOCK_MARKETS,
+    SUPPORTED_CURRENCIES: () => SUPPORTED_CURRENCIES,
+    addAssetsToData: () => addAssetsToData,
     addDebtAndCarryForward: () => addDebtAndCarryForward,
     addDebtToSnapshot: () => addDebtToSnapshot,
+    addIncomeToData: () => addIncomeToData,
     areDataStructuresEqual: () => areDataStructuresEqual,
     buildCollectionDiff: () => buildCollectionDiff,
     buildExpenseDiff: () => buildExpenseDiff,
@@ -43,13 +46,17 @@ var CatLogCore = (() => {
     buildStockRows: () => buildStockRows,
     checkCompatibility: () => checkCompatibility,
     compareVersions: () => compareVersions,
+    convertToTWD: () => convertToTWD,
+    createAssetEntry: () => createAssetEntry,
     createBackupFile: () => createBackupFile,
     createHoldingRow: () => createHoldingRow,
+    createIncomeSource: () => createIncomeSource,
     describeIncompatibility: () => describeIncompatibility,
     describeStockTrades: () => describeStockTrades,
     detectDelimitedTextSeparator: () => detectDelimitedTextSeparator,
     extractBackupData: () => extractBackupData,
     filterTransactionsByRange: () => filterTransactionsByRange,
+    findDuplicateAsset: () => findDuplicateAsset,
     flattenDebtEvents: () => flattenDebtEvents,
     flattenDebts: () => flattenDebts,
     flattenIncomeSources: () => flattenIncomeSources,
@@ -65,6 +72,7 @@ var CatLogCore = (() => {
     formatStockPnlLabel: () => formatStockPnlLabel,
     formatWan: () => formatWan,
     getAssetExtremes: () => getAssetExtremes,
+    getAssetNameOptions: () => getAssetNameOptions,
     getAssetRecordDatesInYear: () => getAssetRecordDatesInYear,
     getAvailableYears: () => getAvailableYears,
     getDataMonths: () => getDataMonths,
@@ -93,9 +101,11 @@ var CatLogCore = (() => {
     getFireYearlyStats: () => getFireYearlyStats,
     getHeaderIndex: () => getHeaderIndex,
     getHoldingSnapshots: () => getHoldingSnapshots,
+    getImportablePreviousAssets: () => getImportablePreviousAssets,
     getIncomeFullKey: () => getIncomeFullKey,
     getIncomeIdentityKey: () => getIncomeIdentityKey,
     getJsonImportSummary: () => getJsonImportSummary,
+    getLatestAssetByName: () => getLatestAssetByName,
     getLatestDateInMonth: () => getLatestDateInMonth,
     getLatestSnapshotDate: () => getLatestSnapshotDate,
     getLatestSnapshotEstimate: () => getLatestSnapshotEstimate,
@@ -111,6 +121,7 @@ var CatLogCore = (() => {
     getMonthlyStats: () => getMonthlyStats,
     getNetAssetsAtDate: () => getNetAssetsAtDate,
     getPledgeAverageRate: () => getPledgeAverageRate,
+    getPreviousAssetSnapshot: () => getPreviousAssetSnapshot,
     getRangeAssetStats: () => getRangeAssetStats,
     getRangeDebtStats: () => getRangeDebtStats,
     getRangeExpenseStats: () => getRangeExpenseStats,
@@ -151,6 +162,7 @@ var CatLogCore = (() => {
     hashString: () => hashString,
     inferPledgeStockMarket: () => inferPledgeStockMarket,
     isArchivedUSRealizedCSVHeaders: () => isArchivedUSRealizedCSVHeaders,
+    isDuplicateAsset: () => isDuplicateAsset,
     isIdleExpired: () => isIdleExpired,
     isUSBrokerTransactionCSVHeaders: () => isUSBrokerTransactionCSVHeaders,
     looksLikeUSBrokerPastedRows: () => looksLikeUSBrokerPastedRows,
@@ -2150,6 +2162,111 @@ var CatLogCore = (() => {
       prevMonthIncome,
       summary: getMonthSummary({ assets, debts, incomes, expenses, prevTotalAssets, prevTotalDebts, prevMonthIncome })
     };
+  };
+
+  // src/records.js
+  var SUPPORTED_CURRENCIES = Object.keys(DEFAULT_EXCHANGE_RATES);
+  var convertToTWD = (originalAmount, exchangeRate, currency = "TWD") => {
+    if (currency === "TWD") return Number(originalAmount) || 0;
+    const value = parseFloat(originalAmount) * parseFloat(exchangeRate);
+    return Number.isFinite(value) ? Number(value.toFixed(0)) : 0;
+  };
+  var getAssetNameOptions = (records = {}) => {
+    const map = /* @__PURE__ */ new Map();
+    Object.keys(records || {}).sort().forEach((date) => {
+      (records[date] || []).forEach((r) => map.set(r.name, r.type));
+    });
+    return Array.from(map.entries()).map(([name, type]) => ({ name, type }));
+  };
+  var getLatestAssetByName = (records = {}, name) => {
+    const dates = Object.keys(records || {}).sort().reverse();
+    for (const d of dates) {
+      const record = (records[d] || []).find((r) => r.name === name);
+      if (record) return record;
+    }
+    return null;
+  };
+  var getPreviousAssetSnapshot = (records = {}, date) => {
+    if (!date) return { date: null, assets: [] };
+    const currentTimestamp = new Date(date).getTime();
+    const dates = Object.keys(records || {}).filter((d) => new Date(d).getTime() < currentTimestamp && (records[d] || []).length > 0).sort((a, b) => new Date(b) - new Date(a));
+    if (dates.length === 0) return { date: null, assets: [] };
+    return { date: dates[0], assets: records[dates[0]] || [] };
+  };
+  var isDuplicateAsset = (records = {}, date, pending = [], name, currency) => {
+    const cleanName = (name || "").trim();
+    const assetsInDate = records?.[date] || [];
+    const pendingInDate = pending.filter((asset) => asset.date === date);
+    return [...assetsInDate, ...pendingInDate].some((asset) => asset.name === cleanName && asset.currency === currency);
+  };
+  var createAssetEntry = ({ id, type = "fixed", name, originalAmount, currency = "TWD", exchangeRate = 1, date }) => {
+    const amount = convertToTWD(originalAmount, exchangeRate, currency);
+    return {
+      id,
+      type,
+      name: (name || "").trim(),
+      amount,
+      currency,
+      originalAmount: Number(originalAmount) || amount,
+      exchangeRate: Number(exchangeRate),
+      date
+    };
+  };
+  var getImportablePreviousAssets = (records = {}, date, pending = [], idPrefix = "asset-import") => {
+    const snapshot = getPreviousAssetSnapshot(records, date);
+    const assetsInDate = records?.[date] || [];
+    const existingKeys = new Set([...assetsInDate, ...pending].map((asset) => `${asset.name}-${asset.currency || "TWD"}`));
+    return snapshot.assets.filter((asset) => !existingKeys.has(`${asset.name}-${asset.currency || "TWD"}`)).map((asset, index) => ({
+      ...asset,
+      id: `${idPrefix}-${index}`,
+      date,
+      amount: Number(asset.amount) || 0,
+      originalAmount: Number(asset.originalAmount) || Number(asset.amount) || 0,
+      exchangeRate: Number(asset.exchangeRate) || 1
+    }));
+  };
+  var addAssetsToData = (data = {}, dateKey, newAssets) => {
+    const assetsToAdd = (Array.isArray(newAssets) ? newAssets : [newAssets]).map(({ date, ...asset }) => asset);
+    const existing = data.records?.[dateKey] || [];
+    return {
+      ...data,
+      records: { ...data.records || {}, [dateKey]: [...existing, ...assetsToAdd] }
+    };
+  };
+  var createIncomeSource = ({ date, company, bank = "", currency = "TWD", originalAmount, exchangeRate = 1, memo = "" }) => {
+    const amount = convertToTWD(originalAmount, exchangeRate, currency);
+    return {
+      date,
+      company,
+      bank,
+      currency,
+      originalAmount: Number(originalAmount) || amount,
+      exchangeRate: Number(exchangeRate),
+      amount,
+      memo: (memo || "").trim()
+    };
+  };
+  var addIncomeToData = (data = {}, dateKey, newIncomeSource) => {
+    const monthKey = dateKey.substring(0, 7);
+    const existingMonthData = data.incomes?.[monthKey] || { totalAmount: 0, sources: [] };
+    const existingSources = existingMonthData.sources || [];
+    const newTotal = (existingMonthData.totalAmount || 0) + newIncomeSource.amount;
+    return {
+      ...data,
+      incomes: {
+        ...data.incomes || {},
+        [monthKey]: { ...existingMonthData, totalAmount: newTotal, sources: [...existingSources, newIncomeSource] }
+      }
+    };
+  };
+  var findDuplicateAsset = (records = {}, dateKey, entries = []) => {
+    const seen = new Set((records?.[dateKey] || []).map((asset) => `${asset.name}-${asset.currency || "TWD"}`));
+    for (const entry of entries) {
+      const key = `${(entry.name || "").trim()}-${entry.currency || "TWD"}`;
+      if (seen.has(key)) return `${(entry.name || "").trim()} (${entry.currency || "TWD"})`;
+      seen.add(key);
+    }
+    return null;
   };
   return __toCommonJS(src_exports);
 })();

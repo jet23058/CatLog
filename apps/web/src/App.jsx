@@ -8,7 +8,9 @@ import {
     DEFAULT_EXCHANGE_RATES,
     INITIAL_DATA,
     STOCK_MARKETS,
+    addAssetsToData,
     addDebtAndCarryForward,
+    addIncomeToData,
     buildHoldingMap,
     buildStockRows,
     checkCompatibility,
@@ -17,6 +19,7 @@ import {
     describeIncompatibility,
     extractBackupData,
     filterTransactionsByRange,
+    findDuplicateAsset,
     formatExchangeRate,
     formatMoney,
     formatMoneyByMarket,
@@ -25,6 +28,7 @@ import {
     formatStockPnlLabel,
     formatWan,
     getAssetExtremes,
+    getAssetNameOptions,
     getAvailableYears,
     getDebtCategoryLabel,
     getDebtEstimatedAnnualInterest,
@@ -37,11 +41,14 @@ import {
     getFireStats,
     getFireYearlyStats,
     getHoldingSnapshots,
+    getImportablePreviousAssets,
     getJsonImportSummary,
+    getLatestAssetByName,
     getLatestSnapshotEstimate,
     getMonthDetail,
     getMonthSummary,
     getMonthlyStats,
+    getPreviousAssetSnapshot,
     getRangeAssetStats,
     getRangeDebtStats,
     getRangeExpenseStats,
@@ -61,6 +68,7 @@ import {
     getStockTradeTitle,
     getYearStats,
     getYearlyTrendData,
+    isDuplicateAsset,
     isIdleExpired,
     maskAmount,
     mergeDebtMaps,
@@ -1345,39 +1353,19 @@ const AddAssetModal = ({ onClose, onSave, historyRecords, exchangeRateCache }) =
         }
     }, [exchangeRate, date, currency, exchangeRateCache]);
 
-    const uniqueAssetOptions = useMemo(() => {
-        const map = new Map();
-        Object.keys(historyRecords).sort().forEach(date => {
-            historyRecords[date].forEach(r => map.set(r.name, r.type));
-        });
-        return Array.from(map.entries()).map(([name, type]) => ({ name, type }));
-    }, [historyRecords]);
+    const uniqueAssetOptions = useMemo(() => getAssetNameOptions(historyRecords), [historyRecords]);
 
     const handleNameSelect = (e) => {
         const selectedName = e.target.value;
         setName(selectedName);
-        let found = null;
-        const allDates = Object.keys(historyRecords).sort().reverse();
-        for (const d of allDates) {
-            const record = historyRecords[d].find(r => r.name === selectedName);
-            if (record) { found = record; break; }
-        }
+        const found = getLatestAssetByName(historyRecords, selectedName);
         if (found && found.type === type) {
             setCurrency(found.currency || 'TWD');
             if (found.exchangeRate) setExchangeRate(String(found.exchangeRate));
         }
     };
 
-    const previousAssetSnapshot = useMemo(() => {
-        if (!date) return [];
-        const currentTimestamp = new Date(date).getTime();
-        const dates = Object.keys(historyRecords)
-            .filter(d => new Date(d).getTime() < currentTimestamp && (historyRecords[d] || []).length > 0) // 找出比選擇日期更早且有資產的日期
-            .sort((a, b) => new Date(b) - new Date(a)); // 降序排列，取最近的
-
-        if (dates.length === 0) return { date: null, assets: [] };
-        return { date: dates[0], assets: historyRecords[dates[0]] || [] };
-    }, [date, historyRecords]);
+    const previousAssetSnapshot = useMemo(() => getPreviousAssetSnapshot(historyRecords, date), [date, historyRecords]);
 
     const prevAssets = previousAssetSnapshot.assets;
     const suggestions = prevAssets.filter(a => a.type === type);
@@ -1456,13 +1444,8 @@ const AddAssetModal = ({ onClose, onSave, historyRecords, exchangeRateCache }) =
         if (!date) return setErrorMsg("請選擇日期");
 
         const cleanName = name.trim();
-        const assetsInDate = historyRecords[date] || [];
-        const pendingInDate = pendingAssets.filter((asset) => asset.date === date);
-        
-        // Duplicate check logic:
-        // Same Name AND Same Currency = Duplicate (Block)
-        // Same Name BUT Different Currency = Allowed (e.g. Taishin TWD vs Taishin JPY)
-        const isDuplicate = [...assetsInDate, ...pendingInDate].some(asset => asset.name === cleanName && asset.currency === currency);
+        // 同名稱 + 同幣別視為重複；同名不同幣別可以並存（規則在 core）。
+        const isDuplicate = isDuplicateAsset(historyRecords, date, pendingAssets, cleanName, currency);
 
         if (isDuplicate) {
             setErrorMsg(`「${cleanName} (${currency})」在 ${date} 已存在，請使用編輯功能。`);
@@ -1515,20 +1498,10 @@ const AddAssetModal = ({ onClose, onSave, historyRecords, exchangeRateCache }) =
     const handleImportPreviousAssets = () => {
         if (!previousAssetSnapshot.assets.length) return;
         const assetsInDate = historyRecords[date] || [];
-        setPendingAssets((items) => {
-            const existingKeys = new Set([...assetsInDate, ...items].map((asset) => `${asset.name}-${asset.currency || 'TWD'}`));
-            const importedAssets = previousAssetSnapshot.assets
-                .filter((asset) => !existingKeys.has(`${asset.name}-${asset.currency || 'TWD'}`))
-                .map((asset, index) => ({
-                    ...asset,
-                    id: `asset-import-${Date.now()}-${index}`,
-                    date,
-                    amount: Number(asset.amount) || 0,
-                    originalAmount: Number(asset.originalAmount) || Number(asset.amount) || 0,
-                    exchangeRate: Number(asset.exchangeRate) || 1
-                }));
-            return [...items, ...importedAssets];
-        });
+        setPendingAssets((items) => [
+            ...items,
+            ...getImportablePreviousAssets(historyRecords, date, items, `asset-import-${Date.now()}`)
+        ]);
         setHasImportedPreviousAssets(true);
         setErrorMsg('');
     };
@@ -1538,6 +1511,9 @@ const AddAssetModal = ({ onClose, onSave, historyRecords, exchangeRateCache }) =
         if ((name || originalAmount || amount) && !draftAsset) return;
         const assetsToSave = draftAsset ? [...pendingAssets, draftAsset] : pendingAssets;
         if (assetsToSave.length === 0) return setErrorMsg("請先加入至少一筆資產");
+        // 清單裡的項目可能是改日期前加的，用實際要存的日期再檢查一次重複。
+        const duplicate = findDuplicateAsset(historyRecords, date, assetsToSave);
+        if (duplicate) return setErrorMsg(`「${duplicate}」在 ${date} 重複，請刪除其中一筆或改用編輯功能。`);
         onSave(assetsToSave, date);
     };
 
@@ -4315,6 +4291,7 @@ const MainApp = ({ user, logout }) => {
         setSyncState((prev) => ({ ...prev, status: 'saving', message: '' }));
         try {
             await writeFirestoreChunks(pendingData, { force: true });
+            setData(pendingData);
             setSyncState({ status: 'saved', lastSavedAt: Date.now(), message: '' });
             handleShowAlert("已覆蓋雲端", "已用這台裝置的資料覆蓋雲端版本。");
         } catch (error) {
@@ -4878,35 +4855,40 @@ const MainApp = ({ user, logout }) => {
         }
     };
 
+    // 新增視窗存檔失敗時，把畫面資料還原成新增前的狀態，視窗保持開著讓使用者重送。
+    // 否則再按一次會疊在「已經加過一次」的資料上，造成重複。重送由視窗負責，所以清掉上方的「重試」。
+    // （衝突時 syncConflict 仍保留這次的資料，使用者選「用這台覆蓋」時會寫入並更新畫面。）
+    const revertUnsavedAdd = (previousData) => {
+        setData(previousData);
+        lastFailedSaveRef.current = null;
+    };
+
     const handleSaveNewAsset = async (newAssets, dateKey) => {
         if (!ensureWritable()) return;
-        const assetsToAdd = (Array.isArray(newAssets) ? newAssets : [newAssets]).map(({ date, ...asset }) => asset);
-        const existingDetails = data.records[dateKey] || [];
-        const newData = {
-            ...data,
-            records: { ...data.records, [dateKey]: [...existingDetails, ...assetsToAdd] }
-        };
+        const assetsToAdd = Array.isArray(newAssets) ? newAssets : [newAssets];
+        const newData = addAssetsToData(data, dateKey, assetsToAdd);
         setData(newData);
         const didSave = await saveToFirestoreChunks(newData);
-        if (!didSave) return;
+        if (!didSave) {
+            revertUnsavedAdd(data);
+            return;
+        }
         handleShowAlert("新增成功", assetsToAdd.length === 1 ? `資產 ${assetsToAdd[0].name} 已新增到 ${dateKey}` : `已新增 ${assetsToAdd.length} 筆資產到 ${dateKey}`);
         setShowAddAssetModal(false);
         setShowAddModal(false);
     };
 
-    const handleSaveNewIncome = (newIncomeSource, dateKey) => {
+    const handleSaveNewIncome = async (newIncomeSource, dateKey) => {
         if (!ensureWritable()) return;
-        const monthKey = dateKey.substring(0, 7);
-        const existingMonthData = data.incomes[monthKey] || { totalAmount: 0, sources: [] };
-        const existingSources = existingMonthData.sources || [];
-        const newTotal = (existingMonthData.totalAmount || 0) + newIncomeSource.amount;
-        const newData = {
-            ...data,
-            incomes: { ...data.incomes, [monthKey]: { ...existingMonthData, totalAmount: newTotal, sources: [...existingSources, newIncomeSource] } }
-        };
+        const newData = addIncomeToData(data, dateKey, newIncomeSource);
         setData(newData);
-        saveToFirestoreChunks(newData);
-        handleShowAlert("新增成功", `已新增一筆收入至 ${monthKey}`);
+        // 等存檔結果：失敗時 saveToFirestoreChunks 會自己顯示錯誤，不再同時顯示「新增成功」。
+        const didSave = await saveToFirestoreChunks(newData);
+        if (!didSave) {
+            revertUnsavedAdd(data);
+            return;
+        }
+        handleShowAlert("新增成功", `已新增一筆收入至 ${dateKey.substring(0, 7)}`);
         setShowAddIncomeModal(false);
         setShowAddModal(false);
     };

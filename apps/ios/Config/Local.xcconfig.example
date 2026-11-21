@@ -4,5 +4,6 @@
 CATLOG_BUNDLE_ID = work.cloudjet.catlog
 // Apple Developer Team ID（在實機執行或上架時需要）
 CATLOG_DEVELOPMENT_TEAM = ABCDE12345
-// GoogleService-Info.plist 裡的 REVERSED_CLIENT_ID
-GOOGLE_REVERSED_CLIENT_ID = com.googleusercontent.apps.1234567890-abcdefg
+// 兩份 GoogleService-Info 各自的 REVERSED_CLIENT_ID（Debug＝測試站、Release＝正式站）
+GOOGLE_REVERSED_CLIENT_ID_Debug = com.googleusercontent.apps.1111111111-test
+GOOGLE_REVERSED_CLIENT_ID_Release = com.googleusercontent.apps.2222222222-prod

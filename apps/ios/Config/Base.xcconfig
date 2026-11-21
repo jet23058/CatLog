@@ -7,6 +7,14 @@ CURRENT_PROJECT_VERSION = 1
 
 CATLOG_BUNDLE_ID = work.cloudjet.catlog
 CATLOG_DEVELOPMENT_TEAM =
-GOOGLE_REVERSED_CLIENT_ID = com.googleusercontent.apps.not-configured
+// Firebase：Debug（模擬器、開發）連測試站，Release（TestFlight、上架）連正式站。
+// 兩份設定檔放在 CatLog/GoogleService-Info-Debug.plist、-Release.plist（不進版控），
+// 每個建置設定只打包自己那一份，上架版本不會帶到測試站的設定。
+EXCLUDED_SOURCE_FILE_NAMES[config=Debug] = GoogleService-Info-Release.plist
+EXCLUDED_SOURCE_FILE_NAMES[config=Release] = GoogleService-Info-Debug.plist
+GOOGLE_REVERSED_CLIENT_ID_Debug = com.googleusercontent.apps.not-configured
+GOOGLE_REVERSED_CLIENT_ID_Release = com.googleusercontent.apps.not-configured
 
 #include? "Local.xcconfig"
+
+GOOGLE_REVERSED_CLIENT_ID = $(GOOGLE_REVERSED_CLIENT_ID_$(CONFIGURATION))
