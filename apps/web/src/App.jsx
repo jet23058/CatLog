@@ -2600,6 +2600,8 @@ const HistoryModal = ({ uid, onClose, onPreviewRestore }) => {
     const [entries, setEntries] = useState(null);
     const [error, setError] = useState('');
     const [busyGeneration, setBusyGeneration] = useState('');
+    const [restoreLabel, setRestoreLabel] = useState('');
+    const [reloadKey, setReloadKey] = useState(0);
 
     useEffect(() => {
         let cancelled = false;
@@ -2607,7 +2609,21 @@ const HistoryModal = ({ uid, onClose, onPreviewRestore }) => {
             .then((list) => { if (!cancelled) setEntries(list); })
             .catch((err) => { if (!cancelled) setError(err.message || '無法讀取歷史版本'); });
         return () => { cancelled = true; };
-    }, [uid]);
+    }, [uid, reloadKey]);
+
+    const runRestorePointAction = async (action) => {
+        setError('');
+        setBusyGeneration('restore-point');
+        try {
+            await action();
+            setRestoreLabel('');
+            setReloadKey((key) => key + 1);
+        } catch (err) {
+            setError(err.message || '無法更新還原點');
+        } finally {
+            setBusyGeneration('');
+        }
+    };
 
     const loadVersion = async (entry, action) => {
         setError('');
@@ -2642,7 +2658,11 @@ const HistoryModal = ({ uid, onClose, onPreviewRestore }) => {
             <div className="bg-white w-full max-w-md rounded-2xl p-6 shadow-2xl relative flex flex-col max-h-[85vh]">
                 <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600" aria-label="關閉"><X size={20} /></button>
                 <h3 className="text-xl font-serif-tc font-bold text-slate-800 mb-1 flex items-center gap-2"><History size={18} /> 雲端歷史版本</h3>
-                <p className="text-xs text-slate-400 mb-4">還原會先顯示和目前資料的差異；確認後存成新的版本，所以還原本身也能再還原回來。</p>
+                <p className="text-xs text-slate-400 mb-4">自動每天保留一份；重要操作前可以手動建立還原點，還原點不會被自動清掉。還原會先顯示差異，確認後存成新的版本，所以還原本身也能再還原回來。</p>
+                <div className="flex gap-2 mb-3">
+                    <input value={restoreLabel} onChange={(e) => setRestoreLabel(e.target.value)} maxLength={60} placeholder="還原點說明（選填），例如：匯入 MOZE 前" className="flex-1 min-w-0 p-2 rounded-lg border border-slate-200 bg-slate-50 text-xs outline-none focus:border-indigo-400" />
+                    <button onClick={() => runRestorePointAction(() => createRestorePoint(db, uid, restoreLabel))} disabled={Boolean(busyGeneration)} className="shrink-0 px-3 py-2 rounded-lg bg-indigo-600 text-white text-xs font-bold hover:bg-indigo-700 disabled:opacity-40">建立還原點</button>
+                </div>
                 {error && <div className="bg-rose-50 text-rose-500 text-xs p-3 rounded-xl mb-3">{error}</div>}
                 <div className="flex-1 overflow-y-auto border border-slate-100 rounded-xl divide-y divide-slate-50">
                     {entries === null && !error && <div className="p-6 text-center text-slate-400 text-sm">讀取中…</div>}
@@ -2650,10 +2670,14 @@ const HistoryModal = ({ uid, onClose, onPreviewRestore }) => {
                     {entries?.map((entry, index) => (
                         <div key={entry.generation} className="p-3 flex items-center justify-between gap-3">
                             <div className="min-w-0">
-                                <div className="font-bold text-sm text-slate-700">{formatTime(entry.savedAt)}{index === 0 && <span className="ml-2 text-[10px] text-teal-600">目前</span>}</div>
+                                <div className="font-bold text-sm text-slate-700">{formatTime(entry.savedAt)}{index === 0 && <span className="ml-2 text-[10px] text-teal-600">目前</span>}{entry.pinned && <span className="ml-2 text-[10px] text-indigo-600">📌 還原點</span>}</div>
+                                {entry.pinned && entry.label && <div className="text-xs text-indigo-700 truncate">{entry.label}</div>}
                                 <div className="text-[11px] text-slate-400 font-inter">版本 {entry.revision} · {formatSize(entry.length)}{entry.deviceId ? ` · ${entry.deviceId}` : ''}</div>
                             </div>
                             <div className="flex gap-1 shrink-0">
+                                {entry.pinned && (
+                                    <button onClick={() => runRestorePointAction(() => clearRestorePoint(db, uid, entry.generation))} disabled={Boolean(busyGeneration)} className="px-2 py-1.5 rounded-lg text-[11px] text-slate-400 hover:text-rose-500 hover:bg-rose-50 disabled:opacity-40">取消還原點</button>
+                                )}
                                 <button onClick={() => loadVersion(entry, 'download')} disabled={Boolean(busyGeneration)} className="p-2 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 disabled:opacity-40" aria-label={`下載版本 ${entry.revision}`}><Download size={14} /></button>
                                 {index > 0 && (
                                     <button onClick={() => loadVersion(entry, 'restore')} disabled={Boolean(busyGeneration)} className="px-3 py-1.5 rounded-lg bg-indigo-50 text-indigo-700 text-xs font-bold hover:bg-indigo-100 disabled:opacity-40">
@@ -3974,7 +3998,7 @@ import { AuthProvider, useAuth } from './AuthContext';
 import LoginPage from './LoginPage';
 import { auth, db } from './firebase';
 import { collection, getDoc, getDocs, query, orderBy, onSnapshot, where } from 'firebase/firestore';
-import { readCloudData, writeCloudData, getMetaRef, CloudConflictError, listHistory, readHistoryVersion } from './cloudStorage';
+import { readCloudData, writeCloudData, getMetaRef, CloudConflictError, listHistory, readHistoryVersion, createRestorePoint, clearRestorePoint } from './cloudStorage';
 
 const AuthenticatedApp = () => {
     const { user, loading, logout } = useAuth();
@@ -5432,7 +5456,7 @@ const MainApp = ({ user, logout }) => {
                                     {/* Section 3: Cloud history */}
                                     <div className="border border-slate-100 rounded-xl p-4 bg-slate-50/50">
                                         <h4 className="text-sm font-bold text-slate-700 mb-2 flex items-center gap-2"><History size={14} /> 雲端歷史版本</h4>
-                                        <p className="text-xs text-slate-400 mb-3">每次存檔都會保留一份：最近 20 份，加上 30 天內每天最後一份。可以預覽差異後還原，或下載成備份檔。</p>
+                                        <p className="text-xs text-slate-400 mb-3">自動每天保留一份（30 天內每天、更早的每月一份保留 12 個月），也可以手動建立還原點。可以預覽差異後還原，或下載成備份檔。</p>
                                         <button onClick={() => { setShowImportModal(false); setShowHistoryModal(true); }} className="w-full py-2.5 rounded-lg bg-white border border-slate-200 text-slate-600 font-bold text-sm hover:border-indigo-300 hover:text-indigo-700 transition-colors">查看歷史版本</button>
                                     </div>
                                 </div>

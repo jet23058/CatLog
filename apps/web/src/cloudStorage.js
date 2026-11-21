@@ -16,6 +16,7 @@ import {
     buildMetaVersionFields,
     createHistoryEntry,
     hashString,
+    normalizeRestorePointLabel,
     parseLegacyChunks,
     selectHistoryToPrune,
     sortHistoryEntries,
@@ -247,12 +248,30 @@ const deleteGeneration = async (db, uid, generation) => {
 /** 記錄新版本（並補記上一份），再依保留規則刪除太舊的版本。失敗不影響這次存檔。 */
 const recordHistory = async (db, uid, metas, currentGeneration) => {
     const batch = writeBatch(db);
-    metas.map(createHistoryEntry).filter(Boolean).forEach((entry) => batch.set(doc(historyRefFor(db, uid), entry.generation), entry));
+    // merge：已經設成還原點的紀錄（pinned、label）不會被蓋掉。
+    metas.map(createHistoryEntry).filter(Boolean).forEach((entry) => batch.set(doc(historyRefFor(db, uid), entry.generation), entry, { merge: true }));
     await batch.commit();
     const prune = selectHistoryToPrune(await listHistory(db, uid), { now: Date.now(), currentGeneration });
     for (const generation of prune) {
         await deleteGeneration(db, uid, generation);
     }
+};
+
+/** 把目前的雲端版本設成手動還原點（不會被自動清掉）。 */
+export const createRestorePoint = async (db, uid, label = '') => {
+    const entry = createHistoryEntry(await readMeta(db, uid));
+    if (!entry) throw new Error('雲端還沒有可以設成還原點的版本，請先存檔一次。');
+    const batch = writeBatch(db);
+    batch.set(doc(historyRefFor(db, uid), entry.generation), { ...entry, pinned: true, label: normalizeRestorePointLabel(label) }, { merge: true });
+    await batch.commit();
+    return entry.generation;
+};
+
+/** 取消還原點：之後依一般的保留規則處理。 */
+export const clearRestorePoint = async (db, uid, generation) => {
+    const batch = writeBatch(db);
+    batch.set(doc(historyRefFor(db, uid), generation), { pinned: false, label: '' }, { merge: true });
+    await batch.commit();
 };
 
 export const getMetaRef = metaRefFor;

@@ -23,7 +23,7 @@ vi.mock('firebase/firestore', () => {
         }),
         writeBatch: () => {
             const sets = [];
-            return { set: (ref, value) => sets.push([ref.path, value]), delete: () => {}, commit: async () => sets.forEach(([p, v]) => store.docs.set(p, v)) };
+            return { set: (ref, value, o) => sets.push([ref.path, value, o]), delete: () => {}, commit: async () => sets.forEach(([p, v, o]) => store.docs.set(p, o?.merge ? { ...(store.docs.get(p) || {}), ...v } : v)) };
         }
     };
 });

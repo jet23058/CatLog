@@ -34,30 +34,45 @@ final class CloudRepositoryTests: XCTestCase {
 
         let second = try await repository.write(dataJSON: #"{"records":{"a":2}}"#, expectedRevision: 1, previousChunkIds: snapshot.chunkIds)
         XCTAssertEqual(second.revision, 2)
-        // 上一份保留成歷史版本：兩份資料塊都在，各有一筆紀錄，可以讀回舊內容。
-        XCTAssertEqual(store.chunkCount, first.chunkIds.count + second.chunkIds.count)
-        let history = try await repository.listHistory()
-        XCTAssertEqual(history.map(\.revision), [2, 1])
-        let oldVersion = try await repository.readVersion(history[1])
-        XCTAssertTrue(oldVersion.contains("🐱🎉 中文"))
+        // 同一天再存一次：上一份被併掉，只留當天最後一份。
+        XCTAssertEqual(store.chunkCount, second.chunkIds.count)
+        let sameDay = try await repository.listHistory()
+        XCTAssertEqual(sameDay.map(\.revision), [2])
     }
 
-    func testPrunesHistoryButKeepsCurrent() async throws {
+    func testRestorePointSurvivesSameDaySaves() async throws {
+        let first = try await repository.write(dataJSON: #"{"memos":{"a":"🐱🎉 中文"}}"#, expectedRevision: 0)
+        try await repository.createRestorePoint(label: "  匯入 MOZE 前 ")
+        let second = try await repository.write(dataJSON: #"{"v":2}"#, expectedRevision: 1, previousChunkIds: first.chunkIds)
+        var history = try await repository.listHistory()
+        XCTAssertEqual(history.map(\.revision), [2, 1])
+        XCTAssertEqual(history[1].label, "匯入 MOZE 前")
+        XCTAssertTrue(history[1].isRestorePoint)
+        let oldVersion = try await repository.readVersion(history[1])
+        XCTAssertTrue(oldVersion.contains("🐱🎉 中文"))
+
+        try await repository.clearRestorePoint(history[1])
+        _ = try await repository.write(dataJSON: #"{"v":3}"#, expectedRevision: 2, previousChunkIds: second.chunkIds)
+        history = try await repository.listHistory()
+        XCTAssertEqual(history.map(\.revision), [3])
+    }
+
+    func testKeepsOneVersionPerDay() async throws {
         var revision = 0
         var chunkIds: [String] = []
         let start = Date(timeIntervalSince1970: 1_767_225_600)
-        for i in 0..<25 {
-            let result = try await repository.write(dataJSON: #"{"records":{"i":\#(i)}}"#, expectedRevision: revision,
-                                                   previousChunkIds: chunkIds, now: start.addingTimeInterval(Double(i) * 60))
-            revision = result.revision
-            chunkIds = result.chunkIds
+        for day in 0..<3 {
+            for i in 0..<3 {
+                let result = try await repository.write(dataJSON: #"{"d":\#(day),"i":\#(i)}"#, expectedRevision: revision,
+                                                       previousChunkIds: chunkIds, now: start.addingTimeInterval(Double(day) * 86_400 + Double(i) * 60))
+                revision = result.revision
+                chunkIds = result.chunkIds
+            }
         }
-        let history = try await repository.listHistory()
-        XCTAssertEqual(history.count, 20)
-        XCTAssertEqual(history.first?.revision, 25)
-        XCTAssertEqual(store.chunkCount, 20)
+        let daily = try await repository.listHistory()
+        XCTAssertEqual(daily.map(\.revision), [9, 6, 3])
         let current = try await repository.read()
-        XCTAssertTrue(try XCTUnwrap(current.dataJSON).contains(#""i":24"#))
+        XCTAssertTrue(try XCTUnwrap(current.dataJSON).contains(#""d":2"#))
     }
 
     func testRejectsStaleWrites() async throws {

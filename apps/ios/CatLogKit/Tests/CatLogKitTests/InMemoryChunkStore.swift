@@ -10,7 +10,18 @@ final class InMemoryChunkStore: ChunkStore, @unchecked Sendable {
     var failTransaction: Error?
 
     func readHistory() async throws -> [HistoryEntry] { lock.withLock { Array(history.values) } }
-    func writeHistory(_ entries: [HistoryEntry]) async throws { lock.withLock { entries.forEach { history[$0.generation] = $0 } } }
+    /// 與 Firestore 的 merge 寫入相同：pinned / label 為 nil 時保留原本的值。
+    func writeHistory(_ entries: [HistoryEntry]) async throws {
+        lock.withLock {
+            for var entry in entries {
+                if let existing = history[entry.generation] {
+                    entry.pinned = entry.pinned ?? existing.pinned
+                    entry.label = entry.label ?? existing.label
+                }
+                history[entry.generation] = entry
+            }
+        }
+    }
     func deleteHistory(generation: String) async throws { lock.withLock { _ = history.removeValue(forKey: generation) } }
     func setHistory(_ entry: HistoryEntry) { lock.withLock { history[entry.generation] = entry } }
 

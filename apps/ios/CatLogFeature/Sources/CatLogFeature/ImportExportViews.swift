@@ -233,7 +233,7 @@ struct HistoryVersionFile: Transferable {
     }
 }
 
-/// 雲端歷史版本：每次存檔保留一份（最近 20 份，加上 30 天內每天最後一份），可以預覽差異後還原或匯出。
+/// 雲端歷史版本：自動每天保留一份（30 天內每天、更早的每月一份保留 12 個月），也可以手動建立還原點；可以預覽差異後還原或匯出。
 struct CloudHistoryView: View {
     @ObservedObject var model: AppModel
     let core: CatLogCore
@@ -241,6 +241,8 @@ struct CloudHistoryView: View {
     @State private var errorMessage: String?
     @State private var loadingGeneration: String?
     @State private var restoreBox: RestoreBox?
+    @State private var restoreLabel = ""
+    @State private var isUpdatingRestorePoint = false
 
     private struct RestoreBox: Identifiable {
         let id = UUID()
@@ -254,6 +256,15 @@ struct CloudHistoryView: View {
                 Section { Text(errorMessage).foregroundStyle(.red) }
             }
             Section {
+                TextField("還原點說明（選填），例如：匯入 MOZE 前", text: $restoreLabel)
+                Button("把目前狀態設為還原點", systemImage: "pin") {
+                    Task { await updateRestorePoint { try await model.createRestorePoint(label: restoreLabel) } }
+                }
+                .disabled(isUpdatingRestorePoint)
+            } footer: {
+                Text("自動每天保留一份；重要操作前可以手動建立還原點，還原點不會被自動清掉。")
+            }
+            Section {
                 if entries == nil && errorMessage == nil {
                     ProgressView("讀取中…")
                 } else if entries?.isEmpty == true {
@@ -265,6 +276,10 @@ struct CloudHistoryView: View {
                             HStack(spacing: 6) {
                                 Text(entry.savedDate.formatted(date: .abbreviated, time: .shortened))
                                 if index == 0 { Text("目前").font(.caption2.bold()).foregroundStyle(.teal) }
+                                if entry.isRestorePoint { Label("還原點", systemImage: "pin.fill").font(.caption2.bold()).foregroundStyle(.indigo) }
+                            }
+                            if entry.isRestorePoint, let label = entry.label, !label.isEmpty {
+                                Text(label).font(.caption).foregroundStyle(.indigo)
                             }
                             Text("版本 \(entry.revision)・\(Self.size(entry.length))\(entry.deviceId.isEmpty ? "" : "・\(entry.deviceId)")")
                                 .font(.caption).foregroundStyle(.secondary)
@@ -281,9 +296,17 @@ struct CloudHistoryView: View {
                                 .disabled(loadingGeneration != nil || !model.compatibility.canWrite)
                         }
                     }
+                    .swipeActions(edge: .trailing) {
+                        if entry.isRestorePoint {
+                            Button("取消還原點", systemImage: "pin.slash") {
+                                Task { await updateRestorePoint { try await model.clearRestorePoint(entry) } }
+                            }
+                            .tint(.orange)
+                        }
+                    }
                 }
             } footer: {
-                Text("還原前會先顯示和目前資料的差異；確認後存成新的版本，所以還原本身也能再還原回來。")
+                Text("還原前會先顯示和目前資料的差異；確認後存成新的版本，所以還原本身也能再還原回來。還原點可以向左滑取消。")
             }
         }
         .navigationTitle("雲端歷史版本")
@@ -299,6 +322,18 @@ struct CloudHistoryView: View {
         do {
             entries = try await model.cloudHistory()
             errorMessage = nil
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func updateRestorePoint(_ action: () async throws -> Void) async {
+        isUpdatingRestorePoint = true
+        defer { isUpdatingRestorePoint = false }
+        do {
+            try await action()
+            restoreLabel = ""
+            await load()
         } catch {
             errorMessage = error.localizedDescription
         }

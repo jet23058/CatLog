@@ -27,7 +27,8 @@ final class FirestoreChunkStore: ChunkStore, @unchecked Sendable {
             return HistoryEntry(generation: generation, revision: int("revision"), chunkCount: int("chunkCount"),
                                 checksum: data["checksum"] as? String ?? "", length: int("length"),
                                 savedAt: (data["savedAt"] as? NSNumber)?.doubleValue ?? 0,
-                                deviceId: data["deviceId"] as? String ?? "", schemaVersion: int("schemaVersion"))
+                                deviceId: data["deviceId"] as? String ?? "", schemaVersion: int("schemaVersion"),
+                                pinned: data["pinned"] as? Bool, label: data["label"] as? String)
         }
     }
 
@@ -35,11 +36,15 @@ final class FirestoreChunkStore: ChunkStore, @unchecked Sendable {
         guard !entries.isEmpty else { return }
         let batch = db.batch()
         for entry in entries {
-            batch.setData([
+            var data: [String: Any] = [
                 "generation": entry.generation, "revision": entry.revision, "chunkCount": entry.chunkCount,
                 "checksum": entry.checksum, "length": entry.length, "savedAt": Int64(entry.savedAt),
                 "deviceId": entry.deviceId, "schemaVersion": entry.schemaVersion,
-            ], forDocument: historyRef.document(entry.generation))
+            ]
+            if let pinned = entry.pinned { data["pinned"] = pinned }
+            if let label = entry.label { data["label"] = label }
+            // merge：沒帶 pinned / label 時保留原本的還原點設定（與 web 相同）。
+            batch.setData(data, forDocument: historyRef.document(entry.generation), merge: true)
         }
         try await batch.commit()
     }

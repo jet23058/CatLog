@@ -80,14 +80,21 @@ export const summarizeDataCounts = (data) => {
 
 // ── 雲端歷史版本 ───────────────────────────────────────────────
 // 每次存檔的資料塊不再立刻刪除，而是記一筆 users/{uid}/history/{generation}，之後可以預覽、匯出或還原。
-// 保留規則：最近 HISTORY_KEEP_RECENT 份全部保留；更早的，在 HISTORY_KEEP_DAYS 天內每天保留最後一份；
-// 目前使用中的版本永遠不刪。其他的資料塊與紀錄一起刪除。
+// 保留規則（使用者 2026-11-21 決定）：
+// - 自動：每天保留最後一份，保留 HISTORY_KEEP_DAYS 天；更早的每個月保留最後一份，保留 HISTORY_KEEP_MONTHS 個月。
+// - 手動還原點（pinned）：一直保留，直到使用者取消。
+// - 目前使用中的版本永遠保留。
+// 其他版本連同資料塊一起刪除。
 
-export const HISTORY_KEEP_RECENT = 20;
 export const HISTORY_KEEP_DAYS = 30;
+export const HISTORY_KEEP_MONTHS = 12;
+export const RESTORE_POINT_LABEL_MAX = 60;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-/** 由指標文件（meta/storage）產生一筆歷史紀錄；沒有 generation（舊格式）時回傳 null。 */
+/**
+ * 由指標文件（meta/storage）產生一筆歷史紀錄；沒有 generation（舊格式）時回傳 null。
+ * 不含 pinned / label：寫入時用 merge，才不會把已經設成還原點的紀錄改回一般版本。
+ */
 export const createHistoryEntry = (meta) => {
     if (!meta?.generation) return null;
     return {
@@ -111,32 +118,47 @@ const localDayKey = (ms) => {
     const date = new Date(ms);
     return `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
 };
+const localMonthIndex = (ms) => {
+    const date = new Date(ms);
+    return date.getFullYear() * 12 + date.getMonth();
+};
 
-/** 依保留規則回傳要刪除的 generation（不含 currentGeneration）。 */
+/** 依保留規則回傳要刪除的 generation。 */
 export const selectHistoryToPrune = (entries = [], {
     now,
     currentGeneration = '',
-    keepRecent = HISTORY_KEEP_RECENT,
-    keepDays = HISTORY_KEEP_DAYS
+    keepDays = HISTORY_KEEP_DAYS,
+    keepMonths = HISTORY_KEEP_MONTHS
 } = {}) => {
-    const sorted = sortHistoryEntries(entries);
     const keptDays = new Set();
+    const keptMonths = new Set();
+    const nowMonth = localMonthIndex(now);
     const prune = [];
-    sorted.forEach((entry, index) => {
-        if (entry.generation === currentGeneration) return;
-        if (index < keepRecent) {
-            keptDays.add(localDayKey(entry.savedAt));
+    // 新到舊：每天 / 每月遇到的第一份就是那天 / 那個月最後一份。
+    sortHistoryEntries(entries).forEach((entry) => {
+        const day = localDayKey(entry.savedAt);
+        const month = localMonthIndex(entry.savedAt);
+        if (entry.generation === currentGeneration || entry.pinned === true) {
+            keptDays.add(day);
+            keptMonths.add(month);
             return;
         }
-        const day = localDayKey(entry.savedAt);
         if (now - entry.savedAt <= keepDays * DAY_MS && !keptDays.has(day)) {
             keptDays.add(day);
+            keptMonths.add(month);
+            return;
+        }
+        if (nowMonth - month < keepMonths && !keptMonths.has(month)) {
+            keptMonths.add(month);
             return;
         }
         prune.push(entry.generation);
     });
     return prune;
 };
+
+/** 還原點的說明：去掉前後空白並限制長度。 */
+export const normalizeRestorePointLabel = (label = '') => String(label || '').trim().slice(0, RESTORE_POINT_LABEL_MAX);
 
 /** 把某個歷史版本的資料塊組回 JSON 並驗證；不完整時丟錯。 */
 export const assembleHistoryVersion = (entry, chunks = []) => {

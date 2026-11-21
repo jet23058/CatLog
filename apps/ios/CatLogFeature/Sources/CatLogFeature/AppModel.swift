@@ -302,6 +302,17 @@ public final class AppModel: ObservableObject {
         return try await CloudRepository(store: FirestoreChunkStore(uid: uid), core: core.bridge).listHistory()
     }
 
+    /// 把目前的雲端版本設成手動還原點。
+    public func createRestorePoint(label: String) async throws {
+        guard let core, let uid = Auth.auth().currentUser?.uid else { throw CoreBridgeError.coreNotLoaded }
+        try await CloudRepository(store: FirestoreChunkStore(uid: uid), core: core.bridge).createRestorePoint(label: label)
+    }
+
+    public func clearRestorePoint(_ entry: HistoryEntry) async throws {
+        guard let core, let uid = Auth.auth().currentUser?.uid else { throw CoreBridgeError.coreNotLoaded }
+        try await CloudRepository(store: FirestoreChunkStore(uid: uid), core: core.bridge).clearRestorePoint(entry)
+    }
+
     /// 某個歷史版本的完整資料，包成備份檔格式（匯出與預覽還原共用）。
     public func historyBackupText(_ entry: HistoryEntry) async throws -> String {
         guard let core, let uid = Auth.auth().currentUser?.uid else { throw CoreBridgeError.coreNotLoaded }

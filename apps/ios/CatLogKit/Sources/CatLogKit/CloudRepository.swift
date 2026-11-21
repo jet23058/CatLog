@@ -67,9 +67,15 @@ public struct HistoryEntry: Codable, Equatable, Sendable, Identifiable {
     public let savedAt: Double
     public let deviceId: String
     public let schemaVersion: Int
+    /// 手動還原點：不會被自動清掉。nil 表示寫入時不改動（合併寫入，保留原本的設定）。
+    public var pinned: Bool?
+    public var label: String?
     public var id: String { generation }
+    public var isRestorePoint: Bool { pinned == true }
 
-    public init(generation: String, revision: Int, chunkCount: Int, checksum: String, length: Int, savedAt: Double, deviceId: String, schemaVersion: Int) {
+    public init(generation: String, revision: Int, chunkCount: Int, checksum: String, length: Int, savedAt: Double, deviceId: String, schemaVersion: Int, pinned: Bool? = nil, label: String? = nil) {
+        self.pinned = pinned
+        self.label = label
         self.generation = generation
         self.revision = revision
         self.chunkCount = chunkCount
@@ -264,6 +270,25 @@ public final class CloudRepository: @unchecked Sendable {
         let chunksJSON = try JSONSerialization.data(withJSONObject: chunks.map { ["index": $0.index, "content": $0.content] })
         let entryJSON = String(decoding: try JSONEncoder().encode(entry), as: UTF8.self)
         return try core.callString("assembleHistoryVersion", [.json(entryJSON), .json(String(decoding: chunksJSON, as: UTF8.self))])
+    }
+
+    /// 把目前的雲端版本設成手動還原點（不會被自動清掉）。
+    public func createRestorePoint(label: String) async throws {
+        guard let meta = try await store.readMeta() else { throw CloudStorageError.integrity("雲端還沒有可以設成還原點的版本，請先存檔一次。") }
+        let text = try core.callJSON("createHistoryEntry", [.json(try meta.jsonString())])
+        guard text != "null" else { throw CloudStorageError.integrity("雲端還沒有可以設成還原點的版本，請先存檔一次。") }
+        var entry = try JSONDecoder().decode(HistoryEntry.self, from: Data(text.utf8))
+        entry.pinned = true
+        entry.label = try core.callString("normalizeRestorePointLabel", [.string(label)])
+        try await store.writeHistory([entry])
+    }
+
+    /// 取消還原點：之後依一般的保留規則處理。
+    public func clearRestorePoint(_ entry: HistoryEntry) async throws {
+        var cleared = entry
+        cleared.pinned = false
+        cleared.label = ""
+        try await store.writeHistory([cleared])
     }
 
     private func recordHistory(metas: [CloudMeta], currentGeneration: String, now: Date) async throws {

@@ -30,9 +30,10 @@ var CatLogCore = (() => {
     DEBT_CATEGORIES: () => DEBT_CATEGORIES,
     DEFAULT_EXCHANGE_RATES: () => DEFAULT_EXCHANGE_RATES,
     HISTORY_KEEP_DAYS: () => HISTORY_KEEP_DAYS,
-    HISTORY_KEEP_RECENT: () => HISTORY_KEEP_RECENT,
+    HISTORY_KEEP_MONTHS: () => HISTORY_KEEP_MONTHS,
     INITIAL_DATA: () => INITIAL_DATA,
     PRIVACY_MASK: () => PRIVACY_MASK,
+    RESTORE_POINT_LABEL_MAX: () => RESTORE_POINT_LABEL_MAX,
     SCHEMA_MIN_CLIENT_VERSION: () => SCHEMA_MIN_CLIENT_VERSION,
     STOCK_MARKETS: () => STOCK_MARKETS,
     STOCK_QUOTE_SOURCES: () => STOCK_QUOTE_SOURCES,
@@ -213,6 +214,7 @@ var CatLogCore = (() => {
     normalizeAppData: () => normalizeAppData,
     normalizeDate: () => normalizeDate,
     normalizeMonthValue: () => normalizeMonthValue,
+    normalizeRestorePointLabel: () => normalizeRestorePointLabel,
     normalizeSnapshotVersions: () => normalizeSnapshotVersions,
     normalizeTradeDescription: () => normalizeTradeDescription,
     normalizeUSBrokerDate: () => normalizeUSBrokerDate,
@@ -2183,8 +2185,9 @@ var CatLogCore = (() => {
       stockSnapshotVersions: countItems(data?.stockHoldingSnapshots)
     };
   };
-  var HISTORY_KEEP_RECENT = 20;
   var HISTORY_KEEP_DAYS = 30;
+  var HISTORY_KEEP_MONTHS = 12;
+  var RESTORE_POINT_LABEL_MAX = 60;
   var DAY_MS = 24 * 60 * 60 * 1e3;
   var createHistoryEntry = (meta) => {
     if (!meta?.generation) return null;
@@ -2204,30 +2207,42 @@ var CatLogCore = (() => {
     const date = new Date(ms);
     return `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
   };
+  var localMonthIndex = (ms) => {
+    const date = new Date(ms);
+    return date.getFullYear() * 12 + date.getMonth();
+  };
   var selectHistoryToPrune = (entries = [], {
     now,
     currentGeneration = "",
-    keepRecent = HISTORY_KEEP_RECENT,
-    keepDays = HISTORY_KEEP_DAYS
+    keepDays = HISTORY_KEEP_DAYS,
+    keepMonths = HISTORY_KEEP_MONTHS
   } = {}) => {
-    const sorted = sortHistoryEntries(entries);
     const keptDays = /* @__PURE__ */ new Set();
+    const keptMonths = /* @__PURE__ */ new Set();
+    const nowMonth = localMonthIndex(now);
     const prune = [];
-    sorted.forEach((entry, index) => {
-      if (entry.generation === currentGeneration) return;
-      if (index < keepRecent) {
-        keptDays.add(localDayKey(entry.savedAt));
+    sortHistoryEntries(entries).forEach((entry) => {
+      const day = localDayKey(entry.savedAt);
+      const month = localMonthIndex(entry.savedAt);
+      if (entry.generation === currentGeneration || entry.pinned === true) {
+        keptDays.add(day);
+        keptMonths.add(month);
         return;
       }
-      const day = localDayKey(entry.savedAt);
       if (now - entry.savedAt <= keepDays * DAY_MS && !keptDays.has(day)) {
         keptDays.add(day);
+        keptMonths.add(month);
+        return;
+      }
+      if (nowMonth - month < keepMonths && !keptMonths.has(month)) {
+        keptMonths.add(month);
         return;
       }
       prune.push(entry.generation);
     });
     return prune;
   };
+  var normalizeRestorePointLabel = (label = "") => String(label || "").trim().slice(0, RESTORE_POINT_LABEL_MAX);
   var assembleHistoryVersion = (entry, chunks = []) => {
     const sorted = [...chunks].sort((a, b) => (a.index ?? 0) - (b.index ?? 0));
     if (sorted.length !== entry.chunkCount) {
