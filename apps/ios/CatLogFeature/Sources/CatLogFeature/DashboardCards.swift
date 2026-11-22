@@ -129,7 +129,7 @@ struct SummaryGrid: View {
     }
 }
 
-private struct SummaryCard: View {
+struct SummaryCard: View {
     let title: String
     let value: String
     var valueColor: Color = .primary
@@ -151,8 +151,10 @@ private struct SummaryCard: View {
                 ProgressView(value: progress).tint(Theme.accent).padding(.top, 4)
             }
         }
-        .frame(maxWidth: .infinity, minHeight: 76, alignment: .topLeading)
-        .themeCard()
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(Theme.card, in: .rect(cornerRadius: 16))
         .accessibilityElement(children: .combine)
     }
 }

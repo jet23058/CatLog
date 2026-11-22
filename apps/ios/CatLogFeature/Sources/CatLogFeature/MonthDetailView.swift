@@ -37,6 +37,7 @@ struct MonthDetailView: View {
     var body: some View {
         List {
             if let detail {
+                monthSwitcher(detail)
                 summarySection(detail)
                 assetsSection(detail)
                 if !detail.incomes.isEmpty { incomesSection(detail) }
@@ -49,21 +50,19 @@ struct MonthDetailView: View {
                 Text(errorMessage).foregroundStyle(.red)
             }
         }
-        .navigationTitle(Self.title(monthKey))
+        .navigationTitle("月份明細")
         .navigationBarTitleDisplayMode(.inline)
+        .listSectionSpacing(.compact)
         .toolbar {
-            ToolbarItemGroup(placement: .topBarTrailing) {
-                Button("編輯") { showEdit = true }
-                    .disabled(!model.compatibility.canWrite)
-                Button { showAddDebtEvent = true } label: { Image(systemName: "plus") }
-                    .disabled(!model.compatibility.canWrite)
-                    .accessibilityLabel("新增負債異動")
-                Button { go(to: detail?.prevMonth) } label: { Image(systemName: "chevron.left") }
-                    .disabled(detail?.prevMonth == nil)
-                    .accessibilityLabel("上個月")
-                Button { go(to: detail?.nextMonth) } label: { Image(systemName: "chevron.right") }
-                    .disabled(detail?.nextMonth == nil)
-                    .accessibilityLabel("下個月")
+            // 標題列只留「編輯」選單；切換月份移到內容最上方（原本四個按鈕擠在一起，標題被截斷）。
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button("編輯這個月", systemImage: "pencil") { showEdit = true }
+                    Button("新增負債異動", systemImage: "plus.circle") { showAddDebtEvent = true }
+                } label: {
+                    Text("編輯")
+                }
+                .disabled(!model.compatibility.canWrite)
             }
         }
         .task(id: "\(monthKey)#\(model.dataVersion)") { load() }
@@ -77,15 +76,73 @@ struct MonthDetailView: View {
 
     // MARK: - Sections
 
+    /// 上個月／下個月：獨立的大按鈕，夾著月份名稱。
+    private func monthSwitcher(_ detail: MonthDetail) -> some View {
+        HStack(spacing: 8) {
+            Button { go(to: detail.prevMonth) } label: {
+                Image(systemName: "chevron.left").font(.body.bold()).frame(width: 44, height: 44)
+                    .background(Theme.card, in: .rect(cornerRadius: 12))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(detail.prevMonth == nil ? Color.secondary.opacity(0.4) : Theme.accent)
+            .disabled(detail.prevMonth == nil)
+            .accessibilityLabel("上個月")
+            Text(Self.title(monthKey))
+                .font(.title3.bold())
+                .frame(maxWidth: .infinity)
+            Button { go(to: detail.nextMonth) } label: {
+                Image(systemName: "chevron.right").font(.body.bold()).frame(width: 44, height: 44)
+                    .background(Theme.card, in: .rect(cornerRadius: 12))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(detail.nextMonth == nil ? Color.secondary.opacity(0.4) : Theme.accent)
+            .disabled(detail.nextMonth == nil)
+            .accessibilityLabel("下個月")
+        }
+        .plainListRow(top: 0, bottom: 4)
+    }
+
+    /// 與首頁同一套樣式：淨資產主卡片＋四張小卡。
     private func summarySection(_ detail: MonthDetail) -> some View {
         let summary = detail.summary
         return Section {
-            DetailRow(title: "淨資產", value: wan(summary.netAssets), detail: "較上月 \(signedWan(summary.assetDiff))")
-            DetailRow(title: "本月收入", value: money(summary.monthlyIncome), detail: "較上月 \(signedWan(summary.incomeDiff))")
-            DetailRow(title: "本月支出", value: money(summary.monthlyCost))
-            DetailRow(title: "負債", value: wan(summary.totalDebts))
-            DetailRow(title: "投資比例", value: Self.percent(summary.investmentRate), detail: "浮動資產 / 總資產")
-            DetailRow(title: "綜合損益", value: signedWan(summary.compositeScore), detail: "收入成長 + 資產成長")
+            VStack(alignment: .leading, spacing: 10) {
+                Text("淨資產").font(.subheadline).foregroundStyle(Theme.onAccentSecondary)
+                Text(wan(summary.netAssets))
+                    .font(.system(size: 36, weight: .bold).monospacedDigit())
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+                HStack(spacing: 8) {
+                    Text(isPrivacyMode ? "****" : "\(Theme.arrow(summary.assetDiff)) \(signedWan(summary.assetDiff))")
+                        .font(.subheadline.weight(.semibold).monospacedDigit())
+                        .foregroundStyle(isPrivacyMode ? .primary : Theme.trend(summary.assetDiff))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(.white, in: .rect(cornerRadius: 12))
+                    Text("較上月").font(.footnote).foregroundStyle(Theme.onAccentSecondary)
+                }
+                Text("綜合損益 \(signedWan(summary.compositeScore))（收入成長＋資產成長）")
+                    .font(.footnote.monospacedDigit())
+                    .foregroundStyle(Theme.onAccentSecondary)
+            }
+            .padding(20)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Theme.accent, in: .rect(cornerRadius: Theme.heroRadius))
+            .accessibilityElement(children: .combine)
+            .plainListRow()
+            Grid(horizontalSpacing: 12, verticalSpacing: 12) {
+                GridRow {
+                    SummaryCard(title: "本月收入", value: money(summary.monthlyIncome),
+                                detail: "較上月 \(signedWan(summary.incomeDiff))")
+                    SummaryCard(title: "本月支出", value: money(summary.monthlyCost))
+                }
+                GridRow {
+                    SummaryCard(title: "負債", value: wan(summary.totalDebts))
+                    SummaryCard(title: "投資比例", value: Self.percent(summary.investmentRate), detail: "浮動資產 / 總資產")
+                }
+            }
+            .plainListRow()
         }
     }
 
