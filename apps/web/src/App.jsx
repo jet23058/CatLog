@@ -328,41 +328,44 @@ const HomeHero = ({ yearStats, processedData, assetChartData, assetExtremes, isP
 };
 
 /// 主卡片下方的四張小卡：年度資產增長、年度總收入、負債、FIRE 達成率。
+/// 一張只放「標題、數字、一行補充」，桌機排成一列，手機兩欄。
 const HomeSummaryCards = ({ currentYear, yearStats, fireStats, isPrivacyMode, onOpenFire }) => {
     const mask = (text) => (isPrivacyMode ? '****' : text);
     const growth = yearStats.realAssetGrowthAmount;
     const ratio = yearStats.assetGrowthRatio;
-    const card = 'bg-white rounded-[20px] p-5 flex flex-col gap-1.5 text-left';
+    const card = 'bg-white rounded-2xl px-4 py-3 flex flex-col gap-0.5 text-left min-w-0';
+    const title = 'text-sm text-slate-600';
+    const value = 'text-xl font-bold font-inter leading-tight';
+    const detail = 'text-xs text-slate-500 font-inter truncate';
     const progress = Math.min(Math.max(fireStats.progress || 0, 0), 1);
     return (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-            <div className={card}>
-                <span className="text-sm text-slate-600">年度資產增長</span>
-                <span className={`text-2xl font-bold font-inter ${isPrivacyMode ? 'text-slate-900' : trendTextClass(growth)}`}>{mask(`${growth > 0 ? '+' : ''}${formatWan(growth)}`)}</span>
-                <span className="text-sm text-slate-600 font-inter">{mask(`${trendArrow(ratio - 1)} ${formatRate(ratio)}`)}</span>
-                <span className="text-xs text-slate-500 font-inter">{yearStats.assetGrowthStartDate || '尚無紀錄'} 至 {yearStats.assetGrowthEndDate || '尚無紀錄'}</span>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className={card} title={isPrivacyMode ? undefined : `${yearStats.assetGrowthStartDate || '尚無紀錄'} 至 ${yearStats.assetGrowthEndDate || '尚無紀錄'}`}>
+                <span className={title}>年度資產增長</span>
+                <span className={`${value} ${isPrivacyMode ? 'text-slate-900' : trendTextClass(growth)}`}>{mask(`${growth > 0 ? '+' : ''}${formatWan(growth)}`)}</span>
+                <span className={detail}>{mask(`${trendArrow(ratio - 1)} ${formatRate(ratio)}`)}</span>
+            </div>
+            <div className={card} title={isPrivacyMode ? undefined : `收入年增長 ${formatRate(yearStats.assetGrowthRate)}・占總所得 ${formatRate(yearStats.incomeGrowthRate)}`}>
+                <span className={title}>年度總收入</span>
+                <span className={`${value} text-slate-900`}>{mask(formatWan(yearStats.totalIncome))}</span>
+                <span className={detail}>月均 {mask(formatMoney(yearStats.avgIncome))}</span>
             </div>
             <div className={card}>
-                <span className="text-sm text-slate-600">年度總收入</span>
-                <span className="text-2xl font-bold font-inter text-slate-900">{mask(formatWan(yearStats.totalIncome))}</span>
-                <span className="text-sm text-slate-600 font-inter">月均 {mask(formatMoney(yearStats.avgIncome))}</span>
-                <span className="text-xs text-slate-500 font-inter">收入年增長 {mask(formatRate(yearStats.assetGrowthRate))}・占總所得 {mask(formatRate(yearStats.incomeGrowthRate))}</span>
-            </div>
-            <div className={card}>
-                <span className="text-sm text-slate-600">負債</span>
-                <span className="text-2xl font-bold font-inter text-slate-900">{mask(formatWan(yearStats.thisYearDebt))}</span>
-                <span className="text-sm text-slate-600">截至 {currentYear} 年底</span>
+                <span className={title}>負債</span>
+                <span className={`${value} text-slate-900`}>{mask(formatWan(yearStats.thisYearDebt))}</span>
+                <span className={detail}>截至 {currentYear} 年底</span>
             </div>
             <button type="button" onClick={onOpenFire} className={`${card} hover:ring-2 hover:ring-teal-200 transition-shadow`}>
-                <span className="text-sm text-slate-600">FIRE 達成</span>
+                <span className={title}>FIRE 達成</span>
                 {/* 隱私模式連進度一起隱藏：達成率加上提領率就能推算出資產規模。 */}
-                <span className="text-2xl font-bold font-inter text-slate-900">{mask(formatRate(fireStats.progress))}</span>
-                {!isPrivacyMode && (
-                    <div className="h-1.5 rounded-full bg-slate-200 mt-1" aria-hidden="true">
+                <span className={`${value} text-slate-900`}>{mask(formatRate(fireStats.progress))}</span>
+                {isPrivacyMode ? (
+                    <span className={detail}>提領率 {fireStats.rate}%</span>
+                ) : (
+                    <div className="h-1.5 rounded-full bg-slate-200 mt-1.5 mb-1" aria-label={`提領率 ${fireStats.rate}%`}>
                         <div className="h-1.5 rounded-full bg-teal-700" style={{ width: `${progress * 100}%` }}></div>
                     </div>
                 )}
-                <span className="text-xs text-slate-500">提領率 {fireStats.rate}%・點開看明細</span>
             </button>
         </div>
     );
@@ -5230,16 +5233,16 @@ const MainApp = ({ user, logout }) => {
                             )}
                         </div>
                         <div className="flex items-center gap-2">
-                            <div className="flex items-center rounded-xl border border-slate-300 bg-white">
-                                <button onClick={() => setCurrentYear(y => y - 1)} aria-label="上一年" className="p-2 text-slate-500 hover:text-slate-900 transition-colors"><ChevronLeft size={18} aria-hidden="true" /></button>
-                                <button onClick={() => setShowYearSelector(true)} aria-label={`選擇年份，目前 ${currentYear} 年`} className="px-1 min-h-[40px] text-base font-inter font-semibold text-slate-900 hover:text-teal-700 transition-colors">{currentYear}</button>
+                            <div className="flex items-center gap-1" role="group" aria-label="年份">
+                                <button onClick={() => setCurrentYear(y => y - 1)} aria-label="上一年" className="w-10 h-10 rounded-xl border border-slate-300 bg-white text-slate-600 flex items-center justify-center hover:bg-slate-100 hover:text-slate-900 transition-colors"><ChevronLeft size={20} aria-hidden="true" /></button>
+                                <button onClick={() => setShowYearSelector(true)} aria-label={`選擇年份，目前 ${currentYear} 年`} className="h-10 min-w-[64px] px-2 rounded-xl text-base font-inter font-semibold text-slate-900 hover:bg-slate-100 transition-colors">{currentYear}</button>
                                 <button
                                     onClick={() => setCurrentYear(y => y + 1)}
                                     disabled={currentYear >= realCurrentYear}
                                     aria-label="下一年"
-                                    className={`p-2 transition-colors ${currentYear >= realCurrentYear ? 'text-slate-300 cursor-not-allowed' : 'text-slate-500 hover:text-slate-900'}`}
+                                    className={`w-10 h-10 rounded-xl border flex items-center justify-center transition-colors ${currentYear >= realCurrentYear ? 'border-slate-200 bg-slate-50 text-slate-300 cursor-not-allowed' : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}
                                 >
-                                    <ChevronRight size={18} aria-hidden="true" />
+                                    <ChevronRight size={20} aria-hidden="true" />
                                 </button>
                             </div>
                             <button
