@@ -150,6 +150,14 @@ struct MonthDetailView: View {
         }
     }
 
+    private func assetColor(_ name: String?) -> Color {
+        guard let allocation else { return ChartPalette.other }
+        for (index, slice) in allocation.slices.enumerated() where !slice.isOther && slice.name == (name ?? "未命名") {
+            return ChartPalette.color(slice, index: index)
+        }
+        return ChartPalette.other
+    }
+
     /// 圖表：資產配置、近 6 個月收入與支出、本月花費類別（沒有資料的圖不顯示）。
     private func chartsSection(_ detail: MonthDetail) -> some View {
         Section {
@@ -171,7 +179,12 @@ struct MonthDetailView: View {
                 Text("本月沒有資產紀錄").foregroundStyle(.secondary)
             }
             ForEach(detail.assets) { asset in
-                HStack {
+                HStack(spacing: 12) {
+                    // 與「資產配置」相同的顏色（前 4 名各一色，其餘灰色）。
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(assetColor(asset.name))
+                        .frame(width: 4, height: 32)
+                        .accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(asset.name ?? "未命名")
                         Text(asset.isFloating ? "浮動資產" : "固定資產").font(.caption).foregroundStyle(.secondary)
