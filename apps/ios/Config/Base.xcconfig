@@ -18,3 +18,6 @@ GOOGLE_REVERSED_CLIENT_ID_Release = com.googleusercontent.apps.not-configured
 #include? "Local.xcconfig"
 
 GOOGLE_REVERSED_CLIENT_ID = $(GOOGLE_REVERSED_CLIENT_ID_$(CONFIGURATION))
+
+// App 圖示（CatLog/Assets.xcassets/AppIcon.appiconset，來源 apps/web/public/favicon.png 補滿四角）
+ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon

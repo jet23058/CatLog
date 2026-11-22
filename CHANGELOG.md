@@ -9,6 +9,8 @@
 
 第一個 iOS 原生版本（`ios-v3.1.0`），與 web（`web-v3.1.0`）共用同一份 Firestore 資料與 `packages/core` 計算核心；同時改版兩邊的介面（首頁、月份明細與圖表、個股績效、新增畫面，紅漲綠跌）。也加入雲端歷史版本、正式站嚴格的 Firestore 規則與 Google 登入自訂網域。版本號規則：web 與 iOS 共用 MAJOR.MINOR、各自 PATCH，tag 分別為 `web-vX.Y.Z`、`ios-vX.Y.Z`。
 
+iOS 加上 App 圖示（與 web 相同的 logo，補滿四角成正方形）。
+
 iOS 以免費 Apple 帳號簽章安裝，每 7 天內需重新簽章：新增 `resign-release.sh` 與 `setup-launch-agent.sh schedule`，每週一、四自動用最新的 `ios-v*` tag 重新簽章並安裝（見 `apps/ios/README.md`）。
 
 ### 重構 (Refactor)
