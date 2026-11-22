@@ -131,3 +131,22 @@ extension CatLogCore {
         return version > current
     }
 }
+
+// MARK: - 年份總覽
+
+/// core: getYearlyTrendData 的一年：年底淨資產、收入年增長（今年 ÷ 去年）、收入占歷年總收入。
+public struct YearTrend: Decodable, Equatable, Sendable, Identifiable {
+    public let year: Int
+    @LenientNumber public var assets: Double
+    @LenientNumber public var incomeGrowthRate: Double
+    @LenientNumber public var incomeShare: Double
+    public var id: Int { year }
+}
+
+extension CatLogCore {
+    /// 年份選單用的每年摘要，舊到新（與 web 的「選擇年份」相同）。
+    public func yearlyTrend(years: [Int]) throws -> [YearTrend] {
+        let yearsJSON = String(decoding: try JSONEncoder().encode(years), as: UTF8.self)
+        return try bridge.call("getYearlyTrendData", [.data, .json(yearsJSON)])
+    }
+}

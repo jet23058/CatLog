@@ -44,6 +44,16 @@ final class MaintenanceTests: XCTestCase {
         XCTAssertEqual(september.balance, -23_000)
     }
 
+    func testYearlyTrend() throws {
+        try core.load(dataJSON: #"{"records":{"2025-12-31":[{"name":"a","amount":1000000}],"2026-10-31":[{"name":"a","amount":1200000}]},"incomes":{"2025-06":{"totalAmount":100000},"2026-06":{"totalAmount":150000}}}"#)
+        let trend = try core.yearlyTrend(years: [2026, 2025])
+        XCTAssertEqual(trend.map(\.year), [2025, 2026])
+        XCTAssertEqual(trend[1].assets, 1_200_000)
+        XCTAssertEqual(trend[1].incomeGrowthRate, 1.5)
+        XCTAssertEqual(trend[1].incomeShare, 0.6)
+        XCTAssertEqual(trend[0].incomeGrowthRate, 0) // 沒有前一年收入
+    }
+
     func testFireRate() throws {
         try core.load(dataJSON: try core.settingFireWithdrawalRate("3.5"))
         XCTAssertEqual(try core.fireStats().rate, 3.5)

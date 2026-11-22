@@ -114,6 +114,7 @@ struct DashboardView: View {
     /// 隱私模式：金額顯示成 ****，比例照常顯示。與 web 相同，只存在這台裝置。
     @AppStorage("isPrivacyMode") private var isPrivacyMode = false
     @State private var showFireRate = false
+    @State private var showYearPicker = false
     @State private var lockError: String?
     @State private var showAddAsset = Self.demoSheet == "asset"
     @State private var showAddIncome = Self.demoSheet == "income"
@@ -257,6 +258,9 @@ struct DashboardView: View {
             }
             .navigationTitle("極簡貓資產")
             .sheet(isPresented: $showFireRate) { FireRateSheet(model: model) }
+            .sheet(isPresented: $showYearPicker) {
+                if let core = model.core { YearPickerSheet(model: model, core: core, isPrivacyMode: isPrivacyMode) }
+            }
             .navigationDestination(for: DashboardRoute.self) { route in
                 if let core = model.core {
                     switch route {
@@ -311,13 +315,10 @@ struct DashboardView: View {
                     .accessibilityLabel("新增紀錄")
                 }
                 ToolbarItem(placement: .topBarLeading) {
-                    Menu {
-                        ForEach(model.availableYears, id: \.self) { year in
-                            Button(String(year)) { model.year = year }
-                        }
-                    } label: {
+                    Button { showYearPicker = true } label: {
                         Label(String(model.year), systemImage: "calendar")
                     }
+                    .accessibilityLabel("選擇年份，目前 \(model.year) 年")
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
@@ -625,5 +626,96 @@ struct FireYearlyStatsGroup: View {
             }
         }
         .task(id: version) { stats = (try? core.fireYearlyStats()) ?? [] }
+    }
+}
+
+/// 選擇年份（與 web 的「選擇年份」相同）：多年淨資產趨勢，加上每年的資產、收入年增長、收入占總所得。
+struct YearPickerSheet: View {
+    @ObservedObject var model: AppModel
+    let core: CatLogCore
+    let isPrivacyMode: Bool
+    @Environment(\.dismiss) private var dismiss
+    @State private var trend: [YearTrend] = []
+
+    private func money(_ value: Double) -> String { isPrivacyMode ? "****" : core.formatMoney(value) }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if trend.count >= 2 {
+                    Section {
+                        Chart(trend) { item in
+                            AreaMark(x: .value("年份", String(item.year)), y: .value("淨資產", item.assets))
+                                .foregroundStyle(.teal.opacity(0.15))
+                                .interpolationMethod(.monotone)
+                            LineMark(x: .value("年份", String(item.year)), y: .value("淨資產", item.assets))
+                                .foregroundStyle(.teal)
+                                .interpolationMethod(.monotone)
+                        }
+                        .chartYAxis(isPrivacyMode ? .hidden : .automatic)
+                        .frame(height: 140)
+                        .padding(.vertical, 6)
+                        .accessibilityLabel("歷年淨資產趨勢")
+                    }
+                }
+                Section {
+                    // 新到舊，與 web 相同
+                    ForEach(trend.reversed()) { item in
+                        Button {
+                            model.year = item.year
+                            dismiss()
+                        } label: {
+                            YearTrendRow(item: item, isSelected: item.year == model.year, money: money, rate: core.formatRate)
+                        }
+                        .listRowBackground(item.year == model.year ? Color.teal.opacity(0.08) : nil)
+                    }
+                } footer: {
+                    Text("收入年增長＝今年收入 ÷ 去年收入；收入占總所得＝今年收入佔歷年總收入的比例。")
+                }
+            }
+            .navigationTitle("選擇年份")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
+            .task { trend = (try? core.yearlyTrend(years: model.availableYears)) ?? [] }
+        }
+    }
+}
+
+private struct YearTrendRow: View {
+    let item: YearTrend
+    let isSelected: Bool
+    let money: (Double) -> String
+    let rate: (Double) -> String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(String(item.year)).font(.title3.bold().monospacedDigit())
+                    .foregroundStyle(isSelected ? .teal : .primary)
+                if isSelected { Image(systemName: "checkmark").foregroundStyle(.teal) }
+                Spacer()
+                Text("資產：\(money(item.assets))").font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)
+            }
+            HStack(alignment: .bottom) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("收入年增長").font(.caption2).foregroundStyle(.secondary)
+                    if item.incomeGrowthRate > 0 {
+                        Label(rate(item.incomeGrowthRate), systemImage: item.incomeGrowthRate >= 1 ? "arrow.up.right" : "arrow.down.right")
+                            .font(.caption.bold().monospacedDigit())
+                            .foregroundStyle(item.incomeGrowthRate >= 1 ? .green : .red)
+                    } else {
+                        Text("—").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                Spacer()
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text("收入占總所得").font(.caption2).foregroundStyle(.secondary)
+                    Text(rate(item.incomeShare)).font(.caption.bold().monospacedDigit()).foregroundStyle(.teal)
+                }
+            }
+        }
+        .padding(.vertical, 4)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
     }
 }
