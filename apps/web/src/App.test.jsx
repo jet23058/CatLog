@@ -1376,6 +1376,29 @@ describe('App Integration Tests', () => {
         expect(screen.getByText(/2 筆交易/)).toBeInTheDocument();
     });
 
+    test('Stock Analysis: a revision conflict closes the preview so confirming again cannot import twice', async () => {
+        const user = userEvent.setup();
+        render(<App />);
+        await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
+
+        await user.click(document.querySelector('.lucide-layout-grid').closest('button'));
+        await waitFor(() => expect(screen.getByText('Advanced')).toBeInTheDocument());
+        await user.click(screen.getByText('個股績效'));
+        await user.click(await screen.findByRole('button', { name: /匯入股票交易/ }));
+        const stockCsv = ['類型,日期,項目,股票買入,存入戶頭,帳面餘額', ',2016/2/3,國泰金,"37,081",,"24,919"'].join('\n');
+        fireEvent.change(screen.getByPlaceholderText(/台股可直接貼上/), { target: { value: stockCsv } });
+        await user.click(screen.getByText('預覽匯入明細'));
+        await waitFor(() => expect(screen.getByText('確認匯入股票交易')).toBeInTheDocument());
+
+        // 另一台裝置在這之前存過檔：雲端 revision 比本機新
+        firestoreMeta.current = { revision: 7 };
+        await user.click(screen.getByText('確認匯入'));
+
+        await waitFor(() => expect(screen.getByText('雲端有較新的資料')).toBeInTheDocument());
+        expect(screen.queryByText('確認匯入股票交易')).not.toBeInTheDocument();
+        expect(screen.queryByText('匯入成功')).not.toBeInTheDocument();
+    });
+
     test('Stock Analysis: imports headerless TW pasted format and skips pledge rows', async () => {
         const user = userEvent.setup();
         render(<App />);

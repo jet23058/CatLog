@@ -158,6 +158,16 @@ struct DashboardView: View {
             List {
                 Section {
                     SyncStatusRow(model: model)
+                    if model.isDeviceReadOnly {
+                        Label {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("這台裝置唯讀").bold()
+                                Text("只會讀取雲端資料，不會寫入。要修改資料，到右上角帳號選單關閉。").font(.footnote).foregroundStyle(.secondary)
+                            }
+                        } icon: {
+                            Image(systemName: "lock.shield").foregroundStyle(.indigo)
+                        }
+                    }
                     PreviewNotice(message: model.compatibilityMessage)
                     if model.remoteUpdateAvailable {
                         HStack {
@@ -320,6 +330,7 @@ struct DashboardView: View {
                         if let project = FirebaseBootstrap.projectID {
                             Text(project == "asset-prod" ? "正式站" : "測試站（\(project)）")
                         }
+                        Toggle("這台裝置唯讀", systemImage: "lock.shield", isOn: $model.isDeviceReadOnly)
                         if lock.isEnabled {
                             Button("關閉 Face ID 鎖定", systemImage: "faceid") { lock.disable() }
                         } else {
@@ -415,7 +426,7 @@ private struct PreviewNotice: View {
                 Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
             }
         } else {
-            Label("iOS 可以新增、編輯、刪除，並匯入備份與 MOZE 花費；證券交易匯入請先使用網頁版。", systemImage: "info.circle")
+            Label("與網頁版共用同一份資料，功能相同。", systemImage: "info.circle")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }

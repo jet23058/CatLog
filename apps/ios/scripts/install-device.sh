@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# 建置 Debug 版（連測試站）並安裝、打開到接在這台 Mac 上的 iPhone。
+# 建置並安裝、打開到接在這台 Mac 上的 iPhone。
+# 預設 Debug 版（連測試站）；CATLOG_CONFIGURATION=Release 時建置 Release 版（連正式站），
+# 並以「這台裝置唯讀」啟動，驗證正式站時不會寫入任何資料（之後可在 App 的帳號選單關閉）。
 # 要在 Mac 本機（Warp / 終端機）執行：簽章需要你的登入鑰匙圈，遠端連線用不了。
 # 用法：apps/ios/scripts/install-device.sh [裝置 UDID]（省略時用第一支連接中的實體 iPhone）
 set -euo pipefail
@@ -11,14 +13,28 @@ if [ -z "${DEVICE}" ]; then
   exit 1
 fi
 
+# remote-install.sh --production 會留下這個檔案指定 Release（LaunchAgent 沒辦法帶參數）。
+REQUEST_FILE="${HOME}/Library/Caches/catlog-install-configuration"
+if [ -z "${CATLOG_CONFIGURATION:-}" ] && [ -f "${REQUEST_FILE}" ]; then
+  CATLOG_CONFIGURATION="$(cat "${REQUEST_FILE}")"
+fi
+rm -f "${REQUEST_FILE}"
+CONFIGURATION="${CATLOG_CONFIGURATION:-Debug}"
+case "${CONFIGURATION}" in
+  Debug) LAUNCH_ARGS=() ;;
+  Release) LAUNCH_ARGS=(-CatLogDeviceReadOnly) ;;
+  *) echo "CATLOG_CONFIGURATION 只能是 Debug 或 Release" >&2; exit 1 ;;
+esac
+
 DERIVED="${HOME}/Library/Developer/Xcode/DerivedData/CatLog-device"
-echo "▶ 建置（裝置 ${DEVICE}）…"
-xcodebuild -project CatLog.xcodeproj -scheme CatLog -configuration Debug \
+echo "▶ 建置 ${CONFIGURATION}（$([ "${CONFIGURATION}" = Release ] && echo 正式站，唯讀啟動 || echo 測試站)；裝置 ${DEVICE}）…"
+xcodebuild -project CatLog.xcodeproj -scheme CatLog -configuration "${CONFIGURATION}" \
   -destination "id=${DEVICE}" -derivedDataPath "${DERIVED}" -allowProvisioningUpdates -quiet build
 
-APP="${DERIVED}/Build/Products/Debug-iphoneos/CatLog.app"
+APP="${DERIVED}/Build/Products/${CONFIGURATION}-iphoneos/CatLog.app"
 echo "▶ 安裝…"
 xcrun devicectl device install app --device "${DEVICE}" "${APP}" >/dev/null
 echo "▶ 打開 App…"
-xcrun devicectl device process launch --device "${DEVICE}" work.cloudjet.catlog >/dev/null
+# App 的啟動參數要放在 -- 之後，否則 devicectl 會當成自己的選項。
+xcrun devicectl device process launch --device "${DEVICE}" work.cloudjet.catlog ${LAUNCH_ARGS[@]+-- "${LAUNCH_ARGS[@]}"} >/dev/null
 echo "✓ 完成"
