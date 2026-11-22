@@ -281,27 +281,30 @@ const formatSyncTime = (timestamp) => {
     return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
 };
 
+// 同步狀態：放在標題上方「CatLog」那一行，用小圓點＋一行小字，不搶標題的位置。
+// 需要使用者處理的狀態（失敗、衝突）才做成可以點的小按鈕。
 const SyncStatusBadge = ({ isSaving, syncState, onRetry, onResolveConflict }) => {
-    const base = "text-[11px] px-2 py-1 rounded-full border font-sans font-normal";
+    const row = "inline-flex items-center gap-1.5 whitespace-nowrap text-[11px] leading-none font-sans font-normal tracking-normal normal-case";
+    const dot = (color, pulse = false) => <span aria-hidden="true" className={`w-1.5 h-1.5 rounded-full ${color} ${pulse ? 'animate-pulse' : ''}`}></span>;
     if (isSaving) {
-        return <span role="status" className={`${base} bg-amber-50 text-amber-600 border-amber-200 animate-pulse`}>儲存中...</span>;
+        return <span role="status" className={`${row} text-amber-600`}>{dot('bg-amber-400', true)}儲存中…</span>;
     }
     if (syncState.status === 'error') {
         return (
-            <button onClick={onRetry} className={`${base} bg-rose-50 text-rose-600 border-rose-200 hover:bg-rose-100`} title={syncState.message || '儲存失敗'}>
-                儲存失敗・重試
+            <button onClick={onRetry} className={`${row} px-2 py-1 rounded-full bg-rose-50 text-rose-600 hover:bg-rose-100`} title={syncState.message || '儲存失敗'}>
+                {dot('bg-rose-500')}儲存失敗・重試
             </button>
         );
     }
     if (syncState.status === 'conflict') {
         return (
-            <button onClick={onResolveConflict} className={`${base} bg-amber-50 text-amber-700 border-amber-300 hover:bg-amber-100`}>
-                版本衝突・處理
+            <button onClick={onResolveConflict} className={`${row} px-2 py-1 rounded-full bg-amber-50 text-amber-700 hover:bg-amber-100`}>
+                {dot('bg-amber-500')}版本衝突・處理
             </button>
         );
     }
     if (syncState.status === 'saved') {
-        return <span role="status" className={`${base} bg-teal-50 text-teal-700 border-teal-200`}>已同步 {formatSyncTime(syncState.lastSavedAt)}</span>;
+        return <span role="status" className={`${row} text-slate-400`}>{dot('bg-teal-400')}已同步 {formatSyncTime(syncState.lastSavedAt)}</span>;
     }
     return null;
 };
@@ -5126,6 +5129,7 @@ const MainApp = ({ user, logout }) => {
                                 >
                                     <RefreshCw size={12} />
                                 </button>
+                                <SyncStatusBadge isSaving={isSaving} syncState={syncState} onRetry={handleRetrySave} onResolveConflict={() => setSyncConflict((prev) => prev || { pendingData: data })} />
                                 {isLocalDiagnosticEnabled && (
                                     <button
                                         onClick={handleLoadDiagnostics}
@@ -5136,10 +5140,9 @@ const MainApp = ({ user, logout }) => {
                                     </button>
                                 )}
                             </div>
-                            <h1 className="text-2xl font-serif-tc font-bold text-slate-800 flex items-center gap-2">
+                            <h1 className="text-2xl font-serif-tc font-bold text-slate-800 flex items-center gap-2 whitespace-nowrap">
                                 <img src="/favicon.png" alt="極簡貓資產 Logo" className="w-[30px] h-[30px] object-contain" />
                                 極簡貓資產
-                                <SyncStatusBadge isSaving={isSaving} syncState={syncState} onRetry={handleRetrySave} onResolveConflict={() => setSyncConflict((prev) => prev || { pendingData: data })} />
                             </h1>
                         </div>
                         <div className="flex gap-2 items-center relative">
