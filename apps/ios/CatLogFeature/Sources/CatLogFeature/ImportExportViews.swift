@@ -94,6 +94,60 @@ struct DataToolsSection: View {
     }
 }
 
+/// App 收到的網址：檔案（MOZE CSV 分享進來）交給收件匣，其他（Google 登入回呼）交給 Firebase。
+public enum OpenURLRouter {
+    @MainActor
+    public static func handle(_ url: URL) {
+        if IncomingFileInbox.shared.receive(url) { return }
+        _ = FirebaseBootstrap.handle(url: url)
+    }
+}
+
+/// 從郵件附件或 Dropbox「分享 → CatLog」送進來的 MOZE CSV：資料載入完成後直接打開匯入預覽。
+/// 掛在首頁上（不放在「資料」區塊，因為 List 的區塊捲到才會建立）。
+struct IncomingExpenseImport: ViewModifier {
+    @ObservedObject var model: AppModel
+    @ObservedObject private var inbox = IncomingFileInbox.shared
+    @State private var expenseBox: PreviewBox?
+    @State private var errorMessage: String?
+
+    func body(content: Content) -> some View {
+        content
+            .onAppear(perform: handlePending)
+            .onChange(of: inbox.pending) { _, _ in handlePending() }
+            .onChange(of: inbox.failure) { _, failure in
+                guard let failure else { return }
+                errorMessage = failure.localizedDescription
+                inbox.clearFailure()
+            }
+            .sheet(item: $expenseBox) { box in
+                if let preview = box.expenses { ExpenseImportSheet(model: model, preview: preview) { expenseBox = nil } }
+            }
+            .alert("無法匯入", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
+                Button("好") { errorMessage = nil }
+            } message: {
+                Text(errorMessage ?? "")
+            }
+    }
+
+    private func handlePending() {
+        guard inbox.pending != nil, let core = model.core, let file = inbox.take() else { return }
+        if model.isDeviceReadOnly {
+            errorMessage = "這台裝置唯讀，無法匯入「\(file.name)」。要匯入，先到右上角帳號選單關閉唯讀，再分享一次。"
+            return
+        }
+        guard model.compatibility.canWrite else {
+            errorMessage = model.compatibilityMessage ?? "目前資料只能讀取，無法匯入。"
+            return
+        }
+        do {
+            expenseBox = PreviewBox(try core.previewExpenseImport(csv: file.text))
+        } catch {
+            errorMessage = "「\(file.name)」無法匯入：\(error.localizedDescription)"
+        }
+    }
+}
+
 /// 讓兩種預覽都能用 `.sheet(item:)`。
 private struct PreviewBox: Identifiable {
     let id = UUID()
