@@ -8,10 +8,11 @@ TARGET="gui/$(id -u)/${LABEL}"
 LOG="${HOME}/Library/Logs/catlog-install-device.log"
 
 # --production：建置 Release 版（連正式站），以「這台裝置唯讀」啟動。
-if [ "${1:-}" = "--production" ]; then
-  mkdir -p "${HOME}/Library/Caches"
-  echo Release > "${HOME}/Library/Caches/catlog-install-configuration"
-fi
+# --production-update：更新已在使用的正式站 App，不強制唯讀（保留手機上的設定）。
+case "${1:-}" in
+  --production) mkdir -p "${HOME}/Library/Caches"; echo Release > "${HOME}/Library/Caches/catlog-install-configuration" ;;
+  --production-update) mkdir -p "${HOME}/Library/Caches"; echo Release-keep > "${HOME}/Library/Caches/catlog-install-configuration" ;;
+esac
 if ! launchctl print "${TARGET}" >/dev/null 2>&1; then
   echo "找不到 LaunchAgent：請先執行 apps/ios/scripts/setup-launch-agent.sh" >&2
   exit 1

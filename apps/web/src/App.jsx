@@ -2703,9 +2703,13 @@ const HistoryModal = ({ uid, data, onClose, onPreviewRestore }) => {
                     {entries?.map((entry, index) => (
                         <div key={entry.generation} className="p-3 flex items-center justify-between gap-3">
                             <div className="min-w-0">
-                                <div className="font-bold text-sm text-slate-700">{formatTime(entry.savedAt)}{index === 0 && <span className="ml-2 text-[10px] text-teal-600">目前</span>}{entry.pinned && <span className="ml-2 text-[10px] text-indigo-600">📌 還原點</span>}</div>
-                                {entry.pinned && entry.label && <div className="text-xs text-indigo-700 truncate">{entry.label}</div>}
-                                <div className="text-[11px] text-slate-400 font-inter">版本 {entry.revision} · {formatSize(entry.length)}{entry.deviceId ? ` · ${entry.deviceId}` : ''}</div>
+                                {/* 還原點有說明時，說明當標題、時間放到下面；其他版本以時間當標題。 */}
+                                <div className="flex items-center gap-2 min-w-0">
+                                    <span className={`font-bold text-sm truncate ${entry.pinned && entry.label ? 'text-indigo-800' : 'text-slate-700'}`}>{entry.pinned && entry.label ? entry.label : formatTime(entry.savedAt)}</span>
+                                    {index === 0 && <span className="shrink-0 text-[10px] text-teal-600">目前</span>}
+                                    {entry.pinned && <span className="shrink-0 text-[10px] text-indigo-600">📌 還原點</span>}
+                                </div>
+                                <div className="text-[11px] text-slate-400 font-inter">{entry.pinned && entry.label ? `${formatTime(entry.savedAt)} · ` : ''}版本 {entry.revision} · {formatSize(entry.length)}{entry.deviceId ? ` · ${entry.deviceId}` : ''}</div>
                             </div>
                             <div className="flex gap-1 shrink-0">
                                 {entry.pinned && (

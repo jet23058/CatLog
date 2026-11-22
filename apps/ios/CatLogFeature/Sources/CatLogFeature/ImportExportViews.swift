@@ -287,15 +287,18 @@ struct CloudHistoryView: View {
                 ForEach(Array((entries ?? []).enumerated()), id: \.element.id) { index, entry in
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
+                            // 還原點有說明時，說明當標題、時間放到下面；其他版本以時間當標題。
+                            let label = entry.isRestorePoint ? (entry.label ?? "") : ""
+                            let time = entry.savedDate.formatted(date: .abbreviated, time: .shortened)
                             HStack(spacing: 6) {
-                                Text(entry.savedDate.formatted(date: .abbreviated, time: .shortened))
+                                Text(label.isEmpty ? time : label)
+                                    .fontWeight(label.isEmpty ? .regular : .semibold)
+                                    .foregroundStyle(label.isEmpty ? Color.primary : Color.indigo)
+                                    .lineLimit(1)
                                 if index == 0 { Text("目前").font(.caption2.bold()).foregroundStyle(.teal) }
                                 if entry.isRestorePoint { Label("還原點", systemImage: "pin.fill").font(.caption2.bold()).foregroundStyle(.indigo) }
                             }
-                            if entry.isRestorePoint, let label = entry.label, !label.isEmpty {
-                                Text(label).font(.caption).foregroundStyle(.indigo)
-                            }
-                            Text("版本 \(entry.revision)・\(Self.size(entry.length))\(entry.deviceId.isEmpty ? "" : "・\(entry.deviceId)")")
+                            Text("\(label.isEmpty ? "" : "\(time)・")版本 \(entry.revision)・\(Self.size(entry.length))\(entry.deviceId.isEmpty ? "" : "・\(entry.deviceId)")")
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                         Spacer()
