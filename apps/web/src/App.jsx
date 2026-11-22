@@ -57,6 +57,8 @@ import {
     getLatestSnapshotEstimate,
     getMonthDetail,
     getMonthSummary,
+    getRecentMonthTrend,
+    getAssetAllocation,
     getMonthlyStats,
     getPreviousAssetSnapshot,
     getRangeAssetStats,
@@ -2098,6 +2100,131 @@ const AddDebtEventModal = ({ monthKey, onClose, onSave, debtNames = [], debtTarg
     );
 };
 
+// --- 月份明細的圖表（與 iOS 相同）。配色避開漲跌用的紅綠；值一律直接寫出來，不只靠顏色。 ---
+const ALLOCATION_COLORS = ['#2a78d6', '#eda100', '#e87ba4', '#7c5cd6'];
+const ALLOCATION_OTHER_COLOR = '#94A3B8';
+const allocationColor = (slice, index) => (slice.isOther ? ALLOCATION_OTHER_COLOR : ALLOCATION_COLORS[index % ALLOCATION_COLORS.length]);
+
+/// 主卡片裡的近 6 個月淨資產走勢：只連有紀錄的月份，這個月的點放大。
+const MonthTrendSparkline = ({ trend }) => {
+    const points = trend.map((row, i) => ({ ...row, i })).filter((row) => typeof row.assets === 'number');
+    if (points.length < 2) return null;
+    const width = 352, height = 64, padX = 16, padY = 10;
+    const values = points.map((p) => p.assets);
+    const min = Math.min(...values), max = Math.max(...values);
+    const span = max - min || 1;
+    const x = (i) => padX + (i * (width - padX * 2)) / Math.max(trend.length - 1, 1);
+    const y = (v) => padY + (1 - (v - min) / span) * (height - padY * 2);
+    const last = points[points.length - 1];
+    return (
+        <div>
+            <svg width="100%" height={height + 18} viewBox={`0 0 ${width} ${height + 18}`} role="img" aria-label={`近 ${trend.length} 個月淨資產走勢`}>
+                <polyline points={points.map((p) => `${x(p.i)},${y(p.assets)}`).join(' ')} fill="none" stroke="#99F6E4" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                {points.map((p) => (
+                    <circle key={p.monthKey} cx={x(p.i)} cy={y(p.assets)} r={p === last ? 6 : 4} fill={p === last ? '#FFFFFF' : '#99F6E4'} stroke="#0F766E" strokeWidth="2">
+                        <title>{`${p.month} 月：${formatWan(p.assets)}`}</title>
+                    </circle>
+                ))}
+                {trend.map((row, i) => (
+                    <text key={row.monthKey} x={x(i)} y={height + 14} fill={i === trend.length - 1 ? '#FFFFFF' : '#CCFBF1'} fontSize="11" textAnchor="middle" fontFamily="Inter">{row.month}月</text>
+                ))}
+            </svg>
+        </div>
+    );
+};
+
+/// 資產配置：一條比例條＋每筆的比例與金額。
+const AssetAllocationCard = ({ assets, isPrivacyMode }) => {
+    const { total, slices } = getAssetAllocation(assets, 4);
+    if (!slices.length) return null;
+    return (
+        <section aria-labelledby="alloc-title" className="bg-white rounded-[20px] px-4 py-4 flex flex-col gap-3">
+            <div className="flex justify-between items-baseline">
+                <h3 id="alloc-title" className="text-base font-bold text-slate-900">資產配置</h3>
+                <span className="text-sm text-slate-600 font-inter">總資產 {isPrivacyMode ? '****' : formatWan(total)}</span>
+            </div>
+            <div className="flex gap-0.5 h-4" role="img" aria-label={`資產配置：${slices.map((s) => `${s.name} ${formatRate(s.share)}`).join('、')}`}>
+                {slices.map((slice, i) => (
+                    <div key={slice.name} title={`${slice.name} ${formatRate(slice.share)}`} style={{ width: `${slice.share * 100}%`, background: allocationColor(slice, i) }} className={`${i === 0 ? 'rounded-l' : ''} ${i === slices.length - 1 ? 'rounded-r' : ''}`} />
+                ))}
+            </div>
+            <ul className="flex flex-col gap-2">
+                {slices.map((slice, i) => (
+                    <li key={slice.name} className="flex items-center gap-2.5 text-sm">
+                        <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: allocationColor(slice, i) }} aria-hidden="true" />
+                        <span className="flex-1 min-w-0 truncate text-slate-900">{slice.name}</span>
+                        <span className="w-14 text-right text-slate-600 font-inter">{formatRate(slice.share)}</span>
+                        <span className="w-24 text-right font-semibold text-slate-900 font-inter">{isPrivacyMode ? '****' : formatWan(slice.amount)}</span>
+                    </li>
+                ))}
+            </ul>
+        </section>
+    );
+};
+
+/// 收入與支出：近 6 個月的兩根長條，滑鼠移上去或點一下看數字。
+const IncomeCostCard = ({ trend, isPrivacyMode }) => {
+    const [active, setActive] = useState(trend.length - 1);
+    if (!trend.length || trend.every((row) => !row.income && !row.cost)) return null;
+    const max = Math.max(...trend.map((row) => Math.max(row.income || 0, row.cost || 0)), 1);
+    const current = trend[Math.min(active, trend.length - 1)];
+    return (
+        <section aria-labelledby="flow-title" className="bg-white rounded-[20px] px-4 py-4 flex flex-col gap-2.5">
+            <div className="flex justify-between items-baseline">
+                <h3 id="flow-title" className="text-base font-bold text-slate-900">收入與支出</h3>
+                <span className="text-sm text-slate-600">近 {trend.length} 個月</span>
+            </div>
+            <div className="flex gap-3.5 text-sm text-slate-600">
+                <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: ALLOCATION_COLORS[0] }} aria-hidden="true" />收入</span>
+                <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: ALLOCATION_COLORS[1] }} aria-hidden="true" />支出</span>
+            </div>
+            <div className="text-sm text-slate-900 font-inter min-h-[20px]">
+                {current.month} 月：收入 {isPrivacyMode ? '****' : formatWan(current.income || 0)}・支出 {isPrivacyMode ? '****' : formatWan(current.cost || 0)}
+            </div>
+            <div className="flex items-end gap-2 h-32 border-b border-slate-200">
+                {trend.map((row, i) => (
+                    <button
+                        key={row.monthKey}
+                        type="button"
+                        onMouseEnter={() => setActive(i)}
+                        onFocus={() => setActive(i)}
+                        onClick={() => setActive(i)}
+                        aria-label={`${row.month} 月：收入 ${isPrivacyMode ? '已隱藏' : formatWan(row.income || 0)}，支出 ${isPrivacyMode ? '已隱藏' : formatWan(row.cost || 0)}`}
+                        className={`flex-1 h-full flex items-end justify-center gap-0.5 rounded-t-md transition-colors ${i === active ? 'bg-slate-100' : 'hover:bg-slate-50'}`}
+                    >
+                        <span className="w-3 rounded-t" style={{ height: `${((row.income || 0) / max) * 100}%`, background: ALLOCATION_COLORS[0] }} />
+                        <span className="w-3 rounded-t" style={{ height: `${((row.cost || 0) / max) * 100}%`, background: ALLOCATION_COLORS[1] }} />
+                    </button>
+                ))}
+            </div>
+            <div className="flex gap-2 text-xs text-slate-600 font-inter">
+                {trend.map((row) => <span key={row.monthKey} className="flex-1 text-center">{row.month}月</span>)}
+            </div>
+        </section>
+    );
+};
+
+/// 本月花費：每個類別一條橫條，由多到少。
+const CostCategoryCard = ({ categories, total, isPrivacyMode }) => {
+    if (!categories?.length) return null;
+    const sorted = [...categories].sort((a, b) => b.value - a.value).slice(0, 6);
+    const max = sorted[0]?.value || 1;
+    return (
+        <section aria-labelledby="cost-title" className="bg-white rounded-[20px] px-4 py-4 flex flex-col gap-2.5">
+            <div className="flex justify-between items-baseline">
+                <h3 id="cost-title" className="text-base font-bold text-slate-900">本月花費類別</h3>
+                <span className="text-sm text-slate-600 font-inter">共 {isPrivacyMode ? '****' : formatWan(total)}</span>
+            </div>
+            {sorted.map((cat) => (
+                <div key={cat.name} className="flex flex-col gap-1">
+                    <div className="flex justify-between text-sm"><span className="text-slate-900">{cat.name}</span><span className="font-semibold font-inter text-slate-900">{isPrivacyMode ? '****' : formatMoney(cat.value)}</span></div>
+                    <div className="h-2 rounded bg-slate-100"><div className="h-2 rounded bg-teal-700" style={{ width: `${(cat.value / max) * 100}%` }} /></div>
+                </div>
+            ))}
+        </section>
+    );
+};
+
 const DetailView = ({ monthKey, data, onBack, onUpdateData, assetNames, isPrivacyMode, debtNames = [] }) => {
     const [isEditing, setIsEditing] = useState(false);
     const [activeTab, setActiveTab] = useState('assets');
@@ -2158,6 +2285,7 @@ const DetailView = ({ monthKey, data, onBack, onUpdateData, assetNames, isPrivac
         prevTotalDebts,
         prevMonthIncome
     }), [localAssets, localDebts, localIncomes, currentMonthExpenses, prevTotalAssets, prevTotalDebts, prevMonthIncome]);
+    const recentTrend = useMemo(() => getRecentMonthTrend(data, monthKey, 6), [data, monthKey]);
 
     const filteredExpenses = useMemo(() => {
         if (expenseFilter === 'all') return currentMonthExpenses;
@@ -2247,6 +2375,7 @@ const DetailView = ({ monthKey, data, onBack, onUpdateData, assetNames, isPrivac
                             </span>
                             <span className="text-sm text-teal-100">較上月</span>
                         </div>
+                        <MonthTrendSparkline trend={recentTrend} />
                         <div className="text-sm text-teal-100 font-inter flex items-center gap-1 flex-wrap">
                             <span>綜合損益 {isPrivacyMode ? '****' : `${stats.compositeScore >= 0 ? '+' : ''}${formatWan(stats.compositeScore)}`}・投資占比 {formatRate(stats.investmentRate)}</span>
                             {!isPrivacyMode && (
@@ -2257,7 +2386,10 @@ const DetailView = ({ monthKey, data, onBack, onUpdateData, assetNames, isPrivac
                             )}
                         </div>
                     </div>
-                    <p className="text-xs text-slate-500 px-1">點下面的卡片切換要看的明細。</p>
+                    <AssetAllocationCard assets={localAssets} isPrivacyMode={isPrivacyMode} />
+                    <IncomeCostCard key={monthKey} trend={recentTrend} isPrivacyMode={isPrivacyMode} />
+                    <CostCategoryCard categories={expenseChartData} total={stats.monthlyCost} isPrivacyMode={isPrivacyMode} />
+                    <p className="text-xs text-slate-500 px-1 pt-2">點下面的卡片切換要看的明細。</p>
                     <div className="grid grid-cols-2 gap-3">
                         <button onClick={() => { setActiveTab('assets'); setIsEditing(false); }} aria-pressed={activeTab === 'assets'} className={`p-3 rounded-2xl text-left transition-all ${activeTab === 'assets' ? 'bg-white ring-2 ring-teal-700' : 'bg-white hover:ring-2 hover:ring-slate-200'}`}>
                             <div className={`text-sm mb-1 ${activeTab === 'assets' ? 'text-teal-700 font-semibold' : 'text-slate-600'}`}>淨資產</div>
