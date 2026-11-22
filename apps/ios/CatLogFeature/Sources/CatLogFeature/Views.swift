@@ -213,7 +213,7 @@ struct DashboardView: View {
                 if let core = model.core {
                     Section {
                         // 只要該月有任何資料（含只有備忘錄或負債快照的月份）就列出，才能打開月份明細。
-                        ForEach(model.months.filter { model.dataMonths.contains(Self.monthKey(year: model.year, month: $0.month)) }.reversed()) { month in
+                        ForEach(model.months.filter { model.dataMonths.contains(Self.monthKey(year: model.year, month: $0.month)) }) { month in
                             NavigationLink(value: DashboardRoute.month(Self.monthKey(year: model.year, month: month.month))) {
                                 MonthRow(month: month, core: core, isPrivacyMode: isPrivacyMode)
                             }
