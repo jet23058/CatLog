@@ -106,7 +106,7 @@ struct MonthDetailView: View {
                         if let change = detail.changeFromPreviousMonth(asset), change != 0 {
                             Text(isPrivacyMode ? "****" : "\(change >= 0 ? "+" : "")\(core.formatMoney(change))")
                                 .font(.caption.monospacedDigit())
-                                .foregroundStyle(change >= 0 ? .green : .red)
+                                .foregroundStyle(change >= 0 ? Theme.up : Theme.down)
                         }
                     }
                 }
@@ -129,7 +129,7 @@ struct MonthDetailView: View {
                         }
                     }
                     Spacer()
-                    Text(money(income.amount)).monospacedDigit().foregroundStyle(.green)
+                    Text(money(income.amount)).monospacedDigit()
                 }
             }
         }
@@ -148,7 +148,7 @@ struct MonthDetailView: View {
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     Spacer()
-                    Text(money(debt.amount)).monospacedDigit().foregroundStyle(.red)
+                    Text(money(debt.amount)).monospacedDigit()
                 }
             }
             if detail.estimatedMonthlyDebtInterest > 0 {
@@ -204,7 +204,7 @@ struct MonthDetailView: View {
                         }
                         Spacer()
                         Text(money(expense.amount)).monospacedDigit()
-                            .foregroundStyle(expense.amount < 0 ? .green : .primary)
+                            .foregroundStyle(expense.amount < 0 ? Theme.up : .primary)
                     }
                 }
             } header: {
