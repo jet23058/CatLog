@@ -116,16 +116,16 @@ const getLocalDateKey = (date = new Date()) => `${date.getFullYear()}-${String(d
 // 原本 index.css 的內容與 tailwind.config.js 的動畫設定整合於此
 const GlobalStyles = () => (
     <style>{`
-    @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@400;600;700&family=Inter:wght@300;400;500;600&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=Inter:wght@400;500;600;700&display=swap');
 
     body {
-      background-color: #FFFFFF;
+      background-color: #F4F5F7;
       margin: 0;
       padding: 0;
-      font-family: 'Inter', sans-serif;
+      font-family: 'Noto Sans TC', 'Inter', sans-serif;
     }
 
-    .font-serif-tc { font-family: 'Noto Serif TC', serif; }
+    .font-serif-tc { font-family: 'Noto Sans TC', 'Inter', sans-serif; }
     .font-inter { font-family: 'Inter', sans-serif; }
     
     .hide-scrollbar::-webkit-scrollbar { display: none; }
@@ -263,17 +263,14 @@ const CustomChartTooltip = ({ active, payload }) => {
 };
 
 const DiffBadge = ({ current, prev }) => {
-    if (prev === undefined || prev === null) return <span className="text-[10px] text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded ml-2 font-bold">New</span>;
+    if (prev === undefined || prev === null) return <span className="text-xs text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded font-semibold">新增</span>;
     const diff = current - prev;
-    if (diff === 0) return <span className="text-[10px] text-slate-300 ml-2">-</span>;
-    const isPositive = diff > 0;
-    const colorClass = isPositive ? "text-emerald-600 bg-emerald-50" : "text-rose-500 bg-rose-50";
-    const Icon = isPositive ? TrendingUp : TrendingDown;
+    if (diff === 0) return <span className="text-xs text-slate-400">持平</span>;
+    // 紅漲綠跌（與首頁相同），加上 ▲▼ 與正負號
     return (
-        <div className={`inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded ml-2 ${colorClass}`}>
-            <Icon size={10} />
-            <span>{formatWan(Math.abs(diff))}</span>
-        </div>
+        <span className={`text-xs font-inter font-semibold ${trendTextClass(diff)}`}>
+            {trendArrow(diff)} {diff > 0 ? '+' : '−'}{formatWan(Math.abs(diff))}
+        </span>
     );
 };
 
@@ -2286,6 +2283,12 @@ const DetailView = ({ monthKey, data, onBack, onUpdateData, assetNames, isPrivac
         prevMonthIncome
     }), [localAssets, localDebts, localIncomes, currentMonthExpenses, prevTotalAssets, prevTotalDebts, prevMonthIncome]);
     const recentTrend = useMemo(() => getRecentMonthTrend(data, monthKey, 6), [data, monthKey]);
+    // 資產明細左側色條：與「資產配置」相同的顏色（前 4 名各一色，其餘灰色）。
+    const assetColorByName = useMemo(() => {
+        const map = {};
+        getAssetAllocation(localAssets, 4).slices.forEach((slice, i) => { if (!slice.isOther) map[slice.name] = allocationColor(slice, i); });
+        return map;
+    }, [localAssets]);
 
     const filteredExpenses = useMemo(() => {
         if (expenseFilter === 'all') return currentMonthExpenses;
@@ -2428,9 +2431,10 @@ const DetailView = ({ monthKey, data, onBack, onUpdateData, assetNames, isPrivac
                 </section>
 
                 {activeTab === 'assets' && (
-                    <div className="space-y-8 animate-[fadeIn_0.2s]">
+                    <div className="space-y-4 animate-[fadeIn_0.2s]">
                         <section>
-                            <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
+                            <div className="bg-white rounded-[20px] px-1">
+                                <h3 className="px-4 pt-4 pb-1 text-base font-bold text-slate-900">固定資產</h3>
                                 {fixedAssets.map((asset, idx) => (
                                     <div key={asset.id} className={`p-4 flex items-center justify-between ${idx !== fixedAssets.length - 1 ? 'border-b border-slate-100' : ''}`}>
                                         {isEditing ? (
@@ -2441,7 +2445,10 @@ const DetailView = ({ monthKey, data, onBack, onUpdateData, assetNames, isPrivac
                                             </div>
                                         ) : (
                                             <>
-                                                <span className="font-serif-tc text-slate-700">{asset.name}</span>
+                                                <span className="flex items-center gap-3 min-w-0">
+                                                    <span className="w-1 h-8 rounded-full shrink-0" style={{ background: assetColorByName[asset.name] || ALLOCATION_OTHER_COLOR }} aria-hidden="true" />
+                                                    <span className="text-slate-900 truncate">{asset.name}</span>
+                                                </span>
                                                 <div className="flex flex-col items-end">
                                                     <span className={`font-inter font-medium text-slate-800 ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>
                                                         {isPrivacyMode ? '****' : formatMoney(asset.amount)}
@@ -2456,7 +2463,8 @@ const DetailView = ({ monthKey, data, onBack, onUpdateData, assetNames, isPrivac
                             </div>
                         </section>
                         <section>
-                            <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
+                            <div className="bg-white rounded-[20px] px-1">
+                                <h3 className="px-4 pt-4 pb-1 text-base font-bold text-slate-900">浮動資產</h3>
                                 {floatingAssets.map((asset, idx) => (
                                     <div key={asset.id} className={`p-4 flex items-center justify-between relative ${idx !== floatingAssets.length - 1 ? 'border-b border-slate-100' : ''}`}>
                                         {isEditing ? (
@@ -2467,8 +2475,9 @@ const DetailView = ({ monthKey, data, onBack, onUpdateData, assetNames, isPrivac
                                             </div>
                                         ) : (
                                             <>
-                                                <div className="flex items-center gap-2 group">
-                                                    <span className="font-serif-tc text-slate-700">{asset.name}</span>
+                                                <div className="flex items-center gap-3 group min-w-0">
+                                                    <span className="w-1 h-8 rounded-full shrink-0" style={{ background: assetColorByName[asset.name] || ALLOCATION_OTHER_COLOR }} aria-hidden="true" />
+                                                    <span className="text-slate-900 truncate">{asset.name}</span>
                                                     {(asset.originalAmount || asset.currency !== 'TWD') && (
                                                         <div className="relative flex items-center">
                                                             <Info size={14} className="text-slate-300 cursor-help hover:text-teal-500 transition-colors" />
