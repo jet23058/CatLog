@@ -10,7 +10,7 @@ struct CatLogApp: App {
     var body: some Scene {
         WindowGroup {
             RootView()
-                .onOpenURL { url in _ = FirebaseBootstrap.handle(url: url) }
+                .onOpenURL { url in OpenURLRouter.handle(url) }
         }
     }
 }

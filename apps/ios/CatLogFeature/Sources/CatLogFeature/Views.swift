@@ -257,6 +257,8 @@ struct DashboardView: View {
                 }
             }
             .navigationTitle("極簡貓資產")
+            // 從郵件或 Dropbox「分享 → CatLog」送進來的 MOZE CSV，直接打開匯入預覽。
+            .modifier(IncomingExpenseImport(model: model))
             .sheet(isPresented: $showFireRate) { FireRateSheet(model: model) }
             .sheet(isPresented: $showYearPicker) {
                 if let core = model.core { YearPickerSheet(model: model, core: core, isPrivacyMode: isPrivacyMode) }

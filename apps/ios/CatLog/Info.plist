@@ -12,5 +12,24 @@
 			</array>
 		</dict>
 	</array>
+	<!-- 讓郵件附件、Dropbox 等 App 的「分享／打開方式」出現 CatLog，直接匯入 MOZE 花費 CSV。 -->
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>CSV</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>public.comma-separated-values-text</string>
+			</array>
+		</dict>
+	</array>
+	<!-- 系統先把檔案複製到 App 的 Inbox，讀完就刪除。 -->
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<false/>
 </dict>
 </plist>
