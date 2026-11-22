@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@400;600;700&family=Inter:wght@300;400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=Inter:wght@400;500;600;700&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -7,7 +7,7 @@
 /* 定義全域字體變數，對應 App.jsx 中的 class */
 @layer utilities {
   .font-serif-tc {
-    font-family: 'Noto Serif TC', serif;
+    font-family: 'Noto Sans TC', 'Inter', sans-serif;
   }
   .font-inter {
     font-family: 'Inter', sans-serif;
@@ -24,7 +24,8 @@
 }
 
 body {
-  background-color: #F9F9F7;
+  background-color: #F4F5F7;
+  font-family: 'Noto Sans TC', 'Inter', sans-serif;
   margin: 0;
   padding: 0;
 }

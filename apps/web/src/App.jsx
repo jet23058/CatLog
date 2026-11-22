@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, PieChart, Pie, Cell } from 'recharts';
-import { Cat, ChevronLeft, ChevronRight, Plus, Upload, Wallet, TrendingUp, DollarSign, Calendar, X, Save, FileJson, ArrowUpRight, ArrowDownRight, ArrowLeft, ArrowRight, Edit2, Trash2, Info, Check, TrendingDown, RefreshCw, FileText, Mountain, ArrowDown, AlertCircle, AlertTriangle, Building2, Lock, PieChart as PieChartIcon, Download, StickyNote, ShoppingBag, Filter, ChevronDown, PiggyBank, Activity, Sparkles, LogOut, Coins, ClipboardCheck, LayoutGrid, Package, Box, Footprints, Eye, EyeOff, ScanFace, ShieldCheck, ShieldAlert, Search, History } from 'lucide-react';
+import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import { ChevronLeft, ChevronRight, Plus, Upload, Wallet, TrendingUp, DollarSign, Calendar, X, Save, FileJson, ArrowUpRight, ArrowDownRight, ArrowLeft, ArrowRight, Edit2, Trash2, Info, Check, TrendingDown, RefreshCw, FileText, Mountain, AlertCircle, AlertTriangle, Building2, Lock, PieChart as PieChartIcon, Download, StickyNote, ShoppingBag, Filter, ChevronDown, PiggyBank, Activity, Sparkles, LogOut, Coins, ClipboardCheck, Package, Box, Eye, EyeOff, ScanFace, ShieldCheck, ShieldAlert, Search, History } from 'lucide-react';
 import {
     AUTO_LOCK_IDLE_MS,
     CURRENT_SCHEMA_VERSION,
@@ -198,7 +198,7 @@ const AnalysisTooltip = ({ incomeDiff, assetDiff, compositeScore, align = "cente
             <div className="space-y-2">
                 <div className="flex justify-between items-center">
                     <span className="text-slate-400">1. 收入成長</span>
-                    <span className={`font-mono font-bold ${incomeDiff >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    <span className={`font-mono font-bold ${incomeDiff >= 0 ? 'text-red-300' : 'text-green-300'}`}>
                         {incomeDiff > 0 ? '+' : ''}{formatWan(incomeDiff)}
                     </span>
                 </div>
@@ -207,7 +207,7 @@ const AnalysisTooltip = ({ incomeDiff, assetDiff, compositeScore, align = "cente
                 </div>
                 <div className="flex justify-between items-center">
                     <span className="text-slate-400">2. 資產成長</span>
-                    <span className={`font-mono font-bold ${assetDiff >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    <span className={`font-mono font-bold ${assetDiff >= 0 ? 'text-red-300' : 'text-green-300'}`}>
                         {assetDiff > 0 ? '+' : ''}{formatWan(assetDiff)}
                     </span>
                 </div>
@@ -216,7 +216,7 @@ const AnalysisTooltip = ({ incomeDiff, assetDiff, compositeScore, align = "cente
                 </div>
                 <div className="flex justify-between items-center pt-1">
                     <span className="text-white font-bold">3. 綜合表現 (1+2)</span>
-                    <span className={`font-mono text-sm font-bold ${compositeScore >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
+                    <span className={`font-mono text-sm font-bold ${compositeScore >= 0 ? 'text-red-300' : 'text-green-300'}`}>
                         {compositeScore > 0 ? '+' : ''}{formatWan(compositeScore)}
                     </span>
                 </div>
@@ -242,7 +242,7 @@ const CustomChartTooltip = ({ active, payload }) => {
                     <div className="border-t border-slate-600 pt-1 mt-1 space-y-0.5">
                         <div className="flex justify-between gap-4 items-center">
                             <span className="text-slate-400 scale-90 origin-left">收入年增長</span>
-                            <span className={`font-inter font-bold ${d.incomeGrowthRate >= 1 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                            <span className={`font-inter font-bold ${d.incomeGrowthRate >= 1 ? 'text-red-300' : 'text-green-300'}`}>
                                 {d.incomeGrowthRate >= 1 && d.incomeGrowthRate > 0 && <TrendingUp size={10} className="inline mr-1" />}
                                 {d.incomeGrowthRate < 1 && d.incomeGrowthRate > 0 && <TrendingDown size={10} className="inline mr-1" />}
                                 {formatRate(d.incomeGrowthRate)}
@@ -283,6 +283,102 @@ const formatSyncTime = (timestamp) => {
 
 // 同步狀態：放在標題上方「CatLog」那一行，用小圓點＋一行小字，不搶標題的位置。
 // 需要使用者處理的狀態（失敗、衝突）才做成可以點的小按鈕。
+// 共用設計規則（與 iOS 相同）：紅漲綠跌，漲跌一律加 ▲▼ 與正負號。
+const trendTextClass = (value) => (value >= 0 ? 'text-red-600' : 'text-green-700');
+const trendArrow = (value) => (value >= 0 ? '▲' : '▼');
+
+/// 首頁主卡片：淨資產大字、和上個月比的變化、年度最高／最低與今年走勢。
+const HomeHero = ({ yearStats, processedData, assetChartData, assetExtremes, isPrivacyMode }) => {
+    const mask = (text) => (isPrivacyMode ? '****' : text);
+    const recorded = processedData.filter((m) => m.latestDate);
+    const lastChange = recorded.length ? recorded[recorded.length - 1].analysis?.assetDiff : null;
+    const hasChange = typeof lastChange === 'number';
+    return (
+        <section aria-label="淨資產總覽" className="bg-teal-700 text-white rounded-3xl p-6 sm:p-7 flex flex-wrap gap-6 items-end">
+            <div className="flex-[1_1_260px] min-w-0 flex flex-col gap-2.5">
+                <span className="text-[15px] text-teal-100">目前淨資產{yearStats.assetGrowthEndDate ? `・截至 ${yearStats.assetGrowthEndDate}` : ''}</span>
+                <span className="text-4xl sm:text-5xl font-bold font-inter leading-tight">{mask(formatWan(yearStats.thisYearAssets))}</span>
+                {hasChange && (
+                    <div className="flex items-center gap-2 flex-wrap">
+                        <span className={`bg-white rounded-xl px-2.5 py-1 text-[15px] font-semibold font-inter ${isPrivacyMode ? 'text-slate-900' : trendTextClass(lastChange)}`}>
+                            {mask(`${trendArrow(lastChange)} ${lastChange > 0 ? '+' : ''}${formatWan(lastChange)}`)}
+                        </span>
+                        <span className="text-sm text-teal-100">較上月</span>
+                    </div>
+                )}
+                <span className="text-sm text-teal-100 font-inter">
+                    年度最高 ({assetExtremes.max.month}月) {mask(formatWan(assetExtremes.max.val))}・年度最低 ({assetExtremes.min.month}月) {mask(formatWan(assetExtremes.min.val))}
+                </span>
+            </div>
+            <div className="flex-[2_1_340px] min-w-0">
+                <div className="text-sm text-teal-100 mb-1">年度資產淨值</div>
+                <div className="h-32 -ml-2">
+                    <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart data={assetChartData}>
+                            <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: '#CCFBF1', fontSize: 12, fontFamily: 'Inter' }} dy={6} />
+                            <YAxis hide domain={['dataMin', 'dataMax']} />
+                            <Tooltip content={<CustomChartTooltip />} cursor={{ stroke: '#99F6E4', strokeWidth: 1 }} />
+                            <Area type="monotone" dataKey="assets" stroke="#99F6E4" strokeWidth={3} fill="#FFFFFF" fillOpacity={0.12} connectNulls />
+                        </AreaChart>
+                    </ResponsiveContainer>
+                </div>
+            </div>
+        </section>
+    );
+};
+
+/// 主卡片下方的四張小卡：年度資產增長、年度總收入、負債、FIRE 達成率。
+/// 一張只放「標題、數字、一行補充」。桌機放在左欄排成兩欄兩列；平板一列四張；手機兩欄。
+const HomeSummaryCards = ({ currentYear, yearStats, fireStats, isPrivacyMode, onOpenFire }) => {
+    const mask = (text) => (isPrivacyMode ? '****' : text);
+    const growth = yearStats.realAssetGrowthAmount;
+    const ratio = yearStats.assetGrowthRatio;
+    const card = 'bg-white rounded-2xl px-4 py-3 flex flex-col gap-0.5 text-left min-w-0';
+    const title = 'text-sm text-slate-600';
+    const value = 'text-xl font-bold font-inter leading-tight';
+    const detail = 'text-xs text-slate-500 font-inter truncate';
+    const progress = Math.min(Math.max(fireStats.progress || 0, 0), 1);
+    return (
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-2 gap-3">
+            <div className={card} title={isPrivacyMode ? undefined : `${yearStats.assetGrowthStartDate || '尚無紀錄'} 至 ${yearStats.assetGrowthEndDate || '尚無紀錄'}`}>
+                <span className={title}>年度資產增長</span>
+                <span className={`${value} ${isPrivacyMode ? 'text-slate-900' : trendTextClass(growth)}`}>{mask(`${growth > 0 ? '+' : ''}${formatWan(growth)}`)}</span>
+                <span className={detail}>{mask(`${trendArrow(ratio - 1)} ${formatRate(ratio)}`)}</span>
+            </div>
+            <div className={card} title={isPrivacyMode ? undefined : `收入年增長 ${formatRate(yearStats.assetGrowthRate)}・占總所得 ${formatRate(yearStats.incomeGrowthRate)}`}>
+                <span className={title}>年度總收入</span>
+                <span className={`${value} text-slate-900`}>{mask(formatWan(yearStats.totalIncome))}</span>
+                <span className={detail}>月均 {mask(formatMoney(yearStats.avgIncome))}</span>
+            </div>
+            <div className={card}>
+                <span className={title}>負債</span>
+                <span className={`${value} text-slate-900`}>{mask(formatWan(yearStats.thisYearDebt))}</span>
+                <span className={detail}>截至 {currentYear} 年底</span>
+            </div>
+            <button type="button" onClick={onOpenFire} className={`${card} hover:ring-2 hover:ring-teal-200 transition-shadow`}>
+                <span className={title}>FIRE 達成</span>
+                {/* 隱私模式連進度一起隱藏：達成率加上提領率就能推算出資產規模。 */}
+                <span className={`${value} text-slate-900`}>{mask(formatRate(fireStats.progress))}</span>
+                {isPrivacyMode ? (
+                    <span className={detail}>提領率 {fireStats.rate}%</span>
+                ) : (
+                    <div className="h-1.5 rounded-full bg-slate-200 mt-1.5 mb-1" aria-label={`提領率 ${fireStats.rate}%`}>
+                        <div className="h-1.5 rounded-full bg-teal-700" style={{ width: `${progress * 100}%` }}></div>
+                    </div>
+                )}
+            </button>
+        </div>
+    );
+};
+
+const HomeNavButton = ({ icon: Icon, label, onClick, last = false }) => (
+    <button type="button" onClick={onClick} className={`w-full flex items-center gap-3 min-h-[48px] text-left text-[15px] text-slate-900 hover:text-teal-700 transition-colors ${last ? '' : 'border-b border-slate-100'}`}>
+        <Icon size={18} className="text-teal-700 shrink-0" aria-hidden="true" />
+        <span className="flex-1">{label}</span>
+        <ChevronRight size={16} className="text-slate-400" aria-hidden="true" />
+    </button>
+);
+
 const SyncStatusBadge = ({ isSaving, syncState, onRetry, onResolveConflict }) => {
     const row = "inline-flex items-center gap-1.5 whitespace-nowrap text-[11px] leading-none font-sans font-normal tracking-normal normal-case";
     const dot = (color, pulse = false) => <span aria-hidden="true" className={`w-1.5 h-1.5 rounded-full ${color} ${pulse ? 'animate-pulse' : ''}`}></span>;
@@ -400,7 +496,7 @@ const YearSelectorModal = ({ currentYear, availableYears, yearlyTrendData, onSel
                                     <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100/50">
                                         <div className="flex flex-col">
                                             <span className="text-[10px] text-slate-400 mb-0.5">收入年增長</span>
-                                            <div className={`font-inter text-xs font-bold flex items-center ${stats.incomeGrowthRate >= 1 ? 'text-emerald-500' : 'text-rose-400'}`}>
+                                            <div className={`font-inter text-xs font-bold flex items-center ${stats.incomeGrowthRate >= 1 ? 'text-red-600' : 'text-green-700'}`}>
                                                 {stats.incomeGrowthRate >= 1 && stats.incomeGrowthRate > 0 && <TrendingUp size={10} className="mr-1" />}
                                                 {stats.incomeGrowthRate < 1 && stats.incomeGrowthRate > 0 && <TrendingDown size={10} className="mr-1" />}
                                                 {formatRate(stats.incomeGrowthRate)}
@@ -2188,7 +2284,7 @@ const DetailView = ({ monthKey, data, onBack, onUpdateData, assetNames, isPrivac
                                     </div>
                                 )}
                             </div>
-                            <div className={`text-lg font-serif-tc font-bold ${stats.compositeScore >= 0 ? 'text-emerald-600' : 'text-rose-500'} ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>
+                            <div className={`text-lg font-serif-tc font-bold ${stats.compositeScore >= 0 ? 'text-red-600' : 'text-green-700'} ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>
                                 {isPrivacyMode ? '****' : (stats.compositeScore >= 0 ? '+' : '') + formatWan(stats.compositeScore)}
                             </div>
                         </div>
@@ -2572,7 +2668,7 @@ const DetailView = ({ monthKey, data, onBack, onUpdateData, assetNames, isPrivac
                                                 </div>
                                             </div>
                                             <div className="flex flex-col items-end">
-                                                <span className={`font-inter font-medium ${expense.amount < 0 ? 'text-emerald-500' : 'text-rose-500'} ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>
+                                                <span className={`font-inter font-medium ${expense.amount < 0 ? 'text-red-600' : 'text-green-700'} ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>
                                                     {isPrivacyMode ? '****' : (
                                                         <>
                                                             {expense.amount < 0 ? '+' : '-'}{formatMoney(Math.abs(expense.amount))}
@@ -2908,7 +3004,7 @@ const RangeStatsModal = ({ data, onClose }) => {
                             <span className="font-bold text-slate-700">現金流</span>
                             <span className="text-xs text-slate-400 ml-auto">收入 {incomeStats.count} 筆 / 花費 {expenseStats.count} 筆</span>
                         </div>
-                        <div className={`text-2xl font-inter font-bold mb-2 ${financeStats.cashFlow >= 0 ? 'text-emerald-600' : 'text-rose-500'}`}>
+                        <div className={`text-2xl font-inter font-bold mb-2 ${financeStats.cashFlow >= 0 ? 'text-red-600' : 'text-green-700'}`}>
                             {financeStats.cashFlow >= 0 ? '+' : ''}{formatMoney(financeStats.cashFlow)} <span className="text-sm font-normal text-slate-400">TWD</span>
                         </div>
                         <div className="grid grid-cols-3 gap-2 pt-2 border-t border-emerald-100 text-xs">
@@ -2922,7 +3018,7 @@ const RangeStatsModal = ({ data, onClose }) => {
                             </div>
                             <div className="text-right">
                                 <div className="text-slate-400 mb-0.5">收支結餘</div>
-                                <div className={`font-inter font-bold ${financeStats.cashFlow >= 0 ? 'text-emerald-600' : 'text-rose-500'}`}>{financeStats.cashFlow >= 0 ? '+' : ''}{formatMoney(financeStats.cashFlow)}</div>
+                                <div className={`font-inter font-bold ${financeStats.cashFlow >= 0 ? 'text-red-600' : 'text-green-700'}`}>{financeStats.cashFlow >= 0 ? '+' : ''}{formatMoney(financeStats.cashFlow)}</div>
                             </div>
                         </div>
                         {expenseStats.topCategories.length > 0 && (
@@ -2946,7 +3042,7 @@ const RangeStatsModal = ({ data, onClose }) => {
                             </div>
                             <span className="font-bold text-slate-700">資產負債變化</span>
                         </div>
-                        <div className={`text-2xl font-inter font-bold mb-2 ${financeStats.netWorthChange >= 0 ? 'text-emerald-600' : 'text-rose-500'}`}>
+                        <div className={`text-2xl font-inter font-bold mb-2 ${financeStats.netWorthChange >= 0 ? 'text-red-600' : 'text-green-700'}`}>
                             {financeStats.netWorthChange >= 0 ? '+' : ''}{formatMoney(financeStats.netWorthChange)} <span className="text-sm font-normal text-slate-400">TWD</span>
                         </div>
                         <div className="grid grid-cols-2 gap-2 pt-2 border-t border-blue-100 text-xs">
@@ -2975,7 +3071,7 @@ const RangeStatsModal = ({ data, onClose }) => {
                                     <TrendingUp size={12} className="text-slate-400" />
                                     <span className="text-slate-600 font-medium">資產變化</span>
                                 </div>
-                                <span className={`font-inter font-bold ${assetStats.change >= 0 ? 'text-emerald-600' : 'text-rose-500'}`}>
+                                <span className={`font-inter font-bold ${assetStats.change >= 0 ? 'text-red-600' : 'text-green-700'}`}>
                                     {assetStats.change >= 0 ? '+' : ''}{formatMoney(assetStats.change)}
                                 </span>
                             </div>
@@ -2984,7 +3080,7 @@ const RangeStatsModal = ({ data, onClose }) => {
                                     <ArrowDownRight size={12} className="text-slate-400" />
                                     <span className="text-slate-600 font-medium">負債變化</span>
                                 </div>
-                                <span className={`font-inter font-bold ${debtStats.change <= 0 ? 'text-emerald-600' : 'text-rose-500'}`}>
+                                <span className={`font-inter font-bold ${debtStats.change <= 0 ? 'text-red-600' : 'text-green-700'}`}>
                                     {debtStats.change >= 0 ? '+' : ''}{formatMoney(debtStats.change)}
                                 </span>
                             </div>
@@ -2993,7 +3089,7 @@ const RangeStatsModal = ({ data, onClose }) => {
                                     <Sparkles size={12} className="text-blue-500" />
                                     <span className="text-slate-700 font-bold">淨資產變化</span>
                                 </div>
-                                <span className={`font-inter font-bold ${financeStats.netWorthChange >= 0 ? 'text-emerald-600' : 'text-rose-500'}`}>
+                                <span className={`font-inter font-bold ${financeStats.netWorthChange >= 0 ? 'text-red-600' : 'text-green-700'}`}>
                                     {financeStats.netWorthChange >= 0 ? '+' : ''}{formatMoney(financeStats.netWorthChange)}
                                 </span>
                             </div>
@@ -3003,7 +3099,7 @@ const RangeStatsModal = ({ data, onClose }) => {
                                     <Lock size={12} className="text-slate-400" />
                                     <span className="text-slate-600 font-medium">固定資產</span>
                                 </div>
-                                <span className={`font-inter font-bold ${assetStats.fixed.change >= 0 ? 'text-emerald-600' : 'text-rose-500'}`}>
+                                <span className={`font-inter font-bold ${assetStats.fixed.change >= 0 ? 'text-red-600' : 'text-green-700'}`}>
                                     {assetStats.fixed.change >= 0 ? '+' : ''}{formatMoney(assetStats.fixed.change)}
                                 </span>
                             </div>
@@ -3014,7 +3110,7 @@ const RangeStatsModal = ({ data, onClose }) => {
                                     <Activity size={12} className="text-slate-400" />
                                     <span className="text-slate-600 font-medium">浮動資產</span>
                                 </div>
-                                <span className={`font-inter font-bold ${assetStats.floating.change >= 0 ? 'text-emerald-600' : 'text-rose-500'}`}>
+                                <span className={`font-inter font-bold ${assetStats.floating.change >= 0 ? 'text-red-600' : 'text-green-700'}`}>
                                     {assetStats.floating.change >= 0 ? '+' : ''}{formatMoney(assetStats.floating.change)}
                                 </span>
                             </div>
@@ -3025,7 +3121,7 @@ const RangeStatsModal = ({ data, onClose }) => {
                                     {assetStats.floating.changes.map((item, idx) => (
                                         <div key={idx} className="flex justify-between items-center text-[11px]">
                                             <span className="text-slate-500 truncate max-w-[140px]">{item.name}</span>
-                                            <span className={`font-inter font-medium ${item.change >= 0 ? 'text-emerald-500' : 'text-rose-400'}`}>
+                                            <span className={`font-inter font-medium ${item.change >= 0 ? 'text-red-600' : 'text-green-700'}`}>
                                                 {item.change >= 0 ? '+' : ''}{formatMoney(item.change)}
                                             </span>
                                         </div>
@@ -3043,17 +3139,17 @@ const RangeStatsModal = ({ data, onClose }) => {
                             </div>
                             <span className="font-bold text-slate-100">區間財務推估</span>
                         </div>
-                        <div className={`text-2xl font-inter font-bold mb-2 ${financeStats.totalCreated >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
+                        <div className={`text-2xl font-inter font-bold mb-2 ${financeStats.totalCreated >= 0 ? 'text-red-300' : 'text-green-300'}`}>
                             {financeStats.totalCreated >= 0 ? '+' : ''}{formatMoney(financeStats.totalCreated)} <span className="text-sm font-normal text-slate-500">TWD</span>
                         </div>
                         <div className="space-y-2 text-xs pt-2 border-t border-white/10">
                             <div className="flex justify-between gap-3">
                                 <span className="text-slate-400">總創造金額 = 淨資產變化 + 花費</span>
-                                <span className={`font-inter font-bold ${financeStats.totalCreated >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>{financeStats.totalCreated >= 0 ? '+' : ''}{formatMoney(financeStats.totalCreated)}</span>
+                                <span className={`font-inter font-bold ${financeStats.totalCreated >= 0 ? 'text-red-300' : 'text-green-300'}`}>{financeStats.totalCreated >= 0 ? '+' : ''}{formatMoney(financeStats.totalCreated)}</span>
                             </div>
                             <div className="flex justify-between gap-3">
                                 <span className="text-slate-400">非收入變化 = 總創造金額 - 收入</span>
-                                <span className={`font-inter font-bold ${financeStats.nonIncomeChange >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>{financeStats.nonIncomeChange >= 0 ? '+' : ''}{formatMoney(financeStats.nonIncomeChange)}</span>
+                                <span className={`font-inter font-bold ${financeStats.nonIncomeChange >= 0 ? 'text-red-300' : 'text-green-300'}`}>{financeStats.nonIncomeChange >= 0 ? '+' : ''}{formatMoney(financeStats.nonIncomeChange)}</span>
                             </div>
                             <div className="text-[10px] leading-relaxed text-slate-500 pt-2">
                                 非收入變化可能包含投資漲跌、匯率、股息未列入收入、漏記現金流或估值變化。
@@ -3439,7 +3535,7 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
                     )}
                     <div className="relative z-10">
                         <div className="text-xs text-slate-400 mb-1">股票總損益</div>
-                        <div className={`text-3xl font-inter font-bold ${stockStats.totalPnl >= 0 ? 'text-emerald-300' : 'text-rose-300'} ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>{totalPnlLabel}</div>
+                        <div className={`text-3xl font-inter font-bold ${stockStats.totalPnl >= 0 ? 'text-red-300' : 'text-green-300'} ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>{totalPnlLabel}</div>
                         {marketFilter === 'US' && !isPrivacyMode && (
                             <div className="text-[10px] text-slate-500 mt-1">匯率 USD/TWD {formatExchangeRate(usdToTwdRate)}</div>
                         )}
@@ -3448,7 +3544,7 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
                                 <div className="flex items-start justify-between gap-3">
                                     <div>
                                         <div className="text-[10px] uppercase tracking-wider text-teal-200 font-bold">若未賣出試算</div>
-                                        <div className={`text-lg font-inter font-bold mt-1 ${latestSnapshotEstimate.estimatedTotalPnl >= 0 ? 'text-emerald-200' : 'text-rose-200'} ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>{latestEstimatePnlLabel}</div>
+                                        <div className={`text-lg font-inter font-bold mt-1 ${latestSnapshotEstimate.estimatedTotalPnl >= 0 ? 'text-red-300' : 'text-green-300'} ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>{latestEstimatePnlLabel}</div>
                                     </div>
                                     <div className="text-right shrink-0">
                                         <div className="text-[10px] text-slate-500">最新估值</div>
@@ -3458,7 +3554,7 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
                                 <div className="grid grid-cols-2 gap-2 mt-2 text-[10px]">
                                     <div className="rounded-lg bg-white/5 px-3 py-2">
                                         <div className="text-slate-500">較快照市值</div>
-                                        <div className={`font-inter font-bold ${latestSnapshotEstimate.marketValueDiff >= 0 ? 'text-emerald-200' : 'text-rose-200'} ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>{isPrivacyMode ? '****' : `${latestSnapshotEstimate.marketValueDiff >= 0 ? '+' : ''}${formatMoneyByMarket(latestSnapshotEstimate.marketValueDiff, marketFilter)}`}</div>
+                                        <div className={`font-inter font-bold ${latestSnapshotEstimate.marketValueDiff >= 0 ? 'text-red-300' : 'text-green-300'} ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>{isPrivacyMode ? '****' : `${latestSnapshotEstimate.marketValueDiff >= 0 ? '+' : ''}${formatMoneyByMarket(latestSnapshotEstimate.marketValueDiff, marketFilter)}`}</div>
                                     </div>
                                     <div className="rounded-lg bg-white/5 px-3 py-2">
                                         <div className="text-slate-500">已更新持倉</div>
@@ -3472,7 +3568,7 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
                             <div className="flex items-start justify-between gap-3">
                                 <div>
                                     <div className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">扣除質押後淨損益</div>
-                                    <div className={`text-lg font-inter font-bold mt-1 ${stockDebtStats.netPnlAfterDebt >= 0 ? 'text-emerald-200' : 'text-rose-200'} ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>{netPnlAfterDebtLabel}</div>
+                                    <div className={`text-lg font-inter font-bold mt-1 ${stockDebtStats.netPnlAfterDebt >= 0 ? 'text-red-300' : 'text-green-300'} ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>{netPnlAfterDebtLabel}</div>
                                 </div>
                                 <div className="text-right shrink-0">
                                     <div className="text-[10px] text-slate-500">最新質押負債</div>
@@ -3611,7 +3707,7 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
                                                     <div className="mt-3 pt-3 border-t border-slate-50 grid grid-cols-3 gap-2 text-[10px]">
                                                         <div><div className="text-slate-400">最新價</div><div className="font-inter text-slate-700">{formatPriceUpToTwo(quote.price)}</div></div>
                                                         <div><div className="text-slate-400">最新估值</div><div className="font-inter text-slate-700">{formatMoneyByMarket(latestValue, holding.market || 'TW')}</div></div>
-                                                        <div><div className="text-slate-400">差異</div><div className={`font-inter font-bold ${diff >= 0 ? 'text-emerald-600' : 'text-rose-500'}`}>{diff >= 0 ? '+' : ''}{formatMoneyByMarket(diff, holding.market || 'TW')} · {formatRate(diffRate)}</div></div>
+                                                        <div><div className="text-slate-400">差異</div><div className={`font-inter font-bold ${diff >= 0 ? 'text-red-600' : 'text-green-700'}`}>{diff >= 0 ? '+' : ''}{formatMoneyByMarket(diff, holding.market || 'TW')} · {formatRate(diffRate)}</div></div>
                                                     </div>
                                                 )}
                                             </div>
@@ -3693,7 +3789,7 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
                                             <div className="h-3 bg-white rounded-full overflow-hidden border border-slate-100">
                                                 <div className={`h-full rounded-full ${item.totalPnl >= 0 ? 'bg-emerald-400' : 'bg-rose-400'}`} style={{ width: `${item.barWidth}%` }}></div>
                                             </div>
-                                            <div className={`text-right font-inter font-bold ${item.totalPnl >= 0 ? 'text-emerald-600' : 'text-rose-500'} ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>{stockMoney(item.totalPnl, item.market, item.totalPnl >= 0 ? '+' : '')}</div>
+                                            <div className={`text-right font-inter font-bold ${item.totalPnl >= 0 ? 'text-red-600' : 'text-green-700'} ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>{stockMoney(item.totalPnl, item.market, item.totalPnl >= 0 ? '+' : '')}</div>
                                         </div>
                                     ))}
                                 </div>
@@ -3708,7 +3804,7 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
                                     <div className="text-xs text-slate-400 mt-1">{item.tradeCount} 筆交易，最近 {item.latestTradeDate}</div>
                                 </div>
                                 <div className="text-right">
-                                    <div className={`font-inter font-bold ${item.totalPnl >= 0 ? 'text-emerald-600' : 'text-rose-500'} ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>{stockMoney(item.totalPnl, item.market, item.totalPnl >= 0 ? '+' : '')}</div>
+                                    <div className={`font-inter font-bold ${item.totalPnl >= 0 ? 'text-red-600' : 'text-green-700'} ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>{stockMoney(item.totalPnl, item.market, item.totalPnl >= 0 ? '+' : '')}</div>
                                     <div className="text-[10px] text-slate-400 font-inter">{formatRate(item.roi)}</div>
                                 </div>
                             </div>
@@ -3868,7 +3964,7 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
                             <div className="grid grid-cols-3 gap-2 mb-4 text-xs">
                                 <div className="bg-slate-50 rounded-xl p-3"><div className="text-slate-400 mb-1">累計買入</div><div className="font-inter font-bold text-slate-700">{stockMoney(selectedStockDetail.buyAmount, selectedStockDetail.market)}</div></div>
                                 <div className="bg-slate-50 rounded-xl p-3"><div className="text-slate-400 mb-1">目前市值</div><div className="font-inter font-bold text-slate-700">{stockMoney(selectedStockDetail.marketValue, selectedStockDetail.market)}</div></div>
-                                <div className="bg-slate-50 rounded-xl p-3"><div className="text-slate-400 mb-1">總損益</div><div className={`font-inter font-bold ${selectedStockDetail.totalPnl >= 0 ? 'text-emerald-600' : 'text-rose-500'}`}>{stockMoney(selectedStockDetail.totalPnl, selectedStockDetail.market, selectedStockDetail.totalPnl >= 0 ? '+' : '')}</div></div>
+                                <div className="bg-slate-50 rounded-xl p-3"><div className="text-slate-400 mb-1">總損益</div><div className={`font-inter font-bold ${selectedStockDetail.totalPnl >= 0 ? 'text-red-600' : 'text-green-700'}`}>{stockMoney(selectedStockDetail.totalPnl, selectedStockDetail.market, selectedStockDetail.totalPnl >= 0 ? '+' : '')}</div></div>
                             </div>
                             <div className="border border-slate-100 rounded-2xl overflow-hidden">
                                 <div className="px-4 py-3 border-b border-slate-100 bg-slate-50/70 flex items-center justify-between">
@@ -3912,7 +4008,7 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
                                         <div className="text-xs text-slate-400 mt-1">{item.tradeCount} 筆交易 · 最近 {item.latestTradeDate}</div>
                                     </div>
                                     <div className="text-right shrink-0">
-                                        <div className={`font-inter font-bold ${item.totalPnl >= 0 ? 'text-emerald-600' : 'text-rose-500'} ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>{stockMoney(item.totalPnl, item.market, item.totalPnl >= 0 ? '+' : '')}</div>
+                                        <div className={`font-inter font-bold ${item.totalPnl >= 0 ? 'text-red-600' : 'text-green-700'} ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>{stockMoney(item.totalPnl, item.market, item.totalPnl >= 0 ? '+' : '')}</div>
                                         <div className="text-[10px] text-slate-400 font-inter">{formatRate(item.roi)}</div>
                                     </div>
                                 </div>
@@ -3992,7 +4088,7 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
                                     </div>
                                     <div className="text-right">
                                         <div className="font-inter font-bold text-teal-600">{formatMoneyByMarket(holding.marketValue, holding.market || 'TW')}</div>
-                                        <div className={`text-[10px] font-inter ${(holding.marketValue - holding.costAmount) >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>{holding.costAmount ? `${(holding.marketValue - holding.costAmount) >= 0 ? '+' : ''}${formatMoneyByMarket(holding.marketValue - holding.costAmount, holding.market || 'TW')}` : '未填成本'}</div>
+                                        <div className={`text-[10px] font-inter ${(holding.marketValue - holding.costAmount) >= 0 ? 'text-red-600' : 'text-green-700'}`}>{holding.costAmount ? `${(holding.marketValue - holding.costAmount) >= 0 ? '+' : ''}${formatMoneyByMarket(holding.marketValue - holding.costAmount, holding.market || 'TW')}` : '未填成本'}</div>
                                     </div>
                                 </div>
                             ))}
@@ -4376,7 +4472,6 @@ const MainApp = ({ user, logout }) => {
     const [showHistoryModal, setShowHistoryModal] = useState(false);
     const [showFIREModal, setShowFIREModal] = useState(false);
     const [showRangeStatsModal, setShowRangeStatsModal] = useState(false);
-    const [showAdvancedMenu, setShowAdvancedMenu] = useState(false);
 
     const fileInputRef = useRef(null);
     const expenseFileInputRef = useRef(null);
@@ -4947,7 +5042,7 @@ const MainApp = ({ user, logout }) => {
     }
 
     return (
-        <div className="min-h-screen max-w-md mx-auto bg-white text-slate-800 relative font-sans shadow-2xl overflow-hidden">
+        <div className="min-h-screen bg-[#F4F5F7] text-slate-800 relative font-sans">
             {writeBlock && (
                 <div role="alert" className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[75] w-[calc(100%-2rem)] max-w-sm bg-amber-50 border border-amber-200 text-amber-900 rounded-2xl shadow-2xl px-4 py-3">
                     <div className="flex items-start gap-3">
@@ -5110,323 +5205,164 @@ const MainApp = ({ user, logout }) => {
             )}
 
             {view === 'detail' && selectedDate && (
-                <div className="w-full max-w-md mx-auto">
+                <div className="w-full max-w-md mx-auto min-h-screen bg-white sm:shadow-xl">
                     <DetailView monthKey={selectedDate} data={data} onBack={() => setView('dashboard')} onUpdateData={handleDetailUpdate} assetNames={allAssetNames} debtNames={allDebtNames} isPrivacyMode={isPrivacyMode} />
                 </div>
             )}
             {view === 'stock-analysis' && (
-                <div className="w-full max-w-md mx-auto">
+                <div className="w-full max-w-md mx-auto min-h-screen bg-white sm:shadow-xl">
                     <StockAnalysisView data={data} onBack={() => setView('dashboard')} onImportTransactions={handleImportStockTransactions} onClearTransactions={handleClearStockTransactions} onImportHoldingSnapshot={handleImportHoldingSnapshot} onDeleteHoldingSnapshot={handleDeleteHoldingSnapshot} isPrivacyMode={isPrivacyMode} />
                 </div>
             )}
-            <div className={`transition-transform duration-300 w-full max-w-md mx-auto ${view !== 'dashboard' ? 'scale-95 opacity-50 pointer-events-none hidden' : ''}`}>
-                <div className="fixed top-0 left-0 w-full h-64 bg-gradient-to-b from-[#EBEAE5] to-transparent -z-10"></div>
-                <header className="sticky top-0 z-20 px-6 py-5 bg-[#F9F9F7]/90 backdrop-blur-md border-b border-slate-200/50">
-                    <div className="flex justify-between items-end mb-4">
-                        <div>
-                            <div className="flex items-center gap-2 mb-1">
-                                <span className="text-xs uppercase tracking-[0.2em] text-slate-400 font-inter">CatLog</span>
-                                <button
-                                    onClick={handleManualSync}
-                                    className="p-1 text-slate-300 hover:text-amber-500 transition-colors"
-                                    title="同步資料"
-                                >
-                                    <RefreshCw size={12} />
-                                </button>
-                                <SyncStatusBadge isSaving={isSaving} syncState={syncState} onRetry={handleRetrySave} onResolveConflict={() => setSyncConflict((prev) => prev || { pendingData: data })} />
-                                {isLocalDiagnosticEnabled && (
-                                    <button
-                                        onClick={handleLoadDiagnostics}
-                                        className="p-1 text-slate-300 hover:text-blue-500 transition-colors"
-                                        title="本機資料診斷"
-                                    >
-                                        <Activity size={12} />
-                                    </button>
-                                )}
-                            </div>
-                            <h1 className="text-2xl font-serif-tc font-bold text-slate-800 flex items-center gap-2 whitespace-nowrap">
-                                <img src="/favicon.png" alt="極簡貓資產 Logo" className="w-[30px] h-[30px] object-contain" />
+            <div className={`w-full ${view !== 'dashboard' ? 'hidden' : ''}`}>
+                <header className="sticky top-0 z-20 bg-white/95 backdrop-blur border-b border-slate-200">
+                    <div className="max-w-5xl mx-auto px-4 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                            <h1 className="text-xl font-bold text-slate-900 flex items-center gap-2 whitespace-nowrap">
+                                <img src="/favicon.png" alt="" className="w-7 h-7 object-contain" />
                                 極簡貓資產
                             </h1>
-                        </div>
-                        <div className="flex gap-2 items-center relative">
-                            <button
-                                onClick={() => setShowAdvancedMenu(!showAdvancedMenu)}
-                                className="p-2 bg-white text-slate-400 hover:text-amber-500 hover:bg-amber-50 rounded-full transition-all border border-slate-100 shadow-sm"
-                                title="進階功能"
-                            >
-                                <LayoutGrid size={18} />
+                            <SyncStatusBadge isSaving={isSaving} syncState={syncState} onRetry={handleRetrySave} onResolveConflict={() => setSyncConflict((prev) => prev || { pendingData: data })} />
+                            <button onClick={handleManualSync} title="同步資料" aria-label="同步資料" className="p-2 rounded-lg text-slate-500 hover:text-teal-700 hover:bg-slate-100 transition-colors">
+                                <RefreshCw size={16} aria-hidden="true" />
                             </button>
-
-                            {showAdvancedMenu && (
-                                <>
-                                    <div className="fixed inset-0 z-40" onClick={() => setShowAdvancedMenu(false)}></div>
-                                    <div className="absolute top-12 right-0 bg-white rounded-xl shadow-xl border border-slate-100 py-2 w-48 z-50 animate-[fadeIn_0.1s]">
-                                        <div className="px-3 py-2 text-xs font-bold text-slate-400 uppercase tracking-wider border-b border-slate-50 mb-1">Advanced</div>
-                                        <button
-                                            onClick={() => { setShowFIREModal(true); setShowAdvancedMenu(false); }}
-                                            className="w-full text-left px-4 py-3 hover:bg-slate-50 flex items-center gap-3 text-slate-700 transition-colors"
-                                        >
-                                            <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center"><Mountain size={16} /></div>
-                                            <span className="text-sm font-medium">FIRE 目標</span>
-                                        </button>
-                                        <button
-                                            onClick={() => { setShowStatementModal(true); setShowAdvancedMenu(false); }}
-                                            className="w-full text-left px-4 py-3 hover:bg-slate-50 flex items-center gap-3 text-slate-700 transition-colors"
-                                        >
-                                            <div className="w-8 h-8 rounded-lg bg-teal-50 text-teal-600 flex items-center justify-center"><ClipboardCheck size={16} /></div>
-                                            <span className="text-sm font-medium">對帳單</span>
-                                        </button>
-                                        <button
-                                            onClick={() => { setView('stock-analysis'); setShowAdvancedMenu(false); }}
-                                            className="w-full text-left px-4 py-3 hover:bg-slate-50 flex items-center gap-3 text-slate-700 transition-colors"
-                                        >
-                                            <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center"><TrendingUp size={16} /></div>
-                                            <span className="text-sm font-medium">個股績效</span>
-                                        </button>
-                                        <button
-                                            onClick={() => { setShowRangeStatsModal(true); setShowAdvancedMenu(false); }}
-                                            className="w-full text-left px-4 py-3 hover:bg-slate-50 flex items-center gap-3 text-slate-700 transition-colors"
-                                        >
-                                            <div className="w-8 h-8 rounded-lg bg-purple-50 text-purple-600 flex items-center justify-center"><PieChartIcon size={16} /></div>
-                                            <span className="text-sm font-medium">區間統計</span>
-                                        </button>
-                                    </div>
-                                </>
+                            {isLocalDiagnosticEnabled && (
+                                <button onClick={handleLoadDiagnostics} title="本機資料診斷" aria-label="本機資料診斷" className="p-2 rounded-lg text-slate-500 hover:text-teal-700 hover:bg-slate-100 transition-colors">
+                                    <Activity size={16} aria-hidden="true" />
+                                </button>
                             )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-1" role="group" aria-label="年份">
+                                <button onClick={() => setCurrentYear(y => y - 1)} aria-label="上一年" className="w-10 h-10 rounded-xl border border-slate-300 bg-white text-slate-600 flex items-center justify-center hover:bg-slate-100 hover:text-slate-900 transition-colors"><ChevronLeft size={20} aria-hidden="true" /></button>
+                                <button onClick={() => setShowYearSelector(true)} aria-label={`選擇年份，目前 ${currentYear} 年`} className="h-10 min-w-[64px] px-2 rounded-xl text-base font-inter font-semibold text-slate-900 hover:bg-slate-100 transition-colors">{currentYear}</button>
+                                <button
+                                    onClick={() => setCurrentYear(y => y + 1)}
+                                    disabled={currentYear >= realCurrentYear}
+                                    aria-label="下一年"
+                                    className={`w-10 h-10 rounded-xl border flex items-center justify-center transition-colors ${currentYear >= realCurrentYear ? 'border-slate-200 bg-slate-50 text-slate-300 cursor-not-allowed' : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}
+                                >
+                                    <ChevronRight size={20} aria-hidden="true" />
+                                </button>
+                            </div>
                             <button
                                 onClick={toggleBiometric}
-                                className={`p-2 rounded-full transition-all border border-slate-100 shadow-sm ${biometricEnabled ? 'bg-teal-50 text-teal-600' : 'bg-white text-slate-400 hover:text-teal-500 hover:bg-teal-50'}`}
+                                className={`w-10 h-10 rounded-xl border flex items-center justify-center transition-colors ${biometricEnabled ? 'bg-teal-50 border-teal-200 text-teal-700' : 'bg-white border-slate-300 text-slate-500 hover:text-teal-700'}`}
                                 title={biometricEnabled ? "已啟用 Face ID" : "啟用 Face ID"}
+                                aria-label={biometricEnabled ? "已啟用 Face ID" : "啟用 Face ID"}
                             >
-                                <ScanFace size={18} />
+                                <ScanFace size={18} aria-hidden="true" />
                             </button>
                             <button
                                 onClick={() => setIsPrivacyMode(!isPrivacyMode)}
-                                className="p-2 bg-white text-slate-400 hover:text-indigo-500 hover:bg-indigo-50 rounded-full transition-all border border-slate-100 shadow-sm"
+                                className="w-10 h-10 rounded-xl border border-slate-300 bg-white text-teal-700 flex items-center justify-center hover:bg-teal-50 transition-colors"
                                 title={isPrivacyMode ? "顯示金額" : "隱藏金額"}
+                                aria-label={isPrivacyMode ? "顯示金額" : "隱藏金額"}
                             >
-                                {isPrivacyMode ? <EyeOff size={18} /> : <Eye size={18} />}
+                                {isPrivacyMode ? <EyeOff size={18} aria-hidden="true" /> : <Eye size={18} aria-hidden="true" />}
+                            </button>
+                            <button onClick={() => setShowAddModal(true)} className="hidden sm:flex items-center gap-1.5 min-h-[40px] px-4 rounded-xl bg-teal-700 text-white text-sm font-semibold hover:bg-teal-800 transition-colors">
+                                <Plus size={18} aria-hidden="true" />新增
                             </button>
                             <div className="relative group/user z-50">
-                                <img src={user.photoURL || "https://ui-avatars.com/api/?name=User"} alt="User" className="w-9 h-9 rounded-full border border-slate-200 shadow-sm cursor-pointer" />
-                                <div className="absolute top-10 right-0 w-32 bg-white rounded-xl shadow-xl border border-slate-100 p-1 opacity-0 group-hover/user:opacity-100 transition-all pointer-events-none group-hover/user:pointer-events-auto transform origin-top-right scale-95 group-hover/user:scale-100">
-                                    <div className="px-3 py-2 border-b border-slate-50 mb-1">
-                                        <p className="text-xs font-bold text-slate-700 truncate">{user.displayName}</p>
-                                        <p className="text-[10px] text-slate-400 truncate">{user.email}</p>
+                                <img src={user.photoURL || "https://ui-avatars.com/api/?name=User"} alt="帳號" className="w-10 h-10 rounded-full border border-slate-200 cursor-pointer" />
+                                <div className="absolute top-11 right-0 w-44 bg-white rounded-xl shadow-xl border border-slate-200 p-1 opacity-0 group-hover/user:opacity-100 transition-all pointer-events-none group-hover/user:pointer-events-auto">
+                                    <div className="px-3 py-2 border-b border-slate-100 mb-1">
+                                        <p className="text-sm font-bold text-slate-800 truncate">{user.displayName}</p>
+                                        <p className="text-xs text-slate-500 truncate">{user.email}</p>
                                     </div>
-                                    <button
-                                        onClick={logout}
-                                        className="w-full text-left text-xs px-3 py-2 text-rose-500 hover:bg-rose-50 rounded-lg font-bold transition-colors flex items-center gap-2"
-                                    >
-                                        <LogOut size={12} /> 登出
+                                    <button onClick={logout} className="w-full text-left text-sm px-3 py-2 text-slate-700 hover:bg-slate-100 rounded-lg font-semibold transition-colors flex items-center gap-2">
+                                        <LogOut size={14} aria-hidden="true" /> 登出
                                     </button>
                                 </div>
                             </div>
                         </div>
                     </div>
-                    <div className="flex items-center justify-between mt-4">
-                        <button onClick={() => setCurrentYear(y => y - 1)} className="p-2 text-slate-400 hover:text-slate-800 transition-colors"><ChevronLeft size={24} strokeWidth={1.5} /></button>
-                        <button onClick={() => setShowYearSelector(true)} className="text-3xl font-inter font-light tracking-tight text-slate-800 hover:text-amber-500 transition-colors px-4 py-1 rounded-lg hover:bg-slate-100 flex-1 text-center">{currentYear}</button>
-                        <button
-                            onClick={() => setCurrentYear(y => y + 1)}
-                            disabled={currentYear >= realCurrentYear}
-                            className={`p-2 transition-colors ${currentYear >= realCurrentYear ? 'text-slate-200 cursor-not-allowed' : 'text-slate-400 hover:text-slate-800'}`}
-                        >
-                            <ChevronRight size={24} strokeWidth={1.5} />
-                        </button>
-                    </div>
                 </header>
 
-                <main className="px-6 py-6 pb-2">
-                    <section>
-                        <div className="flex items-center justify-between mb-4"><h3 className="text-sm font-serif-tc text-slate-500 font-medium">年度資產淨值</h3><span className="text-xs text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full font-inter">TWD</span></div>
-                        <div className="h-28 w-full -ml-2">
-                            <ResponsiveContainer width="100%" height="100%">
-                                <AreaChart data={assetChartData}>
-                                    <defs><linearGradient id="colorAssets" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#FBBF24" stopOpacity={0.2} /><stop offset="95%" stopColor="#FBBF24" stopOpacity={0} /></linearGradient></defs>
-                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
-                                    <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: '#94A3B8', fontSize: 10, fontFamily: 'Inter' }} dy={10} />
-                                    <YAxis tickFormatter={(val) => `${val / 10000}萬`} axisLine={false} tickLine={false} tick={{ fill: '#94A3B8', fontSize: 10, fontFamily: 'Inter' }} width={40} />
-                                    <Tooltip content={<CustomChartTooltip />} cursor={{ stroke: '#CBD5E1', strokeWidth: 1 }} />
-                                    <Area type="monotone" dataKey="assets" stroke="#D97706" strokeWidth={2} fillOpacity={1} fill="url(#colorAssets)" />
-                                </AreaChart>
-                            </ResponsiveContainer>
-                        </div>
-                        <div className="mt-8 grid grid-cols-2 gap-3">
-                            <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 relative group/tooltip z-10 flex flex-col items-center justify-center text-center">
-                                <span className="text-xs text-slate-400 font-inter mb-1 block flex items-center justify-center gap-1 cursor-help">
-                                    年度資產增長金額 {!isPrivacyMode && <Info size={12} />}
-                                </span>
-                                <span className={`text-2xl font-inter font-bold ${yearStats.realAssetGrowthAmount >= 0 ? 'text-emerald-600' : 'text-rose-500'} ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>
-                                    {isPrivacyMode ? '****' : (yearStats.realAssetGrowthAmount > 0 ? '+' : '') + formatWan(yearStats.realAssetGrowthAmount)}
-                                </span>
-                                {!isPrivacyMode && (
-                                    <div className="absolute bottom-full left-0 mb-2 w-48 bg-slate-800 text-white text-xs p-3 rounded-lg opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none shadow-xl z-20">
-                                        <div className="font-bold border-b border-slate-600 pb-1 mb-1">計算明細</div>
-                                        <div className="flex justify-between mb-1"><span className="text-slate-400">期末資產:</span><span className="font-inter">{formatWan(yearStats.thisYearAssets)}</span></div>
-                                        <div className="flex justify-between mb-1"><span className="text-slate-400">期初資產:</span><span className="font-inter">{formatWan(yearStats.lastYearAssets)}</span></div>
-                                        <div className="text-[10px] text-slate-400 mt-2 pt-2 border-t border-slate-600">公式: {yearStats.assetGrowthStartDate || '尚無紀錄'} 至 {yearStats.assetGrowthEndDate || '尚無紀錄'} 的資產淨值差額</div>
-                                    </div>
-                                )}
-                                <Footprints className="absolute -bottom-3 -right-2 text-amber-100 opacity-40 rotate-[-15deg]" size={50} />
-                            </div>
-                            <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 relative group/tooltip z-10 flex flex-col items-center justify-center text-center">
-                                <span className="text-xs text-slate-400 font-inter mb-1 block flex items-center justify-center gap-1 cursor-help">
-                                    年度資產增長比例 {!isPrivacyMode && <Info size={12} />}
-                                </span>
-                                <span className={`text-2xl font-inter font-bold ${yearStats.assetGrowthRatio >= 1 ? 'text-emerald-600' : 'text-rose-500'} ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>
-                                    {isPrivacyMode ? '****' : `${yearStats.assetGrowthRatio >= 1 ? '📈' : '📉'} ${formatRate(yearStats.assetGrowthRatio)}`}
-                                </span>
-                                {!isPrivacyMode && (
-                                    <div className="absolute bottom-full right-0 mb-2 w-48 bg-slate-800 text-white text-xs p-3 rounded-lg opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none shadow-xl z-20">
-                                        <div className="font-bold border-b border-slate-600 pb-1 mb-1">計算明細</div>
-                                        <div className="flex justify-between mb-1"><span className="text-slate-400">期末資產:</span><span className="font-inter">{formatWan(yearStats.thisYearAssets)}</span></div>
-                                        <div className="flex justify-between mb-1"><span className="text-slate-400">期初資產:</span><span className="font-inter">{formatWan(yearStats.lastYearAssets)}</span></div>
-                                        <div className="text-[10px] text-slate-400 mt-2 pt-2 border-t border-slate-600">公式: 期末資產 / 期初資產</div>
-                                    </div>
-                                )}
-                                <Cat className="absolute -bottom-2 -left-2 text-amber-100 opacity-40 rotate-[15deg] scale-x-[-1]" size={50} />
-                            </div>
-                        </div>
-                        <div className="mt-4 p-4 bg-slate-800 text-white rounded-xl shadow-lg relative overflow-hidden">
-                            <div className="absolute top-0 right-0 w-32 h-32 bg-teal-500/20 rounded-full blur-2xl -mr-10 -mt-10"></div>
-                            <div className="relative z-10 flex justify-around items-center px-4">
-                                <div className="flex flex-col gap-1 items-center text-center"><span className="text-[10px] text-slate-400 uppercase tracking-wider flex items-center justify-center gap-1"><Mountain size={12} className="text-emerald-400" /> 年度最高 ({assetExtremes.max.month}月)</span><span className={`text-lg font-inter font-bold text-white ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>{isPrivacyMode ? '****' : formatWan(assetExtremes.max.val)}</span></div>
-                                <div className="w-px h-8 bg-slate-600 mx-2"></div>
-                                <div className="flex flex-col gap-1 items-center text-center"><span className="text-[10px] text-slate-400 uppercase tracking-wider flex items-center justify-center gap-1">年度最低 ({assetExtremes.min.month}月) <ArrowDown size={12} className="text-rose-400" /></span><span className={`text-lg font-inter font-bold text-white ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>{isPrivacyMode ? '****' : formatWan(assetExtremes.min.val)}</span></div>
-                            </div>
-                        </div>
-                    </section>
+                <main className="max-w-5xl mx-auto px-4 sm:px-6 py-6 pb-28 flex flex-col gap-5">
+                    <HomeHero
+                        yearStats={yearStats}
+                        processedData={processedData}
+                        assetChartData={assetChartData}
+                        assetExtremes={assetExtremes}
+                        isPrivacyMode={isPrivacyMode}
+                    />
+                    {/* 桌機：左欄放小卡、分析、資料，右欄放每月紀錄；手機與平板依序上下排列。 */}
+                    <div className="flex flex-col lg:flex-row gap-5 items-stretch lg:items-start">
+                        <aside className="w-full lg:w-[320px] lg:shrink-0 flex flex-col gap-4">
+                            <HomeSummaryCards
+                                currentYear={currentYear}
+                                yearStats={yearStats}
+                                fireStats={fireStats}
+                                isPrivacyMode={isPrivacyMode}
+                                onOpenFire={() => setShowFIREModal(true)}
+                            />
+                            <nav aria-labelledby="analysis-nav-title" className="bg-white rounded-[20px] px-5 py-2">
+                                <h2 id="analysis-nav-title" className="text-lg font-bold text-slate-900 pt-3 pb-1">分析</h2>
+                                <HomeNavButton icon={Mountain} label="FIRE 目標" onClick={() => setShowFIREModal(true)} />
+                                <HomeNavButton icon={TrendingUp} label="個股績效" onClick={() => setView('stock-analysis')} />
+                                <HomeNavButton icon={PieChartIcon} label="區間統計" onClick={() => setShowRangeStatsModal(true)} />
+                                <HomeNavButton icon={ClipboardCheck} label="對帳單" onClick={() => setShowStatementModal(true)} last />
+                            </nav>
+                            <nav aria-labelledby="data-nav-title" className="bg-white rounded-[20px] px-5 py-2">
+                                <h2 id="data-nav-title" className="text-lg font-bold text-slate-900 pt-3 pb-1">資料</h2>
+                                <HomeNavButton icon={FileJson} label="匯入檔案" onClick={() => setShowImportModal(true)} />
+                                <HomeNavButton icon={Download} label="下載備份檔" onClick={handleExportData} />
+                                <HomeNavButton icon={History} label="歷史版本與還原點" onClick={() => setShowHistoryModal(true)} last />
+                            </nav>
+                        </aside>
 
-                    <section className="mt-8">
-                        {/* New Annual Stats Section */}
-                        <div className="grid grid-cols-2 gap-3 mb-6">
-                            <div className="bg-white p-3 rounded-xl border border-slate-100 shadow-sm flex flex-col items-center justify-center text-center relative group/tooltip z-10">
-                                <span className="text-[10px] text-slate-400 font-inter mb-1 flex items-center gap-1 cursor-help">
-                                    年總和 {!isPrivacyMode && <Info size={10} />}
-                                </span>
-                                <span className={`text-sm font-bold font-inter text-slate-700 ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>{isPrivacyMode ? '****' : formatWan(yearStats.totalIncome)}</span>
-                                {!isPrivacyMode && (
-                                    <div className="absolute bottom-full mb-2 w-48 bg-slate-800 text-white text-xs p-3 rounded-lg opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none shadow-xl">
-                                        <div className="font-bold border-b border-slate-600 pb-1 mb-1">計算明細</div>
-                                        <div className="flex justify-between"><span>本年度總收入</span></div>
-                                        <div className="font-inter text-emerald-400 mt-1 text-right">{formatMoney(yearStats.totalIncome)}</div>
-                                    </div>
-                                )}
+                        <section aria-labelledby="month-list-title" className="w-full flex-1 min-w-0 bg-white rounded-[20px] px-5 pt-2 pb-3">
+                            <div className="flex justify-between items-baseline py-3">
+                                <h2 id="month-list-title" className="text-lg font-bold text-slate-900">每月紀錄</h2>
+                                <span className="text-sm text-slate-500">點一列看月份明細</span>
                             </div>
-                            <div className="bg-white p-3 rounded-xl border border-slate-100 shadow-sm flex flex-col items-center justify-center text-center relative group/tooltip z-10">
-                                <span className="text-[10px] text-slate-400 font-inter mb-1 flex items-center gap-1 cursor-help">
-                                    年平均 {!isPrivacyMode && <Info size={10} />}
-                                </span>
-                                <span className={`text-sm font-bold font-inter text-slate-700 ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>{isPrivacyMode ? '****' : formatWan(yearStats.avgIncome)}</span>
-                                {!isPrivacyMode && (
-                                    <div className="absolute bottom-full mb-2 w-48 bg-slate-800 text-white text-xs p-3 rounded-lg opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none shadow-xl">
-                                        <div className="font-bold border-b border-slate-600 pb-1 mb-1">計算明細</div>
-                                        <div className="flex justify-between mb-1"><span>年總和</span><span className="font-inter">{formatWan(yearStats.totalIncome)}</span></div>
-                                        <div className="flex justify-between border-t border-slate-600 pt-1"><span>除以 12 個月</span></div>
-                                        <div className="font-inter text-emerald-400 mt-1 text-right">= {formatMoney(yearStats.avgIncome)} / 月</div>
-                                    </div>
-                                )}
-                            </div>
-                            <div className="bg-white p-3 rounded-xl border border-slate-100 shadow-sm flex flex-col items-center justify-center text-center relative group/tooltip z-10">
-                                <span className="text-[10px] text-slate-400 font-inter mb-1 flex items-center gap-1 cursor-help">
-                                    收入年增長 {!isPrivacyMode && <Info size={10} />}
-                                </span>
-                                <span className={`text-sm font-bold font-inter flex items-center justify-center gap-1 ${yearStats.assetGrowthRate < 1 ? 'text-rose-500' : 'text-emerald-600'} ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>
-                                    {isPrivacyMode ? '****' : (
-                                        <>
-                                            {yearStats.assetGrowthRate < 1 && yearStats.assetGrowthRate > 0 ? <TrendingDown size={14} /> : null}
-                                            {formatRate(yearStats.assetGrowthRate)}
-                                        </>
-                                    )}
-                                </span>
-                                {!isPrivacyMode && (
-                                    <div className="absolute bottom-full mb-2 w-56 bg-slate-800 text-white text-xs p-3 rounded-lg opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none shadow-xl">
-                                        <div className="font-bold border-b border-slate-600 pb-1 mb-1">計算明細 {(currentYear - 1)} vs {currentYear}</div>
-                                        <div className="flex justify-between mb-1"><span className="text-slate-400">今年收入:</span><span className="font-inter">{formatWan(yearStats.totalIncome)}</span></div>
-                                        <div className="flex justify-between mb-1"><span className="text-slate-400">去年收入:</span><span className="font-inter">{formatWan(yearStats.lastYearIncome)}</span></div>
-                                        <div className="text-[10px] text-slate-400 mt-2 pt-2 border-t border-slate-600">公式: 今年收入 / 去年收入</div>
-                                    </div>
-                                )}
-                            </div>
-                            <div className="bg-white p-3 rounded-xl border border-slate-100 shadow-sm flex flex-col items-center justify-center text-center relative group/tooltip z-10">
-                                <span className="text-[10px] text-slate-400 font-inter mb-1 flex items-center gap-1 cursor-help">
-                                    收入占總所得%數 {!isPrivacyMode && <Info size={10} />}
-                                </span>
-                                <span className={`text-sm font-bold font-inter text-emerald-600 ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>
-                                    {isPrivacyMode ? '****' : formatRate(yearStats.incomeGrowthRate)}
-                                </span>
-                                {!isPrivacyMode && (
-                                    <div className="absolute bottom-full mb-2 w-56 bg-slate-800 text-white text-xs p-3 rounded-lg opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none shadow-xl">
-                                        <div className="font-bold border-b border-slate-600 pb-1 mb-1">計算明細</div>
-                                        <div className="flex justify-between mb-1"><span className="text-slate-400">本年度收入:</span><span className="font-inter">{formatWan(yearStats.totalIncome)}</span></div>
-                                        <div className="flex justify-between mb-1"><span className="text-slate-400">歷年總收入:</span><span className="font-inter">{formatWan(yearStats.totalAccumulatedIncome)}</span></div>
-                                        <div className="text-[10px] text-slate-400 mt-2 pt-2 border-t border-slate-600">公式: 今年收入 / 歷年總收入</div>
-                                    </div>
-                                )}
-                            </div>
-                            <div className="bg-white p-3 rounded-xl border border-slate-100 shadow-sm flex flex-col items-center justify-center text-center relative group/tooltip z-10 col-span-2">
-                                <span className="text-[10px] text-slate-400 font-inter mb-1 flex items-center gap-1 cursor-help">
-                                    目前總負債 {!isPrivacyMode && <Info size={10} />}
-                                </span>
-                                <span className={`text-sm font-bold font-inter text-rose-500 ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>
-                                    {isPrivacyMode ? '****' : `-${formatWan(yearStats.thisYearDebt)}`}
-                                </span>
-                                {!isPrivacyMode && (
-                                    <div className="absolute bottom-full mb-2 w-56 bg-slate-800 text-white text-xs p-3 rounded-lg opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none shadow-xl">
-                                        <div className="font-bold border-b border-slate-600 pb-1 mb-1">最新負債快照</div>
-                                        <div className="flex justify-between mb-1"><span className="text-slate-400">截至 {currentYear} 年底:</span><span className="font-inter">-{formatMoney(yearStats.thisYearDebt)}</span></div>
-                                        <div className="text-[10px] text-slate-400 mt-2 pt-2 border-t border-slate-600">此數值會直接影響資產淨值與年度趨勢。</div>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-
-
-
-
-
-                        <h3 className="text-sm font-serif-tc text-slate-500 font-medium mb-4 flex justify-between items-center"><span>月份明細</span><span className="text-xs text-slate-300 font-inter font-light">點擊查看明細</span></h3>
-                        <div className="space-y-0 divide-y divide-slate-100 border-t border-b border-slate-100">
-                            {processedData.map((monthData) => (
-                                <div key={monthData.month} onClick={() => handleMonthClick(monthData)} className={`group py-4 transition-colors cursor-pointer flex justify-between items-center -mx-2 px-2 rounded-lg ${monthData.latestDate ? 'hover:bg-white' : 'opacity-50 cursor-default grayscale'}`}>
-                                    <div>
-                                        <div className="flex items-center gap-3">
-                                            <span className="text-sm font-inter font-medium text-slate-400 w-8">{String(monthData.month).padStart(2, '0')}</span>
-                                            {monthData.allRecords.length > 1 ? (<div className="flex flex-col gap-1">{monthData.allRecords.map((r, idx) => (
-                                                <div key={idx} className={`flex items-center gap-2 text-base font-inter font-normal ${monthData.latestDate ? 'text-slate-700' : 'text-slate-400'}`}>
-                                    <AmountWithTooltip amount={r.assets} className="font-inter text-slate-700" align="left" masked={isPrivacyMode} />
-                                                    <span className="text-xs text-slate-400">({parseInt(r.dateStr.split('-')[2])}日)</span>
-                                                </div>
-                                            ))}</div>) : (<span className={`text-base font-inter font-normal ${monthData.latestDate ? 'text-slate-700' : 'text-slate-400'}`}><AmountWithTooltip amount={monthData.assets} className="font-inter text-slate-700" align="left" masked={isPrivacyMode} /></span>)}
+                            <div className="divide-y divide-slate-100">
+                                {processedData.map((monthData) => (
+                                    <div
+                                        key={monthData.month}
+                                        role={monthData.latestDate ? 'button' : undefined}
+                                        tabIndex={monthData.latestDate ? 0 : undefined}
+                                        onClick={() => handleMonthClick(monthData)}
+                                        onKeyDown={(e) => { if (monthData.latestDate && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); handleMonthClick(monthData); } }}
+                                        className={`flex items-center gap-3 py-3 -mx-2 px-2 rounded-xl transition-colors ${monthData.latestDate ? 'cursor-pointer hover:bg-slate-50' : 'opacity-50'}`}
+                                    >
+                                        <div className="w-11 h-11 shrink-0 rounded-xl bg-teal-50 text-teal-700 flex flex-col items-center justify-center leading-none">
+                                            <span data-month-badge className="text-base font-bold font-inter">{monthData.month}</span>
+                                            <span className="text-xs">月</span>
                                         </div>
-                                        {monthData.memo && (
-                                            !isPrivacyMode && (
-                                                <div className="ml-11 mt-1 text-xs text-slate-400 font-serif-tc italic flex items-center gap-1 group/memo relative cursor-help w-fit max-w-[120px]">
-                                                    <span className="w-1 h-1 rounded-full bg-slate-300 flex-shrink-0"></span>
-                                                    <span className="truncate">{monthData.memo}</span>
-                                                    <div className="absolute bottom-full left-0 mb-2 w-48 bg-slate-800 text-white text-xs p-3 rounded-lg opacity-0 group-hover/memo:opacity-100 transition-opacity pointer-events-none z-50 shadow-xl whitespace-normal break-words">
-                                                        {monthData.memo}
-                                                        <div className="absolute top-full left-4 w-2 h-2 bg-slate-800 rotate-45 transform -translate-x-1/2 -translate-y-1/2"></div>
-                                                    </div>
+                                        <div className="flex-1 min-w-0">
+                                            {monthData.allRecords.length > 1 ? (
+                                                <div className="flex flex-col gap-0.5">
+                                                    {monthData.allRecords.map((r, idx) => (
+                                                        <div key={idx} className="flex items-center gap-2 text-base font-semibold text-slate-900">
+                                                            <AmountWithTooltip amount={r.assets} className="font-inter text-slate-900" align="left" masked={isPrivacyMode} />
+                                                            <span className="text-xs font-normal text-slate-500">({parseInt(r.dateStr.split('-')[2])}日)</span>
+                                                        </div>
+                                                    ))}
                                                 </div>
-                                            )
-                                        )}
-                                    </div>
-                                    <div className="text-right flex flex-col items-end gap-1">
-                                        {monthData.income > 0 && <div className={`text-xs text-emerald-600 font-inter bg-emerald-50 px-2 py-1 rounded-md ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>{isPrivacyMode ? '****' : '+' + formatMoney(monthData.income)}</div>}
+                                            ) : (
+                                                <span className="text-base font-semibold"><AmountWithTooltip amount={monthData.assets} className="font-inter text-slate-900" align="left" masked={isPrivacyMode} /></span>
+                                            )}
+                                            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-slate-500 font-inter mt-0.5">
+                                                {monthData.income > 0 && <span>收入 {isPrivacyMode ? '****' : formatMoney(monthData.income)}</span>}
+                                                {monthData.cost > 0 && <span>支出 {isPrivacyMode ? '****' : formatMoney(monthData.cost)}</span>}
+                                                {monthData.memo && !isPrivacyMode && (
+                                                    <span className="truncate max-w-[200px] text-slate-500" title={monthData.memo}>・{monthData.memo}</span>
+                                                )}
+                                            </div>
+                                        </div>
                                         {monthData.analysis && (
-                                            <div className={`text-[10px] font-bold flex items-center gap-1 ${monthData.analysis.compositeScore >= 0 ? 'text-emerald-500' : 'text-rose-400'} ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>
+                                            <div className={`shrink-0 text-sm font-semibold font-inter flex items-center gap-1 ${trendTextClass(monthData.analysis.compositeScore)}`}>
                                                 {isPrivacyMode ? '****' : (
                                                     <>
-                                                        {monthData.analysis.compositeScore >= 0 ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
-                                                        {monthData.analysis.compositeScore > 0 ? '+' : ''}{formatWan(monthData.analysis.compositeScore)}
+                                                        {trendArrow(monthData.analysis.compositeScore)} {monthData.analysis.compositeScore > 0 ? '+' : ''}{formatWan(monthData.analysis.compositeScore)}
                                                     </>
                                                 )}
                                                 {!isPrivacyMode && (
                                                     <div className="group/tooltip relative">
-                                                        <Info size={10} className="cursor-help text-slate-300 hover:text-slate-500 transition-colors ml-1" />
+                                                        <Info size={12} className="cursor-help text-slate-400 hover:text-slate-600 transition-colors ml-1" aria-label="計算方式" />
                                                         <AnalysisTooltip
                                                             incomeDiff={monthData.analysis.incomeDiff}
                                                             assetDiff={monthData.analysis.assetDiff}
@@ -5438,14 +5374,16 @@ const MainApp = ({ user, logout }) => {
                                             </div>
                                         )}
                                     </div>
-                                </div>
-                            ))}
-                        </div>
-                        <footer className="text-center text-slate-300 text-[10px] py-4 mt-4 font-inter">@copyright Jet | v1.0.0</footer>
-                    </section>
+                                ))}
+                            </div>
+                            <p className="text-xs text-slate-500 pt-3">右側是和上個月比的「收入變化＋淨資產變化」，▲ 紅色為增加、▼ 綠色為減少。</p>
+                        </section>
+
+                    </div>
+                    <footer className="text-center text-slate-500 text-xs py-2 font-inter">CatLog v{APP_VERSION}</footer>
                 </main>
 
-                <button onClick={() => setShowAddModal(true)} className="fixed bottom-8 right-6 w-14 h-14 bg-slate-800 text-white rounded-full shadow-lg shadow-slate-800/30 flex items-center justify-center hover:bg-slate-700 hover:scale-105 transition-all z-30 group"><Plus size={28} strokeWidth={2} className="group-hover:rotate-90 transition-transform duration-300" /></button>
+                <button onClick={() => setShowAddModal(true)} aria-label="新增紀錄" className="sm:hidden fixed bottom-6 right-5 w-14 h-14 bg-teal-700 text-white rounded-full shadow-lg shadow-teal-700/30 flex items-center justify-center hover:bg-teal-800 transition-colors z-30"><Plus size={28} strokeWidth={2.5} aria-hidden="true" /></button>
 
                 {showImportModal && (
                     <div className="fixed inset-0 bg-slate-900/30 backdrop-blur-sm z-50 flex items-center justify-center p-6 transition-all duration-300">

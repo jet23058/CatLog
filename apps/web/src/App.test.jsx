@@ -213,7 +213,7 @@ describe('App Integration Tests', () => {
     });
 
     const addOneAsset = async (user) => {
-        await user.click(document.querySelector('button.fixed.bottom-8.right-6'));
+        await user.click(document.querySelector('button[aria-label="新增紀錄"]'));
         await user.click(await screen.findByText('新增資產'));
         await user.type(screen.getByPlaceholderText(/輸入.*資產名稱/), 'New Asset');
         await user.type(screen.getAllByPlaceholderText('0.00')[0], '1000');
@@ -255,7 +255,7 @@ describe('App Integration Tests', () => {
         render(<App />);
         await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
 
-        await user.click(document.querySelector('button.fixed.bottom-8.right-6'));
+        await user.click(document.querySelector('button[aria-label="新增紀錄"]'));
         await user.click(await screen.findByText('新增收入'));
         fireEvent.change(document.querySelector('input[type="date"]'), { target: { value: '2026-03-15' } });
         await user.type(screen.getByPlaceholderText('例如：Google, 永豐銀行...'), 'Test Company');
@@ -282,7 +282,7 @@ describe('App Integration Tests', () => {
         render(<App />);
         await waitFor(() => expect(screen.getByText('需要更新 App，目前為唯讀模式')).toBeInTheDocument());
 
-        await user.click(document.querySelector('button.fixed.bottom-8.right-6'));
+        await user.click(document.querySelector('button[aria-label="新增紀錄"]'));
         await user.click(await screen.findByText('新增收入'));
         fireEvent.change(document.querySelector('input[type="date"]'), { target: { value: '2026-03-15' } });
         await user.type(screen.getByPlaceholderText('例如：Google, 永豐銀行...'), 'Test Company');
@@ -343,7 +343,7 @@ describe('App Integration Tests', () => {
         render(<App />);
         await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
         
-        const fab = document.querySelector('button.fixed.bottom-8.right-6');
+        const fab = document.querySelector('button[aria-label="新增紀錄"]');
         await user.click(fab);
         await waitFor(() => expect(screen.getByText('新增紀錄')).toBeInTheDocument());
 
@@ -358,7 +358,7 @@ describe('App Integration Tests', () => {
         await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
         
         // Open Modal
-        await user.click(document.querySelector('button.fixed.bottom-8.right-6'));
+        await user.click(document.querySelector('button[aria-label="新增紀錄"]'));
         await waitFor(() => expect(screen.getByText('新增紀錄')).toBeInTheDocument());
         
         // Click Add Asset
@@ -385,7 +385,7 @@ describe('App Integration Tests', () => {
         render(<App />);
         await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
 
-        await user.click(document.querySelector('button.fixed.bottom-8.right-6'));
+        await user.click(document.querySelector('button[aria-label="新增紀錄"]'));
         await waitFor(() => expect(screen.getByText('新增紀錄')).toBeInTheDocument());
         await user.click(screen.getByText('新增資產'));
 
@@ -436,7 +436,7 @@ describe('App Integration Tests', () => {
         render(<App />);
         await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
 
-        await user.click(document.querySelector('button.fixed.bottom-8.right-6'));
+        await user.click(document.querySelector('button[aria-label="新增紀錄"]'));
         await waitFor(() => expect(screen.getByText('新增紀錄')).toBeInTheDocument());
         await user.click(screen.getByText('新增資產'));
 
@@ -484,7 +484,7 @@ describe('App Integration Tests', () => {
         render(<App />);
         await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
 
-        await user.click(document.querySelector('button.fixed.bottom-8.right-6'));
+        await user.click(document.querySelector('button[aria-label="新增紀錄"]'));
         await waitFor(() => expect(screen.getByText('新增紀錄')).toBeInTheDocument());
         await user.click(screen.getByText('新增資產'));
 
@@ -498,7 +498,7 @@ describe('App Integration Tests', () => {
         render(<App />);
         await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
 
-        const fab = document.querySelector('button.fixed.bottom-8.right-6');
+        const fab = document.querySelector('button[aria-label="新增紀錄"]');
         await user.click(fab);
 
         await waitFor(() => expect(screen.getByText('新增紀錄')).toBeInTheDocument(), { timeout: 3000 });
@@ -530,7 +530,7 @@ describe('App Integration Tests', () => {
         render(<App />);
         await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
 
-        const fab = document.querySelector('button.fixed.bottom-8.right-6');
+        const fab = document.querySelector('button[aria-label="新增紀錄"]');
         await user.click(fab);
 
         // waitFor modal to appear
@@ -555,7 +555,7 @@ describe('App Integration Tests', () => {
         render(<App />);
         await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
 
-        const fab = document.querySelector('button.fixed.bottom-8.right-6');
+        const fab = document.querySelector('button[aria-label="新增紀錄"]');
         await user.click(fab);
 
         // Wait for modal title with longer timeout
@@ -581,7 +581,7 @@ describe('App Integration Tests', () => {
         render(<App />);
         await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
 
-        const fab = document.querySelector('button.fixed.bottom-8.right-6');
+        const fab = document.querySelector('button[aria-label="新增紀錄"]');
         await user.click(fab);
 
         await waitFor(() => expect(screen.getByText('新增紀錄')).toBeInTheDocument(), { timeout: 3000 });
@@ -607,7 +607,7 @@ describe('App Integration Tests', () => {
         render(<App />);
         await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
 
-        await user.click(document.querySelector('button.fixed.bottom-8.right-6'));
+        await user.click(document.querySelector('button[aria-label="新增紀錄"]'));
         await waitFor(() => expect(screen.getByText('新增紀錄')).toBeInTheDocument());
         await user.click(screen.getByText('新增負債'));
 
@@ -632,7 +632,7 @@ describe('App Integration Tests', () => {
         render(<App />);
         await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
 
-        await user.click(document.querySelector('button.fixed.bottom-8.right-6'));
+        await user.click(document.querySelector('button[aria-label="新增紀錄"]'));
         await waitFor(() => expect(screen.getByText('新增紀錄')).toBeInTheDocument());
         await user.click(screen.getByText('新增負債'));
         await waitFor(() => expect(screen.getByText('新增負債', { selector: 'h3' })).toBeInTheDocument());
@@ -644,7 +644,7 @@ describe('App Integration Tests', () => {
         await waitFor(() => expect(screen.getByText('已新增一筆負債至 2026-04-09')).toBeInTheDocument());
         await user.click(screen.getByText('知道了'));
 
-        await user.click(document.querySelector('button.fixed.bottom-8.right-6'));
+        await user.click(document.querySelector('button[aria-label="新增紀錄"]'));
         await waitFor(() => expect(screen.getByText('新增紀錄')).toBeInTheDocument());
         await user.click(screen.getByText('新增負債'));
         await waitFor(() => expect(screen.getByText('新增負債', { selector: 'h3' })).toBeInTheDocument());
@@ -656,7 +656,8 @@ describe('App Integration Tests', () => {
 
         await waitFor(() => expect(screen.getByText('已新增一筆負債至 2026-04-15')).toBeInTheDocument());
         await user.click(screen.getByText('知道了'));
-        await waitFor(() => expect(screen.getByText('-24 萬')).toBeInTheDocument());
+        // 首頁負債小卡（負債金額不再加負號）
+        await waitFor(() => expect(within(screen.getByText('負債', { selector: 'span' }).closest('div')).getByText('24 萬')).toBeInTheDocument());
     });
 
     test('keeps both debt snapshots after sequential cloud saves', async () => {
@@ -669,7 +670,7 @@ describe('App Integration Tests', () => {
         render(<App />);
         await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
 
-        await user.click(document.querySelector('button.fixed.bottom-8.right-6'));
+        await user.click(document.querySelector('button[aria-label="新增紀錄"]'));
         await waitFor(() => expect(screen.getByText('新增紀錄')).toBeInTheDocument());
         await user.click(screen.getByText('新增負債'));
         await waitFor(() => expect(screen.getByText('新增負債', { selector: 'h3' })).toBeInTheDocument());
@@ -682,7 +683,7 @@ describe('App Integration Tests', () => {
         await waitFor(() => expect(screen.getByText('已新增一筆負債至 2026-04-09')).toBeInTheDocument());
         await user.click(screen.getByText('知道了'));
 
-        await user.click(document.querySelector('button.fixed.bottom-8.right-6'));
+        await user.click(document.querySelector('button[aria-label="新增紀錄"]'));
         await waitFor(() => expect(screen.getByText('新增紀錄')).toBeInTheDocument());
         await user.click(screen.getByText('新增負債'));
         await waitFor(() => expect(screen.getByText('新增負債', { selector: 'h3' })).toBeInTheDocument());
@@ -721,7 +722,7 @@ describe('App Integration Tests', () => {
         render(<App />);
         await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
 
-        await user.click(document.querySelector('button.fixed.bottom-8.right-6'));
+        await user.click(document.querySelector('button[aria-label="新增紀錄"]'));
         await waitFor(() => expect(screen.getByText('新增紀錄')).toBeInTheDocument());
         await user.click(screen.getByText('新增負債'));
         await waitFor(() => expect(screen.getByText('新增負債', { selector: 'h3' })).toBeInTheDocument());
@@ -760,7 +761,7 @@ describe('App Integration Tests', () => {
         render(<App />);
         await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
 
-        await user.click(document.querySelector('button.fixed.bottom-8.right-6'));
+        await user.click(document.querySelector('button[aria-label="新增紀錄"]'));
         await waitFor(() => expect(screen.getByText('新增紀錄')).toBeInTheDocument());
         await user.click(screen.getByText('新增負債'));
         await waitFor(() => expect(screen.getByText('新增負債', { selector: 'h3' })).toBeInTheDocument());
@@ -794,7 +795,7 @@ describe('App Integration Tests', () => {
         render(<App />);
         await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
 
-        await user.click(document.querySelector('button.fixed.bottom-8.right-6'));
+        await user.click(document.querySelector('button[aria-label="新增紀錄"]'));
         await waitFor(() => expect(screen.getByText('新增紀錄')).toBeInTheDocument());
         await user.click(screen.getByText('新增負債'));
         await waitFor(() => expect(screen.getByText('新增負債', { selector: 'h3' })).toBeInTheDocument());
@@ -816,7 +817,7 @@ describe('App Integration Tests', () => {
 
         await waitFor(() => expect(screen.getByText('已新增一筆負債至 2026-04-15')).toBeInTheDocument());
         await user.click(screen.getByText('知道了'));
-        await user.click(screen.getByText('04'));
+        await user.click(screen.getByText('4', { selector: '[data-month-badge]' }));
         await waitFor(() => expect(screen.getByText('淨資產')).toBeInTheDocument());
         await user.click(screen.getByText('總負債'));
         expect(screen.getAllByText('股票質押').length).toBeGreaterThan(0);
@@ -864,12 +865,12 @@ describe('App Integration Tests', () => {
         render(<App />);
         await waitFor(() => expect(screen.getByText('年度資產淨值')).toBeInTheDocument());
 
-        const growthCard = screen.getByText(/年度資產增長金額/).closest('div');
+        const growthCard = screen.getByText('年度資產增長').closest('div');
         expect(within(growthCard).getByText('+3 萬')).toBeInTheDocument();
         expect(within(growthCard).queryByText('+13 萬')).not.toBeInTheDocument();
         expect(screen.getByText(/年度最高 \(3月\)/)).toBeInTheDocument();
         expect(screen.getByText(/年度最低 \(1月\)/)).toBeInTheDocument();
-        expect(screen.getByText(/📈 130\.0%/)).toBeInTheDocument();
+        expect(screen.getByText('▲ 130.0%')).toBeInTheDocument();
         expect(screen.getByTestId('area-chart')).toHaveAttribute('data-months', '1,2,3,4,5,6,7,8,9,10,11,12');
         expect(screen.getByTestId('area-chart')).toHaveAttribute('data-assets', '100000,null,130000,null,null,null,null,null,null,null,null,null');
     });
@@ -896,7 +897,7 @@ describe('App Integration Tests', () => {
 
         expect(screen.getByText(/年度最高 \(1月\)/)).toBeInTheDocument();
         expect(screen.getByText(/年度最低 \(3月\)/)).toBeInTheDocument();
-        expect(screen.getByText(/📉 80\.0%/)).toBeInTheDocument();
+        expect(screen.getByText('▼ 80.0%')).toBeInTheDocument();
         expect(screen.getByTestId('area-chart')).toHaveAttribute('data-months', '1,2,3,4,5,6,7,8,9,10,11,12');
         expect(screen.getByTestId('area-chart')).toHaveAttribute('data-assets', '100000,null,80000,null,null,null,null,null,null,null,null,null');
     });
@@ -936,7 +937,7 @@ describe('App Integration Tests', () => {
 
         // Find '01' (month number) in the list
         // Relying on text '01' is safe given the date is Jan 1st
-        const monthCard = screen.getByText('01');
+        const monthCard = screen.getByText('1', { selector: '[data-month-badge]' });
         await user.click(monthCard);
 
         await waitFor(() => expect(screen.getByText('淨資產')).toBeInTheDocument());
@@ -998,7 +999,7 @@ describe('App Integration Tests', () => {
         render(<App />);
 
         await waitFor(() => expect(screen.getByText('年度資產淨值')).toBeInTheDocument());
-        await user.click(screen.getByText('04'));
+        await user.click(screen.getByText('4', { selector: '[data-month-badge]' }));
         await waitFor(() => expect(screen.getByText('淨資產')).toBeInTheDocument());
         await user.click(screen.getByText('總負債'));
 
@@ -1034,7 +1035,7 @@ describe('App Integration Tests', () => {
         render(<App />);
 
         await waitFor(() => expect(screen.getByText('年度資產淨值')).toBeInTheDocument());
-        await user.click(screen.getByText('05'));
+        await user.click(screen.getByText('5', { selector: '[data-month-badge]' }));
         await waitFor(() => expect(screen.getByText('淨資產')).toBeInTheDocument());
         await user.click(screen.getByText('總負債'));
 
@@ -1053,7 +1054,7 @@ describe('App Integration Tests', () => {
         render(<App />);
         await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
 
-        await user.click(document.querySelector('button.fixed.bottom-8.right-6'));
+        await user.click(document.querySelector('button[aria-label="新增紀錄"]'));
         await waitFor(() => expect(screen.getByText('新增紀錄')).toBeInTheDocument());
 
         // 1. Test Export
@@ -1136,7 +1137,7 @@ describe('App Integration Tests', () => {
 
         render(<App />);
         await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
-        await user.click(document.querySelector('button.fixed.bottom-8.right-6'));
+        await user.click(document.querySelector('button[aria-label="新增紀錄"]'));
         await user.click(screen.getByText('匯出備份'));
 
         const exportedFile = JSON.parse(exportedContent);
@@ -1157,7 +1158,7 @@ describe('App Integration Tests', () => {
         render(<App />);
         await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
 
-        await user.click(document.querySelector('button.fixed.bottom-8.right-6'));
+        await user.click(document.querySelector('button[aria-label="新增紀錄"]'));
         await user.click(screen.getByText('匯入資料'));
 
         const identicalBackup = {
@@ -1193,7 +1194,7 @@ describe('App Integration Tests', () => {
         render(<App />);
         await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
 
-        await user.click(document.querySelector('button.fixed.bottom-8.right-6'));
+        await user.click(document.querySelector('button[aria-label="新增紀錄"]'));
         await user.click(screen.getByText('匯入資料'));
 
         const stockOnlyBackup = {
@@ -1232,7 +1233,7 @@ describe('App Integration Tests', () => {
         render(<App />);
         await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
 
-        await user.click(document.querySelector('button.fixed.bottom-8.right-6'));
+        await user.click(document.querySelector('button[aria-label="新增紀錄"]'));
         await waitFor(() => expect(screen.getByText('新增紀錄')).toBeInTheDocument());
 
         // Open Import Modal
@@ -1294,13 +1295,13 @@ describe('App Integration Tests', () => {
         await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
 
         const openFire = async () => {
-            await user.click(document.querySelector('.lucide-layout-grid').closest('button'));
             await user.click(await screen.findByText('FIRE 目標'));
             await screen.findByText('達成進度');
         };
 
         await openFire();
-        expect(screen.getByText('28.4%')).toBeInTheDocument();
+        // 首頁 FIRE 小卡與 FIRE 視窗各顯示一次
+        expect(screen.getAllByText('28.4%')).toHaveLength(2);
         expect(screen.getAllByText('300 萬').length).toBeGreaterThan(0);
         await user.click(document.querySelector('.lucide-x').closest('button'));
 
@@ -1316,11 +1317,7 @@ describe('App Integration Tests', () => {
         render(<App />);
         await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
 
-        // Click Advanced Menu button (LayoutGrid icon)
-        const advancedBtn = document.querySelector('.lucide-layout-grid').closest('button');
-        await user.click(advancedBtn);
-
-        await waitFor(() => expect(screen.getByText('Advanced')).toBeInTheDocument());
+        // 分析入口直接放在首頁（不再收在進階選單）
         expect(screen.getByText('FIRE 目標')).toBeInTheDocument();
         expect(screen.getByText('對帳單')).toBeInTheDocument();
         expect(screen.getByText('個股績效')).toBeInTheDocument();
@@ -1342,9 +1339,6 @@ describe('App Integration Tests', () => {
         render(<App />);
         await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
 
-        const advancedBtn = document.querySelector('.lucide-layout-grid').closest('button');
-        await user.click(advancedBtn);
-        await waitFor(() => expect(screen.getByText('Advanced')).toBeInTheDocument());
         await user.click(screen.getByText('個股績效'));
 
         await waitFor(() => expect(screen.getByText('匯入股票交易')).toBeInTheDocument());
@@ -1381,8 +1375,6 @@ describe('App Integration Tests', () => {
         render(<App />);
         await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
 
-        await user.click(document.querySelector('.lucide-layout-grid').closest('button'));
-        await waitFor(() => expect(screen.getByText('Advanced')).toBeInTheDocument());
         await user.click(screen.getByText('個股績效'));
         await user.click(await screen.findByRole('button', { name: /匯入股票交易/ }));
         const stockCsv = ['類型,日期,項目,股票買入,存入戶頭,帳面餘額', ',2016/2/3,國泰金,"37,081",,"24,919"'].join('\n');
@@ -1404,9 +1396,6 @@ describe('App Integration Tests', () => {
         render(<App />);
         await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
 
-        const advancedBtn = document.querySelector('.lucide-layout-grid').closest('button');
-        await user.click(advancedBtn);
-        await waitFor(() => expect(screen.getByText('Advanced')).toBeInTheDocument());
         await user.click(screen.getByText('個股績效'));
 
         await waitFor(() => expect(screen.getByText('匯入股票交易')).toBeInTheDocument());
@@ -1439,9 +1428,6 @@ describe('App Integration Tests', () => {
         render(<App />);
         await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
 
-        const advancedBtn = document.querySelector('.lucide-layout-grid').closest('button');
-        await user.click(advancedBtn);
-        await waitFor(() => expect(screen.getByText('Advanced')).toBeInTheDocument());
         await user.click(screen.getByText('個股績效'));
 
         await waitFor(() => expect(screen.getByText('匯入股票交易')).toBeInTheDocument());
@@ -1471,9 +1457,6 @@ describe('App Integration Tests', () => {
         render(<App />);
         await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
 
-        const advancedBtn = document.querySelector('.lucide-layout-grid').closest('button');
-        await user.click(advancedBtn);
-        await waitFor(() => expect(screen.getByText('Advanced')).toBeInTheDocument());
         await user.click(screen.getByText('個股績效'));
 
         await waitFor(() => expect(screen.getByText('匯入股票交易')).toBeInTheDocument());
@@ -1501,9 +1484,6 @@ describe('App Integration Tests', () => {
         render(<App />);
         await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
 
-        const advancedBtn = document.querySelector('.lucide-layout-grid').closest('button');
-        await user.click(advancedBtn);
-        await waitFor(() => expect(screen.getByText('Advanced')).toBeInTheDocument());
         await user.click(screen.getByText('個股績效'));
 
         await waitFor(() => expect(screen.getByText('匯入股票交易')).toBeInTheDocument());
@@ -1526,9 +1506,6 @@ describe('App Integration Tests', () => {
         render(<App />);
         await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
 
-        const advancedBtn = document.querySelector('.lucide-layout-grid').closest('button');
-        await user.click(advancedBtn);
-        await waitFor(() => expect(screen.getByText('Advanced')).toBeInTheDocument());
         await user.click(screen.getByText('個股績效'));
 
         await waitFor(() => expect(screen.getByText('匯入股票交易')).toBeInTheDocument());
@@ -1586,9 +1563,6 @@ describe('App Integration Tests', () => {
         render(<App />);
         await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
 
-        const advancedBtn = document.querySelector('.lucide-layout-grid').closest('button');
-        await user.click(advancedBtn);
-        await waitFor(() => expect(screen.getByText('Advanced')).toBeInTheDocument());
         await user.click(screen.getByText('個股績效'));
 
         await waitFor(() => expect(screen.getByText('匯入股票交易')).toBeInTheDocument());
@@ -1628,9 +1602,6 @@ describe('App Integration Tests', () => {
         render(<App />);
         await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
 
-        const advancedBtn = document.querySelector('.lucide-layout-grid').closest('button');
-        await user.click(advancedBtn);
-        await waitFor(() => expect(screen.getByText('Advanced')).toBeInTheDocument());
         await user.click(screen.getByText('個股績效'));
 
         await waitFor(() => expect(screen.getByText('匯入股票交易')).toBeInTheDocument());
@@ -1706,9 +1677,6 @@ describe('App Integration Tests', () => {
         render(<App />);
         await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
 
-        const advancedBtn = document.querySelector('.lucide-layout-grid').closest('button');
-        await user.click(advancedBtn);
-        await waitFor(() => expect(screen.getByText('Advanced')).toBeInTheDocument());
         await user.click(screen.getByText('個股績效'));
 
         await user.click(screen.getAllByRole('button', { name: /美股/ })[0]);
@@ -1723,9 +1691,6 @@ describe('App Integration Tests', () => {
         render(<App />);
         await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
 
-        const advancedBtn = document.querySelector('.lucide-layout-grid').closest('button');
-        await user.click(advancedBtn);
-        await waitFor(() => expect(screen.getByText('Advanced')).toBeInTheDocument());
         await user.click(screen.getByText('個股績效'));
 
         await waitFor(() => expect(screen.getByText('匯入股票交易')).toBeInTheDocument());
@@ -1753,9 +1718,6 @@ describe('App Integration Tests', () => {
         render(<App />);
         await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
 
-        const advancedBtn = document.querySelector('.lucide-layout-grid').closest('button');
-        await user.click(advancedBtn);
-        await waitFor(() => expect(screen.getByText('Advanced')).toBeInTheDocument());
         await user.click(screen.getByText('個股績效'));
 
         await waitFor(() => expect(screen.getByText('匯入股票交易')).toBeInTheDocument());
@@ -1844,9 +1806,6 @@ describe('App Integration Tests', () => {
         render(<App />);
         await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
 
-        const advancedBtn = document.querySelector('.lucide-layout-grid').closest('button');
-        await user.click(advancedBtn);
-        await waitFor(() => expect(screen.getByText('Advanced')).toBeInTheDocument());
         await user.click(screen.getByText('個股績效'));
 
         await waitFor(() => expect(screen.getByText('匯入持倉快照')).toBeInTheDocument());
@@ -1875,9 +1834,6 @@ describe('App Integration Tests', () => {
         render(<App />);
         await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
 
-        const advancedBtn = document.querySelector('.lucide-layout-grid').closest('button');
-        await user.click(advancedBtn);
-        await waitFor(() => expect(screen.getByText('Advanced')).toBeInTheDocument());
         await user.click(screen.getByText('個股績效'));
 
         await waitFor(() => expect(screen.getByText('匯入持倉快照')).toBeInTheDocument());
@@ -1939,9 +1895,6 @@ describe('App Integration Tests', () => {
         render(<App />);
         await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
 
-        const advancedBtn = document.querySelector('.lucide-layout-grid').closest('button');
-        await user.click(advancedBtn);
-        await waitFor(() => expect(screen.getByText('Advanced')).toBeInTheDocument());
         await user.click(screen.getByText('個股績效'));
 
         await waitFor(() => expect(screen.getByText('持倉快照版本')).toBeInTheDocument());
@@ -1987,9 +1940,6 @@ describe('App Integration Tests', () => {
         render(<App />);
         await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
 
-        const advancedBtn = document.querySelector('.lucide-layout-grid').closest('button');
-        await user.click(advancedBtn);
-        await waitFor(() => expect(screen.getByText('Advanced')).toBeInTheDocument());
         await user.click(screen.getByText('個股績效'));
 
         await waitFor(() => expect(screen.getByText('匯入持倉快照')).toBeInTheDocument());
@@ -2038,9 +1988,6 @@ describe('App Integration Tests', () => {
         render(<App />);
         await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
 
-        const advancedBtn = document.querySelector('.lucide-layout-grid').closest('button');
-        await user.click(advancedBtn);
-        await waitFor(() => expect(screen.getByText('Advanced')).toBeInTheDocument());
         await user.click(screen.getByText('個股績效'));
 
         await waitFor(() => expect(screen.getByText('目前台股已有 2 筆。若剛剛重複匯入或想重新整理，可以只清空目前市場再匯入。')).toBeInTheDocument());
@@ -2095,9 +2042,6 @@ describe('App Integration Tests', () => {
         render(<App />);
         await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
 
-        const advancedBtn = document.querySelector('.lucide-layout-grid').closest('button');
-        await user.click(advancedBtn);
-        await waitFor(() => expect(screen.getByText('Advanced')).toBeInTheDocument());
         await user.click(screen.getByText('個股績效'));
 
         await waitFor(() => expect(screen.getByText('賺最多')).toBeInTheDocument());
@@ -2144,9 +2088,6 @@ describe('App Integration Tests', () => {
         render(<App />);
         await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
 
-        const advancedBtn = document.querySelector('.lucide-layout-grid').closest('button');
-        await user.click(advancedBtn);
-        await waitFor(() => expect(screen.getByText('Advanced')).toBeInTheDocument());
         await user.click(screen.getByText('個股績效'));
 
         await waitFor(() => expect(screen.getByText('股票總損益')).toBeInTheDocument());
@@ -2211,9 +2152,6 @@ describe('App Integration Tests', () => {
         render(<App />);
         await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
 
-        const advancedBtn = document.querySelector('.lucide-layout-grid').closest('button');
-        await user.click(advancedBtn);
-        await waitFor(() => expect(screen.getByText('Advanced')).toBeInTheDocument());
         await user.click(screen.getByText('個股績效'));
 
         await waitFor(() => expect(screen.getByText('股票總損益')).toBeInTheDocument());
@@ -2235,11 +2173,7 @@ describe('App Integration Tests', () => {
         render(<App />);
         await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
 
-        // Click Advanced Menu button (LayoutGrid icon)
-        const advancedBtn = document.querySelector('.lucide-layout-grid').closest('button');
-        await user.click(advancedBtn);
 
-        await waitFor(() => expect(screen.getByText('Advanced')).toBeInTheDocument());
 
         const rangeBtn = screen.getByText('區間統計');
         await user.click(rangeBtn);
@@ -2255,7 +2189,6 @@ describe('App Integration Tests', () => {
         const user = userEvent.setup();
         render(<App />);
         await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
-        await user.click(document.querySelector('.lucide-layout-grid').closest('button'));
         await user.click(await screen.findByText('區間統計'));
         await screen.findByText('區間統計 Report', { selector: 'h3' });
 
@@ -2303,9 +2236,6 @@ describe('App Integration Tests', () => {
         render(<App />);
         await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
 
-        const advancedBtn = document.querySelector('.lucide-layout-grid').closest('button');
-        await user.click(advancedBtn);
-        await waitFor(() => expect(screen.getByText('Advanced')).toBeInTheDocument());
         await user.click(screen.getByText('區間統計'));
 
         await waitFor(() => expect(screen.getByText('區間統計 Report', { selector: 'h3' })).toBeInTheDocument());
@@ -2362,7 +2292,7 @@ describe('App Integration Tests', () => {
         await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
 
         // Enter Detail View (Click Month 01)
-        await user.click(screen.getByText('01'));
+        await user.click(screen.getByText('1', { selector: '[data-month-badge]' }));
         await waitFor(() => expect(screen.getByText('淨資產')).toBeInTheDocument());
 
         // It selects the latest date by default (Asset2)
@@ -2447,7 +2377,7 @@ describe('App Integration Tests', () => {
         await waitFor(() => expect(screen.getByText(/極簡貓資產/i)).toBeInTheDocument());
         
         // Open Add Menu (Floating Action Button)
-        await user.click(document.querySelector('button.fixed.bottom-8.right-6'));
+        await user.click(document.querySelector('button[aria-label="新增紀錄"]'));
         await waitFor(() => expect(screen.getByText('新增紀錄')).toBeInTheDocument());
         
         // Open Import Modal
