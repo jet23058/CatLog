@@ -2367,6 +2367,11 @@ const DetailView = ({ monthKey, data, onBack, onUpdateData, assetNames, isPrivac
                     <span className="flex-1 text-center text-xl font-bold text-slate-900 font-inter">{monthKey}</span>
                     <button disabled={!nextMonth} onClick={() => handleNavigate(nextMonth)} className={`w-11 h-11 rounded-xl border flex items-center justify-center transition-colors ${!nextMonth ? 'border-slate-200 bg-slate-50 text-slate-300' : 'border-slate-300 bg-white text-teal-700 hover:bg-slate-100'}`} aria-label="下一月"><ChevronRight size={20} /></button>
                 </div>
+                {!isPrivacyMode && (
+                    <p className="-mt-3 text-center text-xs text-slate-500 font-inter">
+                        資產快照 {assetDate || '尚未記錄'}・負債快照 {debtDate || '尚未記錄'}
+                    </p>
+                )}
 
                 <section className="space-y-3">
                     <div className="bg-teal-700 text-white rounded-3xl p-5 flex flex-col gap-2">
@@ -2389,6 +2394,25 @@ const DetailView = ({ monthKey, data, onBack, onUpdateData, assetNames, isPrivac
                             )}
                         </div>
                     </div>
+                    {/* 本月備忘：放在主卡片下方，像這個月的一句註記。 */}
+                    {isEditing ? (
+                        <div className="bg-white rounded-[20px] p-4">
+                            <label htmlFor="month-memo" className="flex items-center gap-2 text-sm font-semibold text-slate-700 mb-2"><StickyNote size={16} className="text-teal-700" aria-hidden="true" />本月備忘</label>
+                            <textarea id="month-memo" value={localMemo} onChange={(e) => setLocalMemo(e.target.value)} className="w-full p-3 rounded-xl border border-slate-300 bg-white focus:border-teal-700 outline-none text-base text-slate-800 min-h-[88px]" placeholder="輸入本月備忘..." />
+                        </div>
+                    ) : localMemo ? (
+                        <figure className="bg-teal-50 rounded-[20px] px-4 py-3.5 flex gap-3 items-start">
+                            <StickyNote size={18} className="text-teal-700 shrink-0 mt-0.5" aria-hidden="true" />
+                            <div className="min-w-0">
+                                <figcaption className="text-xs font-semibold text-teal-800 mb-0.5">本月備忘</figcaption>
+                                <blockquote className="text-base text-slate-900 whitespace-pre-wrap break-words leading-relaxed">{isPrivacyMode ? '****' : localMemo}</blockquote>
+                            </div>
+                        </figure>
+                    ) : (
+                        <button type="button" onClick={() => { setActiveTab('assets'); setIsEditing(true); }} className="w-full rounded-[20px] border border-dashed border-slate-300 px-4 py-3 flex items-center gap-2 text-sm text-slate-500 hover:border-teal-700 hover:text-teal-700 transition-colors">
+                            <StickyNote size={16} aria-hidden="true" />還沒有備忘，按這裡寫一句這個月的註記
+                        </button>
+                    )}
                     <AssetAllocationCard assets={localAssets} isPrivacyMode={isPrivacyMode} />
                     <IncomeCostCard key={monthKey} trend={recentTrend} isPrivacyMode={isPrivacyMode} />
                     <CostCategoryCard categories={expenseChartData} total={stats.monthlyCost} isPrivacyMode={isPrivacyMode} />
@@ -2413,22 +2437,6 @@ const DetailView = ({ monthKey, data, onBack, onUpdateData, assetNames, isPrivac
                     </div>
                 </section>
 
-                <section>
-                    <div className="flex items-center gap-2 mb-2 px-1"><FileText size={16} className="text-teal-700" /><h3 className="text-base font-bold text-slate-900">當月備忘</h3></div>
-                    {!isPrivacyMode && (
-                        <div className="mb-3 grid grid-cols-2 gap-2 text-xs text-slate-500">
-                            <div className="bg-white rounded-xl px-3 py-2">
-                                <span className="block font-semibold text-slate-600 mb-0.5">資產快照</span>
-                                <span className="font-inter">{assetDate || '尚未記錄'}</span>
-                            </div>
-                            <div className="bg-white rounded-xl px-3 py-2">
-                                <span className="block font-semibold text-slate-600 mb-0.5">負債快照</span>
-                                <span className="font-inter">{debtDate || '尚未記錄'}</span>
-                            </div>
-                        </div>
-                    )}
-                    {isEditing ? <textarea value={localMemo} onChange={(e) => setLocalMemo(e.target.value)} className="w-full p-3 rounded-xl border border-slate-300 bg-white focus:border-teal-700 outline-none text-sm text-slate-800 min-h-[80px]" placeholder="輸入本月備忘..." /> : <div className={`p-4 rounded-xl bg-white text-sm min-h-[60px] ${!localMemo ? 'text-slate-400' : 'text-slate-800'}`}>{localMemo || "無備忘紀錄"}</div>}
-                </section>
 
                 {activeTab === 'assets' && (
                     <div className="space-y-4 animate-[fadeIn_0.2s]">
