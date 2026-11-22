@@ -86,17 +86,23 @@ export const summarizeDataCounts = (data) => {
 // - 目前使用中的版本永遠保留。
 // 其他版本連同資料塊一起刪除。
 
-// 保留方式（使用者可在「雲端歷史版本」切換，存在資料的 historySettings.mode，跨裝置同步）：
+// 保留方式（使用者可在「雲端歷史版本」切換，跨裝置同步）：
 // - auto：自動每天一份＋手動還原點（預設）
 // - manual：只保留手動還原點（與目前版本）
+// 設定存在獨立的 users/{uid}/settings/history（{ mode }），切換時不重寫財務資料、不產生新版本。
+// 早期版本曾存在資料的 historySettings.mode，設定檔沒有值時沿用。
 export const HISTORY_MODES = [
     { value: 'auto', label: '自動每天一份＋手動還原點' },
     { value: 'manual', label: '只保留手動還原點' }
 ];
+const isHistoryMode = (mode) => HISTORY_MODES.some((item) => item.value === mode);
 export const getHistoryMode = (data) => (data?.historySettings?.mode === 'manual' ? 'manual' : 'auto');
-export const setHistoryMode = (data, mode) => {
-    if (!HISTORY_MODES.some((item) => item.value === mode)) throw new Error('不支援的保留方式');
-    return { ...data, historySettings: { ...(data?.historySettings || {}), mode } };
+/** 設定檔優先，沒有時沿用資料裡的舊設定，預設 auto。 */
+export const resolveHistoryMode = (settings, data) => (isHistoryMode(settings?.mode) ? settings.mode : getHistoryMode(data));
+/** 寫入設定檔的內容；不支援的值丟錯。 */
+export const createHistorySettings = (mode) => {
+    if (!isHistoryMode(mode)) throw new Error('不支援的保留方式');
+    return { mode };
 };
 
 export const HISTORY_KEEP_DAYS = 30;

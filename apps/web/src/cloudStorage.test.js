@@ -15,7 +15,10 @@ vi.mock('firebase/firestore', () => {
         doc: (parent, ...segments) => ({
             path: parent?.path ? pathOf(parent.path, ...segments) : pathOf(...segments)
         }),
-        getDoc: async (ref) => makeSnapshot(ref.path),
+        getDoc: async (ref) => {
+            if (store.failSettingsRead && ref.path.endsWith('/settings/history')) throw new Error('permission-denied');
+            return makeSnapshot(ref.path);
+        },
         setDoc: async (ref, value) => { store.docs.set(ref.path, value); },
         where: (field, op, value) => ({ field, op, value }),
         orderBy: (field) => ({ orderBy: field }),
@@ -65,6 +68,8 @@ import {
     clearRestorePoint,
     createRestorePoint,
     listHistory,
+    readHistoryMode,
+    writeHistoryMode,
     readCloudData,
     readHistoryVersion,
     splitIntoChunks,
@@ -131,15 +136,28 @@ describe('cloudStorage', () => {
         expect((await readCloudData(db, uid)).data).toEqual({ v: 2 });
     });
 
+    test('keeps history intact when the settings doc cannot be read', async () => {
+        const first = await writeCloudData(db, uid, { v: 1 }, { expectedRevision: 0 });
+        await createRestorePoint(db, uid, 'pin');
+        store.failSettingsRead = true; // 模擬規則還不允許讀 settings/history
+        await writeCloudData(db, uid, { v: 2 }, { expectedRevision: 1, previousChunkIds: first.chunkIds });
+        store.failSettingsRead = false;
+        const history = await listHistory(db, uid);
+        expect(history.map((e) => e.revision)).toEqual([2, 1]);
+        expect(await readHistoryVersion(db, uid, history[1])).toEqual({ v: 1 });
+    });
+
     test('manual mode keeps only restore points and the current version', async () => {
         const nowSpy = vi.spyOn(Date, 'now');
         nowSpy.mockReturnValue(1767225600000);
-        const first = await writeCloudData(db, uid, { records: {}, historySettings: { mode: 'manual' }, v: 1 }, { expectedRevision: 0 });
+        await writeHistoryMode(db, uid, 'manual');
+        expect(await readHistoryMode(db, uid)).toBe('manual');
+        const first = await writeCloudData(db, uid, { records: {}, v: 1 }, { expectedRevision: 0 });
         await createRestorePoint(db, uid, '整理前');
         nowSpy.mockReturnValue(1767225600000 + 86400000); // 隔天
-        const second = await writeCloudData(db, uid, { records: {}, historySettings: { mode: 'manual' }, v: 2 }, { expectedRevision: 1, previousChunkIds: first.chunkIds });
+        const second = await writeCloudData(db, uid, { records: {}, v: 2 }, { expectedRevision: 1, previousChunkIds: first.chunkIds });
         nowSpy.mockReturnValue(1767225600000 + 2 * 86400000);
-        await writeCloudData(db, uid, { records: {}, historySettings: { mode: 'manual' }, v: 3 }, { expectedRevision: 2, previousChunkIds: second.chunkIds });
+        await writeCloudData(db, uid, { records: {}, v: 3 }, { expectedRevision: 2, previousChunkIds: second.chunkIds });
         nowSpy.mockRestore();
         const history = await listHistory(db, uid);
         expect(history.map((e) => [e.revision, e.pinned === true])).toEqual([[3, false], [1, true]]);

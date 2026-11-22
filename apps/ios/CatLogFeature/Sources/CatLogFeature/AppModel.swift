@@ -306,6 +306,19 @@ public final class AppModel: ObservableObject {
         return try await CloudRepository(store: FirestoreChunkStore(uid: uid), core: core.bridge).listHistory()
     }
 
+    /// 雲端歷史的保留方式（設定檔優先，沒有時沿用資料裡的舊設定）。
+    public func cloudHistoryMode() async -> String {
+        guard let core, !isDemo, let uid = Auth.auth().currentUser?.uid else { return "auto" }
+        let dataJSON = try? core.bridge.dataJSON()
+        return await CloudRepository(store: FirestoreChunkStore(uid: uid), core: core.bridge).resolvedHistoryMode(dataJSON: dataJSON ?? nil)
+    }
+
+    /// 切換保留方式：只寫設定檔，不重寫財務資料、不顯示儲存中、不產生新版本。
+    public func setCloudHistoryMode(_ mode: String) async throws {
+        guard let core, let uid = Auth.auth().currentUser?.uid else { throw CoreBridgeError.coreNotLoaded }
+        try await CloudRepository(store: FirestoreChunkStore(uid: uid), core: core.bridge).setHistoryMode(mode)
+    }
+
     /// 把目前的雲端版本設成手動還原點。
     public func createRestorePoint(label: String) async throws {
         guard let core, let uid = Auth.auth().currentUser?.uid else { throw CoreBridgeError.coreNotLoaded }

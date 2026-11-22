@@ -68,8 +68,6 @@ import {
     getSchemaVersion,
     getStatementExpenses,
     getStatementDefaultRange,
-    getHistoryMode,
-    setHistoryMode,
     HISTORY_MODES,
     setFireWithdrawalRate,
     summarizeDataCounts,
@@ -283,27 +281,30 @@ const formatSyncTime = (timestamp) => {
     return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
 };
 
+// 同步狀態：放在標題上方「CatLog」那一行，用小圓點＋一行小字，不搶標題的位置。
+// 需要使用者處理的狀態（失敗、衝突）才做成可以點的小按鈕。
 const SyncStatusBadge = ({ isSaving, syncState, onRetry, onResolveConflict }) => {
-    const base = "text-[11px] px-2 py-1 rounded-full border font-sans font-normal";
+    const row = "inline-flex items-center gap-1.5 whitespace-nowrap text-[11px] leading-none font-sans font-normal tracking-normal normal-case";
+    const dot = (color, pulse = false) => <span aria-hidden="true" className={`w-1.5 h-1.5 rounded-full ${color} ${pulse ? 'animate-pulse' : ''}`}></span>;
     if (isSaving) {
-        return <span role="status" className={`${base} bg-amber-50 text-amber-600 border-amber-200 animate-pulse`}>儲存中...</span>;
+        return <span role="status" className={`${row} text-amber-600`}>{dot('bg-amber-400', true)}儲存中…</span>;
     }
     if (syncState.status === 'error') {
         return (
-            <button onClick={onRetry} className={`${base} bg-rose-50 text-rose-600 border-rose-200 hover:bg-rose-100`} title={syncState.message || '儲存失敗'}>
-                儲存失敗・重試
+            <button onClick={onRetry} className={`${row} px-2 py-1 rounded-full bg-rose-50 text-rose-600 hover:bg-rose-100`} title={syncState.message || '儲存失敗'}>
+                {dot('bg-rose-500')}儲存失敗・重試
             </button>
         );
     }
     if (syncState.status === 'conflict') {
         return (
-            <button onClick={onResolveConflict} className={`${base} bg-amber-50 text-amber-700 border-amber-300 hover:bg-amber-100`}>
-                版本衝突・處理
+            <button onClick={onResolveConflict} className={`${row} px-2 py-1 rounded-full bg-amber-50 text-amber-700 hover:bg-amber-100`}>
+                {dot('bg-amber-500')}版本衝突・處理
             </button>
         );
     }
     if (syncState.status === 'saved') {
-        return <span role="status" className={`${base} bg-teal-50 text-teal-700 border-teal-200`}>已同步 {formatSyncTime(syncState.lastSavedAt)}</span>;
+        return <span role="status" className={`${row} text-slate-400`}>{dot('bg-teal-400')}已同步 {formatSyncTime(syncState.lastSavedAt)}</span>;
     }
     return null;
 };
@@ -2599,12 +2600,36 @@ const DetailView = ({ monthKey, data, onBack, onUpdateData, assetNames, isPrivac
     );
 };
 
-const HistoryModal = ({ uid, mode = 'auto', onChangeMode, onClose, onPreviewRestore }) => {
+const HistoryModal = ({ uid, data, onClose, onPreviewRestore }) => {
     const [entries, setEntries] = useState(null);
     const [error, setError] = useState('');
     const [busyGeneration, setBusyGeneration] = useState('');
     const [restoreLabel, setRestoreLabel] = useState('');
     const [reloadKey, setReloadKey] = useState(0);
+    const [mode, setMode] = useState(null);
+    const [modeStatus, setModeStatus] = useState('');
+
+    useEffect(() => {
+        let cancelled = false;
+        readHistoryMode(db, uid, data)
+            .then((value) => { if (!cancelled) setMode(value); })
+            .catch(() => { if (!cancelled) setMode('auto'); });
+        return () => { cancelled = true; };
+    }, [uid]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // 保留方式只寫獨立的設定檔：不重寫財務資料、不顯示儲存中、不產生新版本。
+    const changeMode = async (value) => {
+        const previous = mode;
+        setMode(value);
+        setModeStatus('');
+        try {
+            await writeHistoryMode(db, uid, value);
+            setModeStatus('已更新');
+        } catch (err) {
+            setMode(previous);
+            setModeStatus(err.message || '無法更新保留方式');
+        }
+    };
 
     useEffect(() => {
         let cancelled = false;
@@ -2663,10 +2688,10 @@ const HistoryModal = ({ uid, mode = 'auto', onChangeMode, onClose, onPreviewRest
                 <h3 className="text-xl font-serif-tc font-bold text-slate-800 mb-1 flex items-center gap-2"><History size={18} /> 雲端歷史版本</h3>
                 <p className="text-xs text-slate-400 mb-4">自動每天保留一份；重要操作前可以手動建立還原點，還原點不會被自動清掉。還原會先顯示差異，確認後存成新的版本，所以還原本身也能再還原回來。</p>
                 <label className="block text-xs font-bold text-slate-500 mb-1" htmlFor="history-mode">保留方式</label>
-                <select id="history-mode" value={mode} onChange={(e) => onChangeMode(e.target.value)} className="w-full mb-1 p-2 rounded-lg border border-slate-200 bg-slate-50 text-xs outline-none focus:border-indigo-400">
+                <select id="history-mode" value={mode || 'auto'} disabled={mode === null} onChange={(e) => changeMode(e.target.value)} className="w-full mb-1 p-2 rounded-lg border border-slate-200 bg-slate-50 text-xs outline-none focus:border-indigo-400 disabled:opacity-50">
                     {HISTORY_MODES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
                 </select>
-                <p className="text-[11px] text-slate-400 mb-3">{mode === 'manual' ? '只保留你手動建立的還原點與目前版本，下次存檔時會清掉其他自動版本。' : '自動每天保留一份（30 天內每天、更早的每月一份保留 12 個月），手動還原點另外保留。'}設定會同步到所有裝置。</p>
+                <p className="text-[11px] text-slate-400 mb-3">{mode === 'manual' ? '只保留你手動建立的還原點與目前版本，下次存檔時會清掉其他自動版本。' : '自動每天保留一份（30 天內每天、更早的每月一份保留 12 個月），手動還原點另外保留。'}設定會同步到所有裝置。{modeStatus && <span className="ml-1 text-teal-600">{modeStatus}</span>}</p>
                 <div className="flex gap-2 mb-3">
                     <input value={restoreLabel} onChange={(e) => setRestoreLabel(e.target.value)} maxLength={60} placeholder="還原點說明（選填），例如：匯入 MOZE 前" className="flex-1 min-w-0 p-2 rounded-lg border border-slate-200 bg-slate-50 text-xs outline-none focus:border-indigo-400" />
                     <button onClick={() => runRestorePointAction(() => createRestorePoint(db, uid, restoreLabel))} disabled={Boolean(busyGeneration)} className="shrink-0 px-3 py-2 rounded-lg bg-indigo-600 text-white text-xs font-bold hover:bg-indigo-700 disabled:opacity-40">建立還原點</button>
@@ -4006,7 +4031,7 @@ import { AuthProvider, useAuth } from './AuthContext';
 import LoginPage from './LoginPage';
 import { auth, db } from './firebase';
 import { collection, getDoc, getDocs, query, orderBy, onSnapshot, where } from 'firebase/firestore';
-import { readCloudData, writeCloudData, getMetaRef, CloudConflictError, listHistory, readHistoryVersion, createRestorePoint, clearRestorePoint } from './cloudStorage';
+import { readCloudData, writeCloudData, getMetaRef, CloudConflictError, listHistory, readHistoryVersion, createRestorePoint, clearRestorePoint, readHistoryMode, writeHistoryMode } from './cloudStorage';
 
 const AuthenticatedApp = () => {
     const { user, loading, logout } = useAuth();
@@ -4514,14 +4539,6 @@ const MainApp = ({ user, logout }) => {
         const summary = getJsonImportSummary(data, versionData);
         setImportConfirmation({ show: true, type: 'json', summary, pendingData: versionData });
         setShowHistoryModal(false);
-    };
-
-    // 雲端歷史的保留方式存在資料裡（跨裝置同步），切換時存檔一次。
-    const handleHistoryModeChange = async (mode) => {
-        if (!ensureWritable() || mode === getHistoryMode(data)) return;
-        const newData = setHistoryMode(data, mode);
-        setData(newData);
-        if (!(await saveToFirestoreChunks(newData))) revertUnsavedAdd(data);
     };
 
     const handleConfirmImport = async () => {
@@ -5067,7 +5084,7 @@ const MainApp = ({ user, logout }) => {
             {showAddDebtModal && <AddDebtModal onClose={() => setShowAddDebtModal(false)} onSave={handleSaveNewDebt} debtNames={allDebtNames} accountOptions={debtAccountOptions} assetRecords={data.records} debts={data.debts} />}
 
             {showStatementModal && <StatementModal data={data} onClose={() => setShowStatementModal(false)} />}
-            {showHistoryModal && user && <HistoryModal uid={user.uid} mode={getHistoryMode(data)} onChangeMode={handleHistoryModeChange} onClose={() => setShowHistoryModal(false)} onPreviewRestore={handlePreviewHistoryRestore} />}
+            {showHistoryModal && user && <HistoryModal uid={user.uid} data={data} onClose={() => setShowHistoryModal(false)} onPreviewRestore={handlePreviewHistoryRestore} />}
             {showFIREModal && <FIREModal fireStats={fireStats} yearlyStats={fireYearlyStats} onRateChange={handleFireRateChange} onClose={() => setShowFIREModal(false)} isPrivacyMode={isPrivacyMode} />}
             {showRangeStatsModal && <RangeStatsModal data={data} onClose={() => setShowRangeStatsModal(false)} />}
             {/* Global Loading Overlay */}
@@ -5112,6 +5129,7 @@ const MainApp = ({ user, logout }) => {
                                 >
                                     <RefreshCw size={12} />
                                 </button>
+                                <SyncStatusBadge isSaving={isSaving} syncState={syncState} onRetry={handleRetrySave} onResolveConflict={() => setSyncConflict((prev) => prev || { pendingData: data })} />
                                 {isLocalDiagnosticEnabled && (
                                     <button
                                         onClick={handleLoadDiagnostics}
@@ -5122,10 +5140,9 @@ const MainApp = ({ user, logout }) => {
                                     </button>
                                 )}
                             </div>
-                            <h1 className="text-2xl font-serif-tc font-bold text-slate-800 flex items-center gap-2">
+                            <h1 className="text-2xl font-serif-tc font-bold text-slate-800 flex items-center gap-2 whitespace-nowrap">
                                 <img src="/favicon.png" alt="極簡貓資產 Logo" className="w-[30px] h-[30px] object-contain" />
                                 極簡貓資產
-                                <SyncStatusBadge isSaving={isSaving} syncState={syncState} onRetry={handleRetrySave} onResolveConflict={() => setSyncConflict((prev) => prev || { pendingData: data })} />
                             </h1>
                         </div>
                         <div className="flex gap-2 items-center relative">

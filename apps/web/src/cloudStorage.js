@@ -15,7 +15,8 @@ import {
     assembleHistoryVersion,
     buildMetaVersionFields,
     createHistoryEntry,
-    getHistoryMode,
+    createHistorySettings,
+    resolveHistoryMode,
     hashString,
     normalizeRestorePointLabel,
     parseLegacyChunks,
@@ -35,6 +36,7 @@ const MAX_BATCH_DELETES = 400;
  * users/{uid}/meta/storage           指標文件：revision、generation、chunkCount、checksum、length、
  *                                     schemaVersion、minClientVersion（相容性，見 docs/DATA_FORMAT.md）
  * users/{uid}/chunks/{generation}_{i} 資料塊：{ index, content, generation }
+ * users/{uid}/settings/history      保留方式 { mode }（切換時不重寫資料）
  * users/{uid}/history/{generation}   歷史版本：每次存檔一筆，資料塊保留到被保留規則清掉為止（core: selectHistoryToPrune）
  *
  * 寫入流程：先寫完新 generation 的所有資料塊，再用 transaction 檢查 revision 並切換指標。
@@ -64,6 +66,7 @@ export const createGenerationId = () =>
 const metaRefFor = (db, uid) => doc(db, 'users', uid, 'meta', 'storage');
 const chunksRefFor = (db, uid) => collection(db, 'users', uid, 'chunks');
 const historyRefFor = (db, uid) => collection(db, 'users', uid, 'history');
+const historySettingsRefFor = (db, uid) => doc(db, 'users', uid, 'settings', 'history');
 
 const snapshotExists = (snapshot) => {
     if (!snapshot) return false;
@@ -205,7 +208,7 @@ export const writeCloudData = async (db, uid, data, {
     // （例如 Firestore 規則還沒部署）時，照舊刪除上一份，避免資料塊無限累積。
     let keepPrevious = Boolean(previousMeta?.generation);
     if (keepPrevious) {
-        keepPrevious = await recordHistory(db, uid, [nextMeta, previousMeta], generation, getHistoryMode(data))
+        keepPrevious = await recordHistory(db, uid, [nextMeta, previousMeta], generation, data)
             .then(() => true)
             .catch((error) => {
                 console.warn('Failed to record history', error);
@@ -213,7 +216,7 @@ export const writeCloudData = async (db, uid, data, {
             });
     }
     if (!previousMeta?.generation) {
-        await recordHistory(db, uid, [nextMeta], generation, getHistoryMode(data)).catch((error) => console.warn('Failed to record history', error));
+        await recordHistory(db, uid, [nextMeta], generation, data).catch((error) => console.warn('Failed to record history', error));
     }
     if (!keepPrevious) {
         const staleIds = previousChunkIds.filter((id) => !newChunkIds.includes(id));
@@ -247,15 +250,33 @@ const deleteGeneration = async (db, uid, generation) => {
 };
 
 /** 記錄新版本（並補記上一份），再依保留規則刪除太舊的版本。失敗不影響這次存檔。 */
-const recordHistory = async (db, uid, metas, currentGeneration, mode = 'auto') => {
+const recordHistory = async (db, uid, metas, currentGeneration, data) => {
     const batch = writeBatch(db);
     // merge：已經設成還原點的紀錄（pinned、label）不會被蓋掉。
     metas.map(createHistoryEntry).filter(Boolean).forEach((entry) => batch.set(doc(historyRefFor(db, uid), entry.generation), entry, { merge: true }));
     await batch.commit();
+    const mode = await readHistoryMode(db, uid, data);
     const prune = selectHistoryToPrune(await listHistory(db, uid), { now: Date.now(), currentGeneration, mode });
     for (const generation of prune) {
         await deleteGeneration(db, uid, generation);
     }
+};
+
+/** 目前的保留方式：設定檔優先，沒有時沿用資料裡的舊設定（core: resolveHistoryMode）。 */
+// 讀不到設定檔（離線、規則未部署）時沿用資料裡的設定或預設 auto，不讓存檔流程誤判成歷史寫入失敗。
+export const readHistoryMode = async (db, uid, data = null) => {
+    try {
+        const snapshot = await getDoc(historySettingsRefFor(db, uid));
+        return resolveHistoryMode(snapshotExists(snapshot) ? snapshot.data() : null, data);
+    } catch (error) {
+        console.warn('Failed to read history settings', error);
+        return resolveHistoryMode(null, data);
+    }
+};
+
+/** 切換保留方式：只寫設定檔，不重寫財務資料、不產生新版本；下次存檔時依新設定清理。 */
+export const writeHistoryMode = async (db, uid, mode) => {
+    await setDoc(historySettingsRefFor(db, uid), createHistorySettings(mode));
 };
 
 /** 把目前的雲端版本設成手動還原點（不會被自動清掉）。 */

@@ -91,6 +91,9 @@ public struct HistoryEntry: Codable, Equatable, Sendable, Identifiable {
 
 /// 雲端儲存的最小操作集合（對應 Firestore 的呼叫）。
 public protocol ChunkStore: Sendable {
+    /// users/{uid}/settings/history 的 mode；沒有設定檔時為 nil。
+    func readHistoryMode() async throws -> String?
+    func writeHistoryMode(_ mode: String) async throws
     func readHistory() async throws -> [HistoryEntry]
     func writeHistory(_ entries: [HistoryEntry]) async throws
     func deleteHistory(generation: String) async throws
@@ -243,7 +246,7 @@ public final class CloudRepository: @unchecked Sendable {
         let previous = previousBox.value
         var keepPrevious = false
         do {
-            let mode = (try? core.callString("getHistoryMode", [.json(json)])) ?? "auto"
+            let mode = await resolvedHistoryMode(dataJSON: json)
             try await recordHistory(metas: [meta, previous].compactMap { $0 }, currentGeneration: generation, mode: mode, now: now)
             keepPrevious = previous?.generation != nil
         } catch {
@@ -271,6 +274,19 @@ public final class CloudRepository: @unchecked Sendable {
         let chunksJSON = try JSONSerialization.data(withJSONObject: chunks.map { ["index": $0.index, "content": $0.content] })
         let entryJSON = String(decoding: try JSONEncoder().encode(entry), as: UTF8.self)
         return try core.callString("assembleHistoryVersion", [.json(entryJSON), .json(String(decoding: chunksJSON, as: UTF8.self))])
+    }
+
+    /// 目前的保留方式：設定檔優先，沒有時沿用資料裡的舊設定（core: resolveHistoryMode）。
+    public func resolvedHistoryMode(dataJSON: String?) async -> String {
+        let stored = try? await store.readHistoryMode()
+        let settings: CoreBridge.Argument = stored.map { .object(["mode": .string($0)]) } ?? .null
+        return (try? core.callString("resolveHistoryMode", [settings, dataJSON.map { .json($0) } ?? .null])) ?? "auto"
+    }
+
+    /// 切換保留方式：只寫設定檔，不重寫財務資料、不產生新版本。
+    public func setHistoryMode(_ mode: String) async throws {
+        _ = try core.callJSON("createHistorySettings", [.string(mode)]) // 不支援的值丟錯
+        try await store.writeHistoryMode(mode)
     }
 
     /// 把目前的雲端版本設成手動還原點（不會被自動清掉）。

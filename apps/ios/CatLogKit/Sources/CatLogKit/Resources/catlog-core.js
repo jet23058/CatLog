@@ -68,6 +68,7 @@ var CatLogCore = (() => {
     createDebtEntry: () => createDebtEntry,
     createDebtEvent: () => createDebtEvent,
     createHistoryEntry: () => createHistoryEntry,
+    createHistorySettings: () => createHistorySettings,
     createHoldingRow: () => createHoldingRow,
     createIncomeSource: () => createIncomeSource,
     deleteDebtEventFromData: () => deleteDebtEventFromData,
@@ -237,9 +238,9 @@ var CatLogCore = (() => {
     processUSBrokerTransactionCSVRows: () => processUSBrokerTransactionCSVRows,
     processUSBrokerTransactionPastedRows: () => processUSBrokerTransactionPastedRows,
     processUSBrokerTransactionRows: () => processUSBrokerTransactionRows,
+    resolveHistoryMode: () => resolveHistoryMode,
     selectHistoryToPrune: () => selectHistoryToPrune,
     setFireWithdrawalRate: () => setFireWithdrawalRate,
-    setHistoryMode: () => setHistoryMode,
     shouldLockOnResume: () => shouldLockOnResume,
     sortHistoryEntries: () => sortHistoryEntries,
     splitIntoChunks: () => splitIntoChunks,
@@ -2192,10 +2193,12 @@ var CatLogCore = (() => {
     { value: "auto", label: "\u81EA\u52D5\u6BCF\u5929\u4E00\u4EFD\uFF0B\u624B\u52D5\u9084\u539F\u9EDE" },
     { value: "manual", label: "\u53EA\u4FDD\u7559\u624B\u52D5\u9084\u539F\u9EDE" }
   ];
+  var isHistoryMode = (mode) => HISTORY_MODES.some((item) => item.value === mode);
   var getHistoryMode = (data) => data?.historySettings?.mode === "manual" ? "manual" : "auto";
-  var setHistoryMode = (data, mode) => {
-    if (!HISTORY_MODES.some((item) => item.value === mode)) throw new Error("\u4E0D\u652F\u63F4\u7684\u4FDD\u7559\u65B9\u5F0F");
-    return { ...data, historySettings: { ...data?.historySettings || {}, mode } };
+  var resolveHistoryMode = (settings, data) => isHistoryMode(settings?.mode) ? settings.mode : getHistoryMode(data);
+  var createHistorySettings = (mode) => {
+    if (!isHistoryMode(mode)) throw new Error("\u4E0D\u652F\u63F4\u7684\u4FDD\u7559\u65B9\u5F0F");
+    return { mode };
   };
   var HISTORY_KEEP_DAYS = 30;
   var HISTORY_KEEP_MONTHS = 12;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { assembleHistoryVersion, createHistoryEntry, getHistoryMode, hashString, normalizeRestorePointLabel, selectHistoryToPrune, setHistoryMode, sortHistoryEntries } from './index.js';
+import { assembleHistoryVersion, createHistoryEntry, createHistorySettings, getHistoryMode, hashString, normalizeRestorePointLabel, resolveHistoryMode, selectHistoryToPrune, sortHistoryEntries } from './index.js';
 
 const HOUR = 60 * 60 * 1000;
 const DAY = 24 * HOUR;
@@ -56,13 +56,16 @@ describe('雲端歷史版本', () => {
         expect(normalizeRestorePointLabel('x'.repeat(100))).toHaveLength(60);
     });
 
-    it('保留方式：預設自動；只保留手動時，只剩目前版本與還原點', () => {
+    it('保留方式：預設自動、設定檔優先；只保留手動時，只剩目前版本與還原點', () => {
         expect(getHistoryMode({})).toBe('auto');
         expect(getHistoryMode(null)).toBe('auto');
-        const data = setHistoryMode({ records: {}, historySettings: { other: 1 } }, 'manual');
-        expect(data.historySettings).toEqual({ other: 1, mode: 'manual' });
-        expect(getHistoryMode(data)).toBe('manual');
-        expect(() => setHistoryMode({}, 'weekly')).toThrow('不支援的保留方式');
+        // 設定檔優先；沒有設定檔時沿用資料裡的舊設定
+        expect(resolveHistoryMode({ mode: 'manual' }, {})).toBe('manual');
+        expect(resolveHistoryMode(null, { historySettings: { mode: 'manual' } })).toBe('manual');
+        expect(resolveHistoryMode({ mode: 'auto' }, { historySettings: { mode: 'manual' } })).toBe('auto');
+        expect(resolveHistoryMode({ mode: 'weekly' }, {})).toBe('auto');
+        expect(createHistorySettings('manual')).toEqual({ mode: 'manual' });
+        expect(() => createHistorySettings('weekly')).toThrow('不支援的保留方式');
 
         const entries = [entry('now', NOW), entry('yesterday', NOW - DAY), entry('pin', NOW - 40 * DAY, { pinned: true })];
         expect(kept(entries, { currentGeneration: 'now', mode: 'manual' })).toEqual(['now', 'pin']);
