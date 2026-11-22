@@ -20,6 +20,8 @@ describe('雲端歷史版本', () => {
 
     it('排序並略過格式不對的資料', () => {
         expect(sortHistoryEntries([entry('a', 1), { content: 'chunk' }, entry('b', 2)]).map((e) => e.generation)).toEqual(['b', 'a']);
+        // 裝置時鐘慢了：revision 較新但 savedAt 較早，仍排在前面
+        expect(sortHistoryEntries([entry('older', NOW, { revision: 4 }), entry('newer-skewed', NOW - HOUR, { revision: 5 })]).map((e) => e.generation)).toEqual(['newer-skewed', 'older']);
     });
 
     it('同一天只留最後一份，目前版本永遠保留', () => {

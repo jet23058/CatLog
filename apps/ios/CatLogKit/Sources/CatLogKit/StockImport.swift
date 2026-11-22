@@ -71,6 +71,12 @@ public struct HoldingSnapshotPreview: Sendable {
     public let holdings: [HoldingPreviewItem]
     public let skippedCount: Int
     public var totalMarketValue: Double { holdings.reduce(0) { $0 + $1.marketValue } }
+    /// 依市場分開加總（台股 TWD、美股 USD 不能直接相加）。
+    public var totalsByMarket: [(market: String, value: Double)] {
+        Dictionary(grouping: holdings, by: \.market)
+            .map { (market: $0.key, value: $0.value.reduce(0) { $0 + $1.marketValue }) }
+            .sorted { $0.market > $1.market } // TW 在 US 前
+    }
 }
 
 private struct StockImportSummary: Decodable {

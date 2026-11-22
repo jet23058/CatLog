@@ -122,10 +122,13 @@ export const createHistoryEntry = (meta) => {
     };
 };
 
-/** 歷史紀錄新到舊排序（同時間依 revision），並略過格式不對的資料。 */
+/**
+ * 歷史紀錄新到舊排序，並略過格式不對的資料。
+ * 以 revision 為主：revision 由雲端交易遞增，savedAt 是各裝置的時鐘，裝置時間不準時會排錯。
+ */
 export const sortHistoryEntries = (entries = []) => (entries || [])
     .filter((entry) => entry && typeof entry.generation === 'string' && entry.generation)
-    .sort((a, b) => (b.savedAt - a.savedAt) || (b.revision - a.revision));
+    .sort((a, b) => (b.revision - a.revision) || (b.savedAt - a.savedAt));
 
 const localDayKey = (ms) => {
     const date = new Date(ms);

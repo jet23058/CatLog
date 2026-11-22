@@ -259,6 +259,10 @@ public final class AppModel: ObservableObject {
         guard compatibility.canWrite else {
             return .failed(compatibilityMessage ?? "這個版本的 App 無法寫入雲端資料，請先更新。")
         }
+        // 與 web 相同：要寫入的資料（例如匯入的備份）比這個 App 新時不寫入，避免之後的編輯弄壞新格式。
+        if (try? core.isNewerSchema(dataJSON: dataJSON)) ?? true {
+            return .failed("這份資料是用較新版的 App 產生的，請更新後再匯入。")
+        }
         if conflict != nil && !force { return .conflict }
         if isDemo {
             do { try core.load(dataJSON: dataJSON); refreshAfterChange(core: core); return .saved } catch { return .failed(error.localizedDescription) }

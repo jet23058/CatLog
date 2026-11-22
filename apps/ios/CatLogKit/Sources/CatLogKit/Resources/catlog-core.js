@@ -1845,7 +1845,7 @@ var CatLogCore = (() => {
     const accounts = getExpenseAccounts(expenses);
     const selected = account && accounts.includes(account) ? account : accounts[0] || "";
     const items = getStatementExpenses(expenses, selected, startDate, endDate).map((item, index) => ({
-      key: item.id != null ? String(item.id) : `${item.date}#${index}`,
+      key: item.id != null ? String(item.id) : `${selected}|${item.date}#${index}`,
       title: item.name || item.subCategory || item.category || "",
       date: item.date || "",
       category: item.category || "",
@@ -2214,7 +2214,7 @@ var CatLogCore = (() => {
       schemaVersion: Number(meta.schemaVersion) || 0
     };
   };
-  var sortHistoryEntries = (entries = []) => (entries || []).filter((entry) => entry && typeof entry.generation === "string" && entry.generation).sort((a, b) => b.savedAt - a.savedAt || b.revision - a.revision);
+  var sortHistoryEntries = (entries = []) => (entries || []).filter((entry) => entry && typeof entry.generation === "string" && entry.generation).sort((a, b) => b.revision - a.revision || b.savedAt - a.savedAt);
   var localDayKey = (ms) => {
     const date = new Date(ms);
     return `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;

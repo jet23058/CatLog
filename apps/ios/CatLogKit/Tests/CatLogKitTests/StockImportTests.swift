@@ -41,6 +41,7 @@ final class StockImportTests: XCTestCase {
         XCTAssertEqual(preview.holdings.count, 1)
         XCTAssertEqual(preview.skippedCount, 1)
         XCTAssertEqual(preview.totalMarketValue, 105_000)
+        XCTAssertEqual(preview.totalsByMarket.map(\.market), ["TW"])
 
         try core.load(dataJSON: try core.addingHoldingSnapshot(preview))
         let previous = try core.previousHoldingRows(market: "TW")
