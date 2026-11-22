@@ -101,7 +101,8 @@ struct StocksView: View {
         }
         .navigationTitle("個股績效")
         .navigationBarTitleDisplayMode(.inline)
-        .searchable(text: $search, prompt: "搜尋名稱或代號")
+        // 搜尋列放在標題下方，不要浮在畫面底部蓋住內容。
+        .searchable(text: $search, placement: .navigationBarDrawer(displayMode: .automatic), prompt: "搜尋名稱或代號")
         .toolbar { ToolbarItem(placement: .primaryAction) { actionsMenu } }
         .sheet(isPresented: $showTransactionImport) { StockTransactionImportSheet(model: model, core: core) }
         .sheet(isPresented: $showHoldingImport) { HoldingSnapshotSheet(model: model, core: core, market: market) }
@@ -187,7 +188,7 @@ struct StocksView: View {
                             .controlSize(.mini)
                     }
                 }
-                Text(pnlLabel(stats.totalPnl))
+                Text(isPrivacyMode ? pnlLabel(stats.totalPnl) : "\(Theme.arrow(stats.totalPnl)) \(pnlLabel(stats.totalPnl))")
                     .font(.title.bold().monospacedDigit())
                     .foregroundStyle(stats.totalPnl >= 0 ? Theme.up : Theme.down)
                 if market == "US" && !isPrivacyMode {
