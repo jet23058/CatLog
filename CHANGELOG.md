@@ -110,6 +110,10 @@
 - [iOS] 左上角年份按鈕改為打開「選擇年份」：歷年淨資產趨勢圖，每年的資產、收入年增長、收入占總所得（core `getYearlyTrendData`，與 web 相同），點選切換年份。
 - [iOS] 修正首頁每月列表右側的數字：原本顯示 core 的 `balance`（淨資產變化減支出），web 沒有這個數字；改成和 web 一樣顯示當月收入，以及「收入變化＋淨資產變化」（和上個月比）。
 - [iOS] `setup-launch-agent.sh` / `remote-install.sh`：從 SSH 透過 LaunchAgent 建置並安裝到 iPhone（Mac 需登入且螢幕未鎖定）。
+- [web] Google 登入改用自己的網域：`vercel.json` 把 `/__/auth`、`/__/firebase` 轉送到 Firebase（這些路徑不套用安全標頭），正式站 authDomain 改成 `catlog.cloudjet.work` 後，登入畫面顯示 catlog.cloudjet.work。（#34）
+- [iOS] 首頁改版：淨資產主卡片（大字、較上月變化、今年走勢線）、四張重點小卡（年度資產增長、年度總收入、負債、FIRE 達成率）、個股／區間／對帳單入口、新的每月紀錄列；新增改成右下角按鈕，年份選單移到主卡片。（#35）
+- [web] 首頁改版（與 iOS 同一套設計規則）：淨資產主卡片（較上月變化、年度最高／最低、今年走勢）、精簡的四張小卡、每月紀錄卡片列表、分析與資料入口直接放在頁面（取代「進階功能」選單）；桌機左欄放小卡與入口、右欄放每月紀錄，手機上下排列；年份切換改成獨立的大箭頭按鈕。（#36）
+- [web][iOS] 漲跌顏色統一為紅漲綠跌（台股慣例），一律加 ▲▼ 與正負號；負債與收入金額不再上色。web 字體改為 Noto Sans TC＋Inter（不再用襯線字）。（#35、#36）
 
 ### CI
 - 新增 iOS workflow（macOS）：CatLogKit 測試與 App 建置；Node CI 檢查 iOS 內建的 core bundle 是否與 core 同步。
