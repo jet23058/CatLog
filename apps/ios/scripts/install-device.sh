@@ -23,11 +23,13 @@ CONFIGURATION="${CATLOG_CONFIGURATION:-Debug}"
 case "${CONFIGURATION}" in
   Debug) LAUNCH_ARGS=() ;;
   Release) LAUNCH_ARGS=(-CatLogDeviceReadOnly) ;;
-  *) echo "CATLOG_CONFIGURATION 只能是 Debug 或 Release" >&2; exit 1 ;;
+  # 已經在正式站使用、只是更新 App 時：不強制唯讀，保留使用者原本的設定。
+  Release-keep) CONFIGURATION=Release; LAUNCH_ARGS=() ;;
+  *) echo "CATLOG_CONFIGURATION 只能是 Debug、Release 或 Release-keep" >&2; exit 1 ;;
 esac
 
 DERIVED="${HOME}/Library/Developer/Xcode/DerivedData/CatLog-device"
-echo "▶ 建置 ${CONFIGURATION}（$([ "${CONFIGURATION}" = Release ] && echo 正式站，唯讀啟動 || echo 測試站)；裝置 ${DEVICE}）…"
+echo "▶ 建置 ${CONFIGURATION}（$([ "${CONFIGURATION}" = Release ] && echo 正式站 || echo 測試站)$([ ${#LAUNCH_ARGS[@]} -gt 0 ] && echo "，唯讀啟動")；裝置 ${DEVICE}）…"
 xcodebuild -project CatLog.xcodeproj -scheme CatLog -configuration "${CONFIGURATION}" \
   -destination "id=${DEVICE}" -derivedDataPath "${DERIVED}" -allowProvisioningUpdates -quiet build
 
