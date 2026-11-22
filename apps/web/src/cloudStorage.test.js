@@ -65,6 +65,8 @@ import {
     clearRestorePoint,
     createRestorePoint,
     listHistory,
+    readHistoryMode,
+    writeHistoryMode,
     readCloudData,
     readHistoryVersion,
     splitIntoChunks,
@@ -134,12 +136,14 @@ describe('cloudStorage', () => {
     test('manual mode keeps only restore points and the current version', async () => {
         const nowSpy = vi.spyOn(Date, 'now');
         nowSpy.mockReturnValue(1767225600000);
-        const first = await writeCloudData(db, uid, { records: {}, historySettings: { mode: 'manual' }, v: 1 }, { expectedRevision: 0 });
+        await writeHistoryMode(db, uid, 'manual');
+        expect(await readHistoryMode(db, uid)).toBe('manual');
+        const first = await writeCloudData(db, uid, { records: {}, v: 1 }, { expectedRevision: 0 });
         await createRestorePoint(db, uid, '整理前');
         nowSpy.mockReturnValue(1767225600000 + 86400000); // 隔天
-        const second = await writeCloudData(db, uid, { records: {}, historySettings: { mode: 'manual' }, v: 2 }, { expectedRevision: 1, previousChunkIds: first.chunkIds });
+        const second = await writeCloudData(db, uid, { records: {}, v: 2 }, { expectedRevision: 1, previousChunkIds: first.chunkIds });
         nowSpy.mockReturnValue(1767225600000 + 2 * 86400000);
-        await writeCloudData(db, uid, { records: {}, historySettings: { mode: 'manual' }, v: 3 }, { expectedRevision: 2, previousChunkIds: second.chunkIds });
+        await writeCloudData(db, uid, { records: {}, v: 3 }, { expectedRevision: 2, previousChunkIds: second.chunkIds });
         nowSpy.mockRestore();
         const history = await listHistory(db, uid);
         expect(history.map((e) => [e.revision, e.pinned === true])).toEqual([[3, false], [1, true]]);

@@ -59,7 +59,11 @@ final class CloudRepositoryTests: XCTestCase {
 
     func testManualModeKeepsOnlyRestorePoints() async throws {
         let start = Date(timeIntervalSince1970: 1_767_225_600)
-        let data = { (v: Int) in #"{"records":{},"historySettings":{"mode":"manual"},"v":\#(v)}"# }
+        let data = { (v: Int) in #"{"records":{},"v":\#(v)}"# }
+        try await repository.setHistoryMode("manual")
+        let resolved = await repository.resolvedHistoryMode(dataJSON: nil)
+        XCTAssertEqual(resolved, "manual")
+        do { try await repository.setHistoryMode("weekly"); XCTFail("應該被拒絕") } catch {}
         let first = try await repository.write(dataJSON: data(1), expectedRevision: 0, now: start)
         try await repository.createRestorePoint(label: "整理前")
         let second = try await repository.write(dataJSON: data(2), expectedRevision: 1, previousChunkIds: first.chunkIds, now: start.addingTimeInterval(86_400))

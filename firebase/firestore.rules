@@ -34,6 +34,15 @@ service cloud.firestore {
           && (!('label' in request.resource.data) || (request.resource.data.label is string && request.resource.data.label.size() <= 60));
       }
 
+      // 雲端歷史的保留方式：{ mode: 'auto' | 'manual' }。
+      match /settings/{docId} {
+        allow read, delete: if isOwner(userId);
+        allow create, update: if isOwner(userId)
+          && docId == 'history'
+          && request.resource.data.keys().hasOnly(['mode'])
+          && request.resource.data.mode in ['auto', 'manual'];
+      }
+
       // 指標文件：revision 只能遞增 1，避免舊版本覆蓋新版本。
       match /meta/{docId} {
         allow read: if isOwner(userId);

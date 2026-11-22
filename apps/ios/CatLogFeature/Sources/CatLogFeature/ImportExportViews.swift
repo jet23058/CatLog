@@ -244,6 +244,8 @@ struct CloudHistoryView: View {
     @State private var restoreLabel = ""
     @State private var isUpdatingRestorePoint = false
     @State private var mode = "auto"
+    @State private var modeLoaded = false
+    @State private var modeStatus: String?
 
     private struct RestoreBox: Identifiable {
         let id = UUID()
@@ -260,11 +262,12 @@ struct CloudHistoryView: View {
                 Picker("保留方式", selection: Binding(get: { mode }, set: { new in Task { await changeMode(new) } })) {
                     ForEach(core.historyModes, id: \.value) { Text($0.label).tag($0.value) }
                 }
-                .disabled(!model.compatibility.canWrite || model.isSaving)
+                .disabled(!modeLoaded || !model.compatibility.canWrite)
             } footer: {
-                Text(mode == "manual"
+                Text((mode == "manual"
                      ? "只保留你手動建立的還原點與目前版本，下次存檔時會清掉其他自動版本。設定會同步到所有裝置。"
                      : "自動每天保留一份（30 天內每天、更早的每月一份保留 12 個月），手動還原點另外保留。設定會同步到所有裝置。")
+                     + (modeStatus.map { " \($0)" } ?? ""))
             }
             Section {
                 TextField("還原點說明（選填），例如：匯入 MOZE 前", text: $restoreLabel)
@@ -323,7 +326,10 @@ struct CloudHistoryView: View {
         .navigationTitle("雲端歷史版本")
         .navigationBarTitleDisplayMode(.inline)
         .task(id: model.dataVersion) {
-            mode = core.historyMode()
+            if !modeLoaded {
+                mode = await model.cloudHistoryMode()
+                modeLoaded = true
+            }
             await load()
         }
         .refreshable { await load() }
@@ -343,11 +349,16 @@ struct CloudHistoryView: View {
 
     private func changeMode(_ new: String) async {
         guard new != mode else { return }
+        // 只寫設定檔，不重寫財務資料、不顯示儲存中、不產生新版本。
         let previous = mode
         mode = new
-        if case .failed(let message) = await model.saveChange({ try $0.settingHistoryMode(new) }) {
+        modeStatus = nil
+        do {
+            try await model.setCloudHistoryMode(new)
+            modeStatus = "已更新"
+        } catch {
             mode = previous
-            errorMessage = message
+            errorMessage = error.localizedDescription
         }
     }
 

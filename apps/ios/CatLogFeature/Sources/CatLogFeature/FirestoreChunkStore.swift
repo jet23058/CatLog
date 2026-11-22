@@ -18,6 +18,16 @@ final class FirestoreChunkStore: ChunkStore, @unchecked Sendable {
     var metaRef: DocumentReference { userRef.collection("meta").document("storage") }
     private var chunksRef: CollectionReference { userRef.collection("chunks") }
     private var historyRef: CollectionReference { userRef.collection("history") }
+    private var historySettingsRef: DocumentReference { userRef.collection("settings").document("history") }
+
+    func readHistoryMode() async throws -> String? {
+        let snapshot = try await historySettingsRef.getDocument()
+        return snapshot.exists ? snapshot.data()?["mode"] as? String : nil
+    }
+
+    func writeHistoryMode(_ mode: String) async throws {
+        try await historySettingsRef.setData(["mode": mode])
+    }
 
     func readHistory() async throws -> [HistoryEntry] {
         try await historyRef.getDocuments().documents.compactMap { document in

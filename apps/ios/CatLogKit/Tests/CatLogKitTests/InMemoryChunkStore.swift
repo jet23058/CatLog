@@ -7,7 +7,11 @@ final class InMemoryChunkStore: ChunkStore, @unchecked Sendable {
     private(set) var meta: CloudMeta?
     private(set) var chunks: [String: StoredChunk] = [:]
     private(set) var history: [String: HistoryEntry] = [:]
+    private(set) var historyMode: String?
     var failTransaction: Error?
+
+    func readHistoryMode() async throws -> String? { lock.withLock { historyMode } }
+    func writeHistoryMode(_ mode: String) async throws { lock.withLock { historyMode = mode } }
 
     func readHistory() async throws -> [HistoryEntry] { lock.withLock { Array(history.values) } }
     /// 與 Firestore 的 merge 寫入相同：pinned / label 為 nil 時保留原本的值。
