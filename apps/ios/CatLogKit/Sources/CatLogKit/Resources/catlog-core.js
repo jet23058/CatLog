@@ -94,6 +94,7 @@ var CatLogCore = (() => {
     formatRate: () => formatRate,
     formatStockPnlLabel: () => formatStockPnlLabel,
     formatWan: () => formatWan,
+    getAssetAllocation: () => getAssetAllocation,
     getAssetExtremes: () => getAssetExtremes,
     getAssetNameOptions: () => getAssetNameOptions,
     getAssetRecordDatesInYear: () => getAssetRecordDatesInYear,
@@ -162,6 +163,7 @@ var CatLogCore = (() => {
     getRangeIncomeStats: () => getRangeIncomeStats,
     getRangeStats: () => getRangeStats,
     getRateChangeEventsForDebt: () => getRateChangeEventsForDebt,
+    getRecentMonthTrend: () => getRecentMonthTrend,
     getRecentMonthsRange: () => getRecentMonthsRange,
     getRecordFullKey: () => getRecordFullKey,
     getRecordIdentityKey: () => getRecordIdentityKey,
@@ -2665,6 +2667,37 @@ var CatLogCore = (() => {
     };
   };
   var getMonthDebtEventTargets = (data = {}, monthKey) => getDebtEventTargets(getMonthDetail(data, monthKey).debts);
+  var getRecentMonthTrend = (data, monthKey, count = 6) => {
+    const [year, month] = String(monthKey).split("-").map(Number);
+    if (!year || !month) return [];
+    const rows = [year - 1, year].flatMap((y) => getMonthlyStats(data, y).map((row) => ({ ...row, year: y }))).filter((row) => row.year < year || row.month <= month);
+    return rows.slice(-count).map((row) => ({
+      monthKey: `${row.year}-${String(row.month).padStart(2, "0")}`,
+      year: row.year,
+      month: row.month,
+      assets: row.hasRecord ? row.assets : null,
+      income: row.income,
+      cost: row.cost
+    }));
+  };
+  var getAssetAllocation = (assets = [], topN = 4) => {
+    const byName = /* @__PURE__ */ new Map();
+    (assets || []).forEach((item) => {
+      const amount = Number(item?.amount) || 0;
+      if (amount <= 0) return;
+      const name = item?.name || "\u672A\u547D\u540D";
+      byName.set(name, (byName.get(name) || 0) + amount);
+    });
+    const sorted = [...byName.entries()].map(([name, amount]) => ({ name, amount })).sort((a, b) => b.amount - a.amount);
+    const total = sorted.reduce((sum, item) => sum + item.amount, 0);
+    const top = sorted.slice(0, topN);
+    const restAmount = sorted.slice(topN).reduce((sum, item) => sum + item.amount, 0);
+    const slices = restAmount > 0 ? [...top, { name: "\u5176\u4ED6", amount: restAmount, isOther: true }] : top;
+    return {
+      total,
+      slices: slices.map((item) => ({ ...item, isOther: !!item.isOther, share: total > 0 ? item.amount / total : 0 }))
+    };
+  };
 
   // src/importExport.js
   var getBackupFileName = (today) => `meow-assets-backup-${String(today).replace(/-/g, "")}.json`;
