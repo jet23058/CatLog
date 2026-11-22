@@ -241,13 +241,17 @@ struct DashboardView: View {
                         }
                     }
                     DataToolsSection(model: model, core: core)
-                    Section("每月") {
+                    Section {
                         // 只要該月有任何資料（含只有備忘錄或負債快照的月份）就列出，才能打開月份明細。
                         ForEach(model.months.filter { model.dataMonths.contains(Self.monthKey(year: model.year, month: $0.month)) }) { month in
                             NavigationLink(value: DashboardRoute.month(Self.monthKey(year: model.year, month: month.month))) {
                                 MonthRow(month: month, core: core, isPrivacyMode: isPrivacyMode)
                             }
                         }
+                    } header: {
+                        Text("每月")
+                    } footer: {
+                        Text("右側綠框是當月收入；箭頭數字是和上個月比的「收入變化＋淨資產變化」，與網頁版相同。")
                     }
                 }
             }
@@ -463,15 +467,31 @@ private struct MonthRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(month.hasRecord ? money(core.formatWan(month.assets)) : "未紀錄資產")
                     .foregroundStyle(month.hasRecord ? .primary : .secondary)
-                Text("收入 \(money(core.formatMoney(month.income)))・支出 \(money(core.formatMoney(month.cost)))")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                if month.cost > 0 {
+                    Text("支出 \(money(core.formatMoney(month.cost)))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
             Spacer()
-            if month.hasRecord {
-                Text(money("\(month.balance >= 0 ? "+" : "")\(core.formatWan(month.balance))"))
-                    .font(.subheadline.monospacedDigit())
-                    .foregroundStyle(month.balance >= 0 ? .green : .red)
+            // 與 web 相同：上面是當月收入，下面是「收入變化＋淨資產變化」（和上個月比）。
+            VStack(alignment: .trailing, spacing: 3) {
+                if month.income > 0 {
+                    Text(money("+\(core.formatMoney(month.income))"))
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.green)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.green.opacity(0.12), in: .rect(cornerRadius: 5))
+                }
+                if let analysis = month.analysis {
+                    let score = analysis.compositeScore
+                    Label(money("\(score > 0 ? "+" : "")\(core.formatWan(score))"),
+                          systemImage: score >= 0 ? "arrow.up.right" : "arrow.down.right")
+                        .font(.caption2.bold().monospacedDigit())
+                        .foregroundStyle(score >= 0 ? .green : .red)
+                        .accessibilityLabel("比上月：收入變化 \(money(core.formatWan(analysis.incomeDiff)))，淨資產變化 \(money(core.formatWan(analysis.assetDiff)))")
+                }
             }
         }
     }

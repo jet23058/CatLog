@@ -106,6 +106,7 @@
 - [core][iOS] 對帳單：沒有 id 的舊花費，勾選 key 加上帳戶；iOS 換帳戶時清空勾選。
 - [iOS] 帳號選單新增「這台裝置唯讀」：打開時不寫入雲端（存檔、還原點、保留方式、修復都會被擋下），首頁顯示提示。`remote-install.sh --production`（或 `CATLOG_CONFIGURATION=Release install-device.sh`）安裝連正式站的 Release 版，並以唯讀啟動，方便安全驗證正式資料。
 - [web] 新增測試：股票匯入遇到版本衝突時預覽會關閉、不顯示成功。
+- [iOS] 修正首頁每月列表右側的數字：原本顯示 core 的 `balance`（淨資產變化減支出），web 沒有這個數字；改成和 web 一樣顯示當月收入，以及「收入變化＋淨資產變化」（和上個月比）。
 - [iOS] `setup-launch-agent.sh` / `remote-install.sh`：從 SSH 透過 LaunchAgent 建置並安裝到 iPhone（Mac 需登入且螢幕未鎖定）。
 
 ### CI

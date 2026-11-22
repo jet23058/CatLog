@@ -32,6 +32,18 @@ final class MaintenanceTests: XCTestCase {
         XCTAssertTrue(try core.isNewerSchema(dataJSON: #"{"records":{},"schemaVersion":99}"#))
     }
 
+    func testMonthAnalysisMatchesWeb() throws {
+        // 8 月淨資產 100 萬、收入 5 萬；9 月淨資產 102 萬、收入 8 萬 → 收入變化 +3 萬、淨資產變化 +2 萬，合計 +5 萬
+        try core.load(dataJSON: #"{"records":{"2026-08-31":[{"name":"a","amount":1000000}],"2026-09-30":[{"name":"a","amount":1020000}]},"incomes":{"2026-08":{"totalAmount":50000},"2026-09":{"totalAmount":80000}},"expenses":{"2026-09":[{"date":"2026/09/10","amount":43000}]}}"#)
+        let september = try XCTUnwrap(try core.monthlyStats(year: 2026).first { $0.month == 9 })
+        XCTAssertEqual(september.income, 80_000)
+        XCTAssertEqual(september.analysis?.incomeDiff, 30_000)
+        XCTAssertEqual(september.analysis?.assetDiff, 20_000)
+        XCTAssertEqual(september.analysis?.compositeScore, 50_000)
+        // 舊版 iOS 誤顯示的 balance（淨資產變化 − 支出），web 沒有顯示這個數字
+        XCTAssertEqual(september.balance, -23_000)
+    }
+
     func testFireRate() throws {
         try core.load(dataJSON: try core.settingFireWithdrawalRate("3.5"))
         XCTAssertEqual(try core.fireStats().rate, 3.5)
