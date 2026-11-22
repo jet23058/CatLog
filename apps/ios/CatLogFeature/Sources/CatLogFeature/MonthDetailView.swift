@@ -46,9 +46,6 @@ struct MonthDetailView: View {
                 if !detail.incomes.isEmpty { incomesSection(detail) }
                 debtsSection(detail)
                 if !detail.expenses.isEmpty { expensesSection(detail) }
-                if !detail.memo.isEmpty {
-                    Section("備忘錄") { Text(detail.memo) }
-                }
             } else if let errorMessage {
                 Text(errorMessage).foregroundStyle(.red)
             }
@@ -135,6 +132,23 @@ struct MonthDetailView: View {
             .background(Theme.accent, in: .rect(cornerRadius: Theme.heroRadius))
             .accessibilityElement(children: .combine)
             .plainListRow()
+            // 本月備忘：放在主卡片下方，像這個月的一句註記。
+            if !detail.memo.isEmpty {
+                HStack(alignment: .top, spacing: 12) {
+                    Image(systemName: "note.text").foregroundStyle(Theme.accent)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("本月備忘").font(.caption.weight(.semibold)).foregroundStyle(Theme.accent)
+                        Text(isPrivacyMode ? "****" : detail.memo)
+                            .font(.body)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(16)
+                .background(Theme.accentSoft, in: .rect(cornerRadius: Theme.cardRadius))
+                .accessibilityElement(children: .combine)
+                .plainListRow()
+            }
             Grid(horizontalSpacing: 12, verticalSpacing: 12) {
                 GridRow {
                     SummaryCard(title: "本月收入", value: money(summary.monthlyIncome),
