@@ -53,8 +53,18 @@ public struct MonthlyStat: Decodable, Equatable, Sendable, Identifiable {
     public let balance: Double
     public let hasRecord: Bool
     public let latestDate: String?
+    /// 與上個月比較（web 每月列表右下角的數字）：收入變化＋淨資產變化。
+    public let analysis: MonthAnalysis?
 
     public var id: Int { month }
+}
+
+/// `getMonthlyStats` 的 analysis：incomeDiff（收入比上月）、assetDiff（淨資產比上月，無紀錄時為 0）、
+/// compositeScore = incomeDiff + assetDiff。
+public struct MonthAnalysis: Decodable, Equatable, Sendable {
+    public let incomeDiff: Double
+    public let assetDiff: Double
+    public let compositeScore: Double
 }
 
 /// `checkCompatibility({ appVersion, data, meta })`

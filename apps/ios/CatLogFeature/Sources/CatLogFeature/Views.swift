@@ -114,6 +114,7 @@ struct DashboardView: View {
     /// 隱私模式：金額顯示成 ****，比例照常顯示。與 web 相同，只存在這台裝置。
     @AppStorage("isPrivacyMode") private var isPrivacyMode = false
     @State private var showFireRate = false
+    @State private var showYearPicker = false
     @State private var lockError: String?
     @State private var showAddAsset = Self.demoSheet == "asset"
     @State private var showAddIncome = Self.demoSheet == "income"
@@ -158,6 +159,16 @@ struct DashboardView: View {
             List {
                 Section {
                     SyncStatusRow(model: model)
+                    if model.isDeviceReadOnly {
+                        Label {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("這台裝置唯讀").bold()
+                                Text("只會讀取雲端資料，不會寫入。要修改資料，到右上角帳號選單關閉。").font(.footnote).foregroundStyle(.secondary)
+                            }
+                        } icon: {
+                            Image(systemName: "lock.shield").foregroundStyle(.indigo)
+                        }
+                    }
                     PreviewNotice(message: model.compatibilityMessage)
                     if model.remoteUpdateAvailable {
                         HStack {
@@ -231,18 +242,25 @@ struct DashboardView: View {
                         }
                     }
                     DataToolsSection(model: model, core: core)
-                    Section("每月") {
+                    Section {
                         // 只要該月有任何資料（含只有備忘錄或負債快照的月份）就列出，才能打開月份明細。
                         ForEach(model.months.filter { model.dataMonths.contains(Self.monthKey(year: model.year, month: $0.month)) }) { month in
                             NavigationLink(value: DashboardRoute.month(Self.monthKey(year: model.year, month: month.month))) {
                                 MonthRow(month: month, core: core, isPrivacyMode: isPrivacyMode)
                             }
                         }
+                    } header: {
+                        Text("每月")
+                    } footer: {
+                        Text("右側綠框是當月收入；箭頭數字是和上個月比的「收入變化＋淨資產變化」，與網頁版相同。")
                     }
                 }
             }
             .navigationTitle("極簡貓資產")
             .sheet(isPresented: $showFireRate) { FireRateSheet(model: model) }
+            .sheet(isPresented: $showYearPicker) {
+                if let core = model.core { YearPickerSheet(model: model, core: core, isPrivacyMode: isPrivacyMode) }
+            }
             .navigationDestination(for: DashboardRoute.self) { route in
                 if let core = model.core {
                     switch route {
@@ -297,13 +315,10 @@ struct DashboardView: View {
                     .accessibilityLabel("新增紀錄")
                 }
                 ToolbarItem(placement: .topBarLeading) {
-                    Menu {
-                        ForEach(model.availableYears, id: \.self) { year in
-                            Button(String(year)) { model.year = year }
-                        }
-                    } label: {
+                    Button { showYearPicker = true } label: {
                         Label(String(model.year), systemImage: "calendar")
                     }
+                    .accessibilityLabel("選擇年份，目前 \(model.year) 年")
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
@@ -320,6 +335,7 @@ struct DashboardView: View {
                         if let project = FirebaseBootstrap.projectID {
                             Text(project == "asset-prod" ? "正式站" : "測試站（\(project)）")
                         }
+                        Toggle("這台裝置唯讀", systemImage: "lock.shield", isOn: $model.isDeviceReadOnly)
                         if lock.isEnabled {
                             Button("關閉 Face ID 鎖定", systemImage: "faceid") { lock.disable() }
                         } else {
@@ -415,7 +431,7 @@ private struct PreviewNotice: View {
                 Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
             }
         } else {
-            Label("iOS 可以新增、編輯、刪除，並匯入備份與 MOZE 花費；證券交易匯入請先使用網頁版。", systemImage: "info.circle")
+            Label("與網頁版共用同一份資料，功能相同。", systemImage: "info.circle")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }
@@ -452,15 +468,31 @@ private struct MonthRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(month.hasRecord ? money(core.formatWan(month.assets)) : "未紀錄資產")
                     .foregroundStyle(month.hasRecord ? .primary : .secondary)
-                Text("收入 \(money(core.formatMoney(month.income)))・支出 \(money(core.formatMoney(month.cost)))")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                if month.cost > 0 {
+                    Text("支出 \(money(core.formatMoney(month.cost)))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
             Spacer()
-            if month.hasRecord {
-                Text(money("\(month.balance >= 0 ? "+" : "")\(core.formatWan(month.balance))"))
-                    .font(.subheadline.monospacedDigit())
-                    .foregroundStyle(month.balance >= 0 ? .green : .red)
+            // 與 web 相同：上面是當月收入，下面是「收入變化＋淨資產變化」（和上個月比）。
+            VStack(alignment: .trailing, spacing: 3) {
+                if month.income > 0 {
+                    Text(money("+\(core.formatMoney(month.income))"))
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.green)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.green.opacity(0.12), in: .rect(cornerRadius: 5))
+                }
+                if let analysis = month.analysis {
+                    let score = analysis.compositeScore
+                    Label(money("\(score > 0 ? "+" : "")\(core.formatWan(score))"),
+                          systemImage: score >= 0 ? "arrow.up.right" : "arrow.down.right")
+                        .font(.caption2.bold().monospacedDigit())
+                        .foregroundStyle(score >= 0 ? .green : .red)
+                        .accessibilityLabel("比上月：收入變化 \(money(core.formatWan(analysis.incomeDiff)))，淨資產變化 \(money(core.formatWan(analysis.assetDiff)))")
+                }
             }
         }
     }
@@ -594,5 +626,96 @@ struct FireYearlyStatsGroup: View {
             }
         }
         .task(id: version) { stats = (try? core.fireYearlyStats()) ?? [] }
+    }
+}
+
+/// 選擇年份（與 web 的「選擇年份」相同）：多年淨資產趨勢，加上每年的資產、收入年增長、收入占總所得。
+struct YearPickerSheet: View {
+    @ObservedObject var model: AppModel
+    let core: CatLogCore
+    let isPrivacyMode: Bool
+    @Environment(\.dismiss) private var dismiss
+    @State private var trend: [YearTrend] = []
+
+    private func money(_ value: Double) -> String { isPrivacyMode ? "****" : core.formatMoney(value) }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if trend.count >= 2 {
+                    Section {
+                        Chart(trend) { item in
+                            AreaMark(x: .value("年份", String(item.year)), y: .value("淨資產", item.assets))
+                                .foregroundStyle(.teal.opacity(0.15))
+                                .interpolationMethod(.monotone)
+                            LineMark(x: .value("年份", String(item.year)), y: .value("淨資產", item.assets))
+                                .foregroundStyle(.teal)
+                                .interpolationMethod(.monotone)
+                        }
+                        .chartYAxis(isPrivacyMode ? .hidden : .automatic)
+                        .frame(height: 140)
+                        .padding(.vertical, 6)
+                        .accessibilityLabel("歷年淨資產趨勢")
+                    }
+                }
+                Section {
+                    // 新到舊，與 web 相同
+                    ForEach(trend.reversed()) { item in
+                        Button {
+                            model.year = item.year
+                            dismiss()
+                        } label: {
+                            YearTrendRow(item: item, isSelected: item.year == model.year, money: money, rate: core.formatRate)
+                        }
+                        .listRowBackground(item.year == model.year ? Color.teal.opacity(0.08) : nil)
+                    }
+                } footer: {
+                    Text("收入年增長＝今年收入 ÷ 去年收入；收入占總所得＝今年收入佔歷年總收入的比例。")
+                }
+            }
+            .navigationTitle("選擇年份")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
+            .task { trend = (try? core.yearlyTrend(years: model.availableYears)) ?? [] }
+        }
+    }
+}
+
+private struct YearTrendRow: View {
+    let item: YearTrend
+    let isSelected: Bool
+    let money: (Double) -> String
+    let rate: (Double) -> String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(String(item.year)).font(.title3.bold().monospacedDigit())
+                    .foregroundStyle(isSelected ? .teal : .primary)
+                if isSelected { Image(systemName: "checkmark").foregroundStyle(.teal) }
+                Spacer()
+                Text("資產：\(money(item.assets))").font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)
+            }
+            HStack(alignment: .bottom) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("收入年增長").font(.caption2).foregroundStyle(.secondary)
+                    if item.incomeGrowthRate > 0 {
+                        Label(rate(item.incomeGrowthRate), systemImage: item.incomeGrowthRate >= 1 ? "arrow.up.right" : "arrow.down.right")
+                            .font(.caption.bold().monospacedDigit())
+                            .foregroundStyle(item.incomeGrowthRate >= 1 ? .green : .red)
+                    } else {
+                        Text("—").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                Spacer()
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text("收入占總所得").font(.caption2).foregroundStyle(.secondary)
+                    Text(rate(item.incomeShare)).font(.caption.bold().monospacedDigit()).foregroundStyle(.teal)
+                }
+            }
+        }
+        .padding(.vertical, 4)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
     }
 }

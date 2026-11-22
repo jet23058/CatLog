@@ -37,6 +37,12 @@ public final class AppModel: ObservableObject {
     @Published public private(set) var compatibility: Compatibility = .writable
     @Published public private(set) var compatibilityMessage: String?
     @Published public private(set) var isSaving = false
+    /// 這台裝置唯讀：不寫入雲端（驗證正式站時使用）。存在本機，不同步到其他裝置。
+    @Published public var isDeviceReadOnly: Bool = UserDefaults.standard.bool(forKey: AppModel.deviceReadOnlyKey) {
+        didSet { UserDefaults.standard.set(isDeviceReadOnly, forKey: Self.deviceReadOnlyKey) }
+    }
+    static let deviceReadOnlyKey = "deviceReadOnly"
+    static let deviceReadOnlyMessage = "這台裝置目前設為唯讀，不會寫入雲端。要修改資料請先到右上角帳號選單關閉「這台裝置唯讀」。"
     /// 最後一次成功讀取或寫入雲端的時間（同步狀態顯示用）。
     @Published public private(set) var lastSyncedAt: Date?
     /// 最後一次存檔失敗的訊息；之後成功存檔或重新讀取時清空。
@@ -70,6 +76,11 @@ public final class AppModel: ObservableObject {
     public init() {
         appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.0.0"
         core = try? CatLogCore.bundled()
+        // 安裝腳本以 -CatLogDeviceReadOnly 啟動時打開唯讀（之後可在帳號選單關閉）。
+        if ProcessInfo.processInfo.arguments.contains("-CatLogDeviceReadOnly") {
+            UserDefaults.standard.set(true, forKey: Self.deviceReadOnlyKey)
+            isDeviceReadOnly = true
+        }
 
         #if DEBUG
         // 開發用：以 `-CatLogDemo` 啟動時載入範例資料，不需要 Firebase 就能檢查畫面。
@@ -256,6 +267,7 @@ public final class AppModel: ObservableObject {
     /// - basedOn：資料是以這份雲端版本為基礎做出來的（新增負債會先重新讀取雲端）；nil 時用本機最後讀到 / 寫入的版本。
     public func save(dataJSON: String, force: Bool = false, basedOn base: (revision: Int, chunkIds: [String])? = nil) async -> SaveOutcome {
         guard let core else { return .failed("core 無法載入") }
+        guard !isDeviceReadOnly else { return .failed(Self.deviceReadOnlyMessage) }
         guard compatibility.canWrite else {
             return .failed(compatibilityMessage ?? "這個版本的 App 無法寫入雲端資料，請先更新。")
         }
@@ -315,17 +327,20 @@ public final class AppModel: ObservableObject {
 
     /// 切換保留方式：只寫設定檔，不重寫財務資料、不顯示儲存中、不產生新版本。
     public func setCloudHistoryMode(_ mode: String) async throws {
+        guard !isDeviceReadOnly else { throw CloudStorageError.integrity(Self.deviceReadOnlyMessage) }
         guard let core, let uid = Auth.auth().currentUser?.uid else { throw CoreBridgeError.coreNotLoaded }
         try await CloudRepository(store: FirestoreChunkStore(uid: uid), core: core.bridge).setHistoryMode(mode)
     }
 
     /// 把目前的雲端版本設成手動還原點。
     public func createRestorePoint(label: String) async throws {
+        guard !isDeviceReadOnly else { throw CloudStorageError.integrity(Self.deviceReadOnlyMessage) }
         guard let core, let uid = Auth.auth().currentUser?.uid else { throw CoreBridgeError.coreNotLoaded }
         try await CloudRepository(store: FirestoreChunkStore(uid: uid), core: core.bridge).createRestorePoint(label: label)
     }
 
     public func clearRestorePoint(_ entry: HistoryEntry) async throws {
+        guard !isDeviceReadOnly else { throw CloudStorageError.integrity(Self.deviceReadOnlyMessage) }
         guard let core, let uid = Auth.auth().currentUser?.uid else { throw CoreBridgeError.coreNotLoaded }
         try await CloudRepository(store: FirestoreChunkStore(uid: uid), core: core.bridge).clearRestorePoint(entry)
     }
@@ -347,6 +362,7 @@ public final class AppModel: ObservableObject {
 
     /// 用 JSON 備份覆蓋雲端資料（與 web 的「用 JSON 備份修復」相同），成功後重新讀取。回傳要顯示的訊息。
     public func repair(fromBackup text: String) async -> String {
+        guard !isDeviceReadOnly else { return Self.deviceReadOnlyMessage }
         guard let core, let uid = Auth.auth().currentUser?.uid else { return "尚未登入" }
         isSaving = true
         defer { isSaving = false }

@@ -91,6 +91,8 @@ apps/ios/scripts/setup-launch-agent.sh   # 只需一次；移除：setup-launch-
 apps/ios/scripts/remote-install.sh       # 之後每次安裝
 ```
 
+要驗證正式站時用 `remote-install.sh --production`：安裝連正式站 asset-prod 的 Release 版，並以「這台裝置唯讀」啟動（不會寫入任何資料，之後可在 App 右上角帳號選單關閉）。
+
 LaunchAgent 只有在執行 `remote-install.sh` 時才會跑（不會開機自動執行或排程）。需要 Mac 保持登入**而且螢幕沒有鎖定**（鎖定或睡眠時登入鑰匙圈會鎖住，簽章會失敗，出現 `errSecInternalComponent`）、iPhone 接著線；紀錄在 `~/Library/Logs/catlog-install-device.log`。
 
 ### 不用 Firebase 檢查畫面

@@ -104,6 +104,10 @@
 - [web] 股票匯入與持倉快照：有其他存檔排隊時，等這份真的寫入才顯示成功；遇到版本衝突時關閉預覽，避免選擇覆蓋後再按一次確認造成重複匯入。
 - [iOS] 新增持倉快照的預覽依台股 / 美股分開顯示市值（原本把 TWD 與 USD 直接相加）；抓價期間改了代號或市場時不套用結果；最新估值重新抓價失敗時不沿用上次的價格。
 - [core][iOS] 對帳單：沒有 id 的舊花費，勾選 key 加上帳戶；iOS 換帳戶時清空勾選。
+- [iOS] 帳號選單新增「這台裝置唯讀」：打開時不寫入雲端（存檔、還原點、保留方式、修復都會被擋下），首頁顯示提示。`remote-install.sh --production`（或 `CATLOG_CONFIGURATION=Release install-device.sh`）安裝連正式站的 Release 版，並以唯讀啟動，方便安全驗證正式資料。
+- [web] 新增測試：股票匯入遇到版本衝突時預覽會關閉、不顯示成功。
+- [iOS] 左上角年份按鈕改為打開「選擇年份」：歷年淨資產趨勢圖，每年的資產、收入年增長、收入占總所得（core `getYearlyTrendData`，與 web 相同），點選切換年份。
+- [iOS] 修正首頁每月列表右側的數字：原本顯示 core 的 `balance`（淨資產變化減支出），web 沒有這個數字；改成和 web 一樣顯示當月收入，以及「收入變化＋淨資產變化」（和上個月比）。
 - [iOS] `setup-launch-agent.sh` / `remote-install.sh`：從 SSH 透過 LaunchAgent 建置並安裝到 iPhone（Mac 需登入且螢幕未鎖定）。
 
 ### CI
