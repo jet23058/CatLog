@@ -26,6 +26,12 @@ final class MaintenanceTests: XCTestCase {
         XCTAssertEqual(Set(view.items.map(\.key)).count, 2)
     }
 
+    func testNewerSchemaDetection() throws {
+        XCTAssertFalse(try core.isNewerSchema(dataJSON: #"{"records":{},"schemaVersion":1}"#))
+        XCTAssertFalse(try core.isNewerSchema(dataJSON: #"{"records":{}}"#))
+        XCTAssertTrue(try core.isNewerSchema(dataJSON: #"{"records":{},"schemaVersion":99}"#))
+    }
+
     func testFireRate() throws {
         try core.load(dataJSON: try core.settingFireWithdrawalRate("3.5"))
         XCTAssertEqual(try core.fireStats().rate, 3.5)

@@ -3944,6 +3944,9 @@ const MainApp = ({ user, logout }) => {
     const [isSaving, setIsSaving] = useState(false);
     const isSavingRef = useRef(false);
     const pendingSaveRef = useRef(null);
+    const queuedSaveWaitersRef = useRef([]);
+    // 最後一次存檔的結果：'saved' | 'conflict' | 'failed'。
+    const saveOutcomeRef = useRef(null);
     const [isImporting, setIsImporting] = useState(false);
     const [uploadProgress, setUploadProgress] = useState(0);
     const [isPrivacyMode, setIsPrivacyMode] = useState(() => {
@@ -4061,6 +4064,13 @@ const MainApp = ({ user, logout }) => {
         return result;
     };
 
+    // 排隊中的存檔：等實際寫入完成才回報結果（股票匯入等流程依此決定要不要顯示成功）。
+    const settleQueuedSaves = (ok) => {
+        const waiters = queuedSaveWaitersRef.current;
+        queuedSaveWaitersRef.current = [];
+        waiters.forEach((resolve) => resolve(ok));
+    };
+
     const saveToFirestoreChunks = async (userData) => {
         if (!user) return false;
         if (cloudLoadError) {
@@ -4077,11 +4087,13 @@ const MainApp = ({ user, logout }) => {
         }
         if (syncConflict) {
             setSyncConflict((prev) => ({ ...prev, pendingData: userData }));
+            saveOutcomeRef.current = 'conflict';
             return false;
         }
         if (isSavingRef.current) {
+            // 已有存檔進行中：排在後面，等這份真的寫入（或失敗）才回傳結果，不提早回報成功。
             pendingSaveRef.current = userData;
-            return true;
+            return new Promise((resolve) => queuedSaveWaitersRef.current.push(resolve));
         }
         isSavingRef.current = true;
         setIsSaving(true);
@@ -4095,18 +4107,24 @@ const MainApp = ({ user, logout }) => {
                 dataToSave = pendingSaveRef.current;
             }
             setSyncState({ status: 'saved', lastSavedAt: Date.now(), message: '' });
+            saveOutcomeRef.current = 'saved';
+            settleQueuedSaves(true);
             return true;
         } catch (error) {
             const latestData = pendingSaveRef.current || dataToSave;
             if (error instanceof CloudConflictError) {
                 setSyncConflict({ remoteRevision: error.remoteRevision, pendingData: latestData });
                 setSyncState((prev) => ({ ...prev, status: 'conflict', message: error.message }));
+                saveOutcomeRef.current = 'conflict';
+                settleQueuedSaves(false);
                 return false;
             }
             console.error("Save failed:", error);
             lastFailedSaveRef.current = latestData;
             setSyncState((prev) => ({ ...prev, status: 'error', message: error.message || '' }));
             handleShowAlert("儲存失敗", "無法同步至雲端，請檢查網路連線後按上方的「重試」。");
+            saveOutcomeRef.current = 'failed';
+            settleQueuedSaves(false);
             return false;
         } finally {
             isSavingRef.current = false;
@@ -4742,6 +4760,8 @@ const MainApp = ({ user, logout }) => {
         if (!ensureWritable()) return false;
         setData(newData);
         if (!(await saveToFirestoreChunks(newData))) {
+            // 版本衝突時這份變更交給衝突視窗決定（覆蓋時會寫入），關閉預覽避免再按一次重複加入。
+            if (saveOutcomeRef.current === 'conflict') return true;
             revertUnsavedAdd(data);
             return false;
         }

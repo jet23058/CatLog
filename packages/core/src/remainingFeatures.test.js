@@ -20,7 +20,7 @@ describe('對帳單', () => {
         const view = getStatementView(expenses, '', '2026-10-15', '2026-11-16');
         expect(view.accounts).toEqual(['信用卡', '現金']);
         expect(view.account).toBe('信用卡');
-        expect(view.items.map((item) => [item.key, item.title])).toEqual([['2026/10/21#0', '交通'], ['1', '晚餐']]);
+        expect(view.items.map((item) => [item.key, item.title])).toEqual([['信用卡|2026/10/21#0', '交通'], ['1', '晚餐']]);
         expect(view.total).toBe(250);
         expect(getStatementView(expenses, '現金', '2026-10-15', '2026-11-16').total).toBe(10);
         expect(getStatementView({}, '', '2026-10-15', '2026-11-16')).toEqual({ accounts: [], account: '', items: [], total: 0 });
