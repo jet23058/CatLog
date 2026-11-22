@@ -263,9 +263,15 @@ const recordHistory = async (db, uid, metas, currentGeneration, data) => {
 };
 
 /** 目前的保留方式：設定檔優先，沒有時沿用資料裡的舊設定（core: resolveHistoryMode）。 */
+// 讀不到設定檔（離線、規則未部署）時沿用資料裡的設定或預設 auto，不讓存檔流程誤判成歷史寫入失敗。
 export const readHistoryMode = async (db, uid, data = null) => {
-    const snapshot = await getDoc(historySettingsRefFor(db, uid));
-    return resolveHistoryMode(snapshotExists(snapshot) ? snapshot.data() : null, data);
+    try {
+        const snapshot = await getDoc(historySettingsRefFor(db, uid));
+        return resolveHistoryMode(snapshotExists(snapshot) ? snapshot.data() : null, data);
+    } catch (error) {
+        console.warn('Failed to read history settings', error);
+        return resolveHistoryMode(null, data);
+    }
 };
 
 /** 切換保留方式：只寫設定檔，不重寫財務資料、不產生新版本；下次存檔時依新設定清理。 */
