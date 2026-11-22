@@ -21,6 +21,12 @@ docker compose down
 
 見 `.env.example`。`VITE_*` 給前端使用；`FIREBASE_PROJECT_ID` 給 `/api/stock-quote` 驗證 Firebase ID token。
 
+### Google 登入顯示自己的網域
+
+正式站的 `VITE_FIREBASE_AUTH_DOMAIN` 設為 `catlog.cloudjet.work`，登入畫面才會顯示「以繼續使用 catlog.cloudjet.work」，而不是 `asset-prod.firebaseapp.com`。`vercel.json` 把 `/__/auth/*`、`/__/firebase/*` 轉送到 `asset-prod.firebaseapp.com`，這兩個路徑不套用安全標頭（`X-Frame-Options: DENY` 會擋掉登入用的 iframe）。
+
+另外需要在 Google Cloud 控制台（API 和服務 → 憑證 → Firebase 自動建立的 Web client）的「已授權的重新導向 URI」加上 `https://catlog.cloudjet.work/__/auth/handler`。
+
 ## 測試與建置
 
 ```bash

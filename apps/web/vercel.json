@@ -1,13 +1,38 @@
 {
+  "rewrites": [
+    {
+      "source": "/__/auth/:path*",
+      "destination": "https://asset-prod.firebaseapp.com/__/auth/:path*"
+    },
+    {
+      "source": "/__/firebase/:path*",
+      "destination": "https://asset-prod.firebaseapp.com/__/firebase/:path*"
+    }
+  ],
   "headers": [
     {
-      "source": "/(.*)",
+      "source": "/((?!__/).*)",
       "headers": [
-        { "key": "X-Content-Type-Options", "value": "nosniff" },
-        { "key": "X-Frame-Options", "value": "DENY" },
-        { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
-        { "key": "Permissions-Policy", "value": "camera=(), microphone=(), geolocation=(), payment=()" },
-        { "key": "Strict-Transport-Security", "value": "max-age=63072000; includeSubDomains" },
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "X-Frame-Options",
+          "value": "DENY"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "strict-origin-when-cross-origin"
+        },
+        {
+          "key": "Permissions-Policy",
+          "value": "camera=(), microphone=(), geolocation=(), payment=()"
+        },
+        {
+          "key": "Strict-Transport-Security",
+          "value": "max-age=63072000; includeSubDomains"
+        },
         {
           "key": "Content-Security-Policy-Report-Only",
           "value": "default-src 'self'; script-src 'self' https://apis.google.com https://www.gstatic.com https://www.dropbox.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://*.googleusercontent.com https://ui-avatars.com; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://*.firebaseapp.com https://api.exchangerate-api.com https://*.dropbox.com https://*.dropboxusercontent.com; frame-src https://*.firebaseapp.com https://accounts.google.com https://www.dropbox.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
@@ -17,7 +42,10 @@
     {
       "source": "/api/(.*)",
       "headers": [
-        { "key": "Cache-Control", "value": "private, max-age=60" }
+        {
+          "key": "Cache-Control",
+          "value": "private, max-age=60"
+        }
       ]
     }
   ]
