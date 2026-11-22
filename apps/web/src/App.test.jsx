@@ -942,17 +942,20 @@ describe('App Integration Tests', () => {
 
         await waitFor(() => expect(screen.getByText('淨資產')).toBeInTheDocument());
         // Default tab is Assets
-        expect(screen.getByText('Test Asset')).toBeInTheDocument();
+        // 資產配置圖與資產明細各列一次
+        expect(screen.getAllByText('Test Asset')).toHaveLength(2);
+        expect(screen.getByText('資產配置')).toBeInTheDocument();
+        expect(screen.getByRole('img', { name: /資產配置：Test Asset 100\.0%/ })).toBeInTheDocument();
         // Removed Test Memo check due to duplication in DOM
 
         // Switch to Income Tab
-        const incomeTab = screen.getByText('本月收入 (Income)');
+        const incomeTab = screen.getByText('本月收入');
         await user.click(incomeTab);
         await waitFor(() => expect(screen.getByText('Test Co')).toBeInTheDocument());
         expect(screen.getByText(`${currentYear}-01-15`)).toBeInTheDocument();
 
         // Switch to Cost Tab
-        const costTab = screen.getByText('本月花費 (Cost)');
+        const costTab = screen.getByText('本月花費');
         await user.click(costTab);
         await waitFor(() => expect(screen.getByText('Lunch')).toBeInTheDocument());
 
