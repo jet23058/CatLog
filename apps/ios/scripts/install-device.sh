@@ -38,5 +38,8 @@ echo "▶ 安裝…"
 xcrun devicectl device install app --device "${DEVICE}" "${APP}" >/dev/null
 echo "▶ 打開 App…"
 # App 的啟動參數要放在 -- 之後，否則 devicectl 會當成自己的選項。
-xcrun devicectl device process launch --device "${DEVICE}" work.cloudjet.catlog ${LAUNCH_ARGS[@]+-- "${LAUNCH_ARGS[@]}"} >/dev/null
+# 手機鎖著時打不開 App，但已經裝好了，不算失敗。
+if ! xcrun devicectl device process launch --device "${DEVICE}" work.cloudjet.catlog ${LAUNCH_ARGS[@]+-- "${LAUNCH_ARGS[@]}"} >/dev/null 2>&1; then
+  echo "（已安裝，但 App 沒有自動打開：手機可能鎖著，解鎖後直接點開即可）"
+fi
 echo "✓ 完成"

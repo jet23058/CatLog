@@ -95,6 +95,22 @@ apps/ios/scripts/remote-install.sh       # 之後每次安裝
 
 LaunchAgent 只有在執行 `remote-install.sh` 時才會跑（不會開機自動執行或排程）。需要 Mac 保持登入**而且螢幕沒有鎖定**（鎖定或睡眠時登入鑰匙圈會鎖住，簽章會失敗，出現 `errSecInternalComponent`）、iPhone 接著線；紀錄在 `~/Library/Logs/catlog-install-device.log`。
 
+### 發行與自動重新簽章（免費 Apple 帳號）
+
+免費帳號簽的 App 7 天後就打不開，所以手機上用的是**發行版本**（最新的 `ios-vX.Y.Z` tag），並定期重新簽章：
+
+```bash
+apps/ios/scripts/setup-launch-agent.sh schedule    # 建立排程：每週一、四 09:00 自動重新簽章並安裝
+apps/ios/scripts/resign-release.sh                 # 也可以手動馬上跑一次
+apps/ios/scripts/setup-launch-agent.sh unschedule  # 移除排程
+```
+
+- 在 `~/Library/Application Support/CatLog/release-worktree` 另開一個 git worktree 切到最新的 `ios-v*` tag 建置，不會動到開發用的工作區；`Local.xcconfig` 與 `GoogleService-Info-*.plist` 從開發工作區複製過去。
+- 安裝的是連正式站的 Release 版，保留手機上的設定（同 `--production-update`）。
+- 需要 Mac 已登入且螢幕沒鎖、iPhone 接線或與 Mac 在同一個 Wi-Fi；錯過排程時間（Mac 睡眠）時，醒來後會補跑。
+- 成功或失敗都會跳 macOS 通知；最近一次結果在 `~/Library/Logs/catlog-resign-status.txt`，完整紀錄在 `~/Library/Logs/catlog-resign.log`。
+- 發行新版本：合併後打 `ios-vX.Y.Z` tag 並推上 GitHub，下一次排程就會裝新版。
+
 ### 不用 Firebase 檢查畫面
 
 Debug 建置以 `-CatLogDemo` 啟動會載入範例資料（Xcode：Scheme → Run → Arguments）。
