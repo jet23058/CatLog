@@ -1,5 +1,6 @@
 // 月份明細頁：某個月的資產、負債、收入、花費、備忘錄與前後月比較。
 // 從 App.jsx 的 DetailView 搬出，邏輯保持原樣；web 與 iOS 共用。
+import { getMonthlyStats } from './dashboard.js';
 import { getDebtEventImpact, getDebtTotal, getEffectiveDebtSnapshotAtDate, getMonthEndDateKey, getMonthlyDebtInterestEstimate } from './debts.js';
 import { getLatestSnapshotDate } from './snapshots.js';
 import { getDebtEventTargets } from './records.js';
@@ -149,3 +150,41 @@ export const getMonthDetail = (data = {}, monthKey) => {
 
 // 某個月可以做「利率調整」的對象：該月月底有效的股票質押（web 用編輯中的負債清單算，iOS 用這個）。
 export const getMonthDebtEventTargets = (data = {}, monthKey) => getDebtEventTargets(getMonthDetail(data, monthKey).debts);
+
+// --- 月份明細的圖表資料（web 與 iOS 共用） ---
+
+// 到這個月為止最近 count 個月（可跨年）：淨資產、收入、支出。沒有資產紀錄的月份 assets 為 null。
+export const getRecentMonthTrend = (data, monthKey, count = 6) => {
+    const [year, month] = String(monthKey).split('-').map(Number);
+    if (!year || !month) return [];
+    const rows = [year - 1, year].flatMap((y) => getMonthlyStats(data, y).map((row) => ({ ...row, year: y })))
+        .filter((row) => row.year < year || row.month <= month);
+    return rows.slice(-count).map((row) => ({
+        monthKey: `${row.year}-${String(row.month).padStart(2, '0')}`,
+        year: row.year,
+        month: row.month,
+        assets: row.hasRecord ? row.assets : null,
+        income: row.income,
+        cost: row.cost
+    }));
+};
+
+// 資產配置：依名稱加總，金額大的前 topN 筆各一份，其餘合併成「其他」。只算正數金額。
+export const getAssetAllocation = (assets = [], topN = 4) => {
+    const byName = new Map();
+    (assets || []).forEach((item) => {
+        const amount = Number(item?.amount) || 0;
+        if (amount <= 0) return;
+        const name = item?.name || '未命名';
+        byName.set(name, (byName.get(name) || 0) + amount);
+    });
+    const sorted = [...byName.entries()].map(([name, amount]) => ({ name, amount })).sort((a, b) => b.amount - a.amount);
+    const total = sorted.reduce((sum, item) => sum + item.amount, 0);
+    const top = sorted.slice(0, topN);
+    const restAmount = sorted.slice(topN).reduce((sum, item) => sum + item.amount, 0);
+    const slices = restAmount > 0 ? [...top, { name: '其他', amount: restAmount, isOther: true }] : top;
+    return {
+        total,
+        slices: slices.map((item) => ({ ...item, isOther: !!item.isOther, share: total > 0 ? item.amount / total : 0 }))
+    };
+};
