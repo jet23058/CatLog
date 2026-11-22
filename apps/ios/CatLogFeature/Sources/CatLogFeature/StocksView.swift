@@ -189,7 +189,7 @@ struct StocksView: View {
                 }
                 Text(pnlLabel(stats.totalPnl))
                     .font(.title.bold().monospacedDigit())
-                    .foregroundStyle(stats.totalPnl >= 0 ? .green : .red)
+                    .foregroundStyle(stats.totalPnl >= 0 ? Theme.up : Theme.down)
                 if market == "US" && !isPrivacyMode {
                     Text("匯率 USD/TWD \(core.formatExchangeRate(rate))\(usdToTwdRate == nil ? "（預設）" : "")")
                         .font(.caption2).foregroundStyle(.secondary)
@@ -227,17 +227,17 @@ struct StocksView: View {
 
     private func leadersSection(_ overview: StockOverview) -> some View {
         Section("排行") {
-            LeaderGroup(title: "賺最多", rows: overview.winners, color: .green, value: signed)
+            LeaderGroup(title: "賺最多", rows: overview.winners, color: Theme.up, value: signed)
             if overview.allWinners.count > 3 {
                 NavigationLink("查看全部獲利股（\(overview.allWinners.count)）") {
-                    LeaderboardList(title: "全部獲利股", rows: overview.allWinners, color: .green, value: signed)
+                    LeaderboardList(title: "全部獲利股", rows: overview.allWinners, color: Theme.up, value: signed)
                 }
                 .font(.footnote)
             }
-            LeaderGroup(title: "虧最多", rows: overview.losers, color: .red, value: signed)
+            LeaderGroup(title: "虧最多", rows: overview.losers, color: Theme.down, value: signed)
             if overview.allLosers.count > 3 {
                 NavigationLink("查看全部虧損股（\(overview.allLosers.count)）") {
-                    LeaderboardList(title: "全部虧損股", rows: overview.allLosers, color: .red, value: signed)
+                    LeaderboardList(title: "全部虧損股", rows: overview.allLosers, color: Theme.down, value: signed)
                 }
                 .font(.footnote)
             }
@@ -252,12 +252,12 @@ struct StocksView: View {
                     Text(row.symbol).font(.caption.bold()).lineLimit(1).frame(width: 72, alignment: .leading)
                     GeometryReader { proxy in
                         Capsule()
-                            .fill(row.totalPnl >= 0 ? Color.green.opacity(0.7) : Color.red.opacity(0.7))
+                            .fill(row.totalPnl >= 0 ? Theme.up.opacity(0.7) : Theme.down.opacity(0.7))
                             .frame(width: proxy.size.width * row.barWidth / 100)
                     }
                     .frame(height: 10)
                     Text(signed(row.totalPnl)).font(.caption.monospacedDigit())
-                        .foregroundStyle(row.totalPnl >= 0 ? .green : .red)
+                        .foregroundStyle(row.totalPnl >= 0 ? Theme.up : Theme.down)
                         .frame(width: 96, alignment: .trailing)
                 }
                 .accessibilityElement(children: .combine)
@@ -289,7 +289,7 @@ struct StocksView: View {
                         Spacer()
                         VStack(alignment: .trailing, spacing: 2) {
                             Text(signed(row.totalPnl)).monospacedDigit()
-                                .foregroundStyle(row.totalPnl >= 0 ? .green : .red)
+                                .foregroundStyle(row.totalPnl >= 0 ? Theme.up : Theme.down)
                             if row.buyAmount > 0 {
                                 Text(StocksView.percent(row.roi)).font(.caption).foregroundStyle(.secondary)
                             }
@@ -319,7 +319,7 @@ struct StocksView: View {
                             Spacer()
                             Text("估值 \(money(latestValue))")
                             Text("\(signed(diff))\(holding.diffRate.map { "・\(core.formatRate($0))" } ?? "")")
-                                .foregroundStyle(diff >= 0 ? .green : .red)
+                                .foregroundStyle(diff >= 0 ? Theme.up : Theme.down)
                         }
                         .font(.caption.monospacedDigit())
                     }
@@ -453,7 +453,7 @@ struct StockTradesView: View {
                     Spacer()
                     Text(isPrivacyMode ? "****" : "\(row.totalPnl >= 0 ? "+" : "")\(core.formatMoney(row.totalPnl, market: row.market))")
                         .bold().monospacedDigit()
-                        .foregroundStyle(row.totalPnl >= 0 ? .green : .red)
+                        .foregroundStyle(row.totalPnl >= 0 ? Theme.up : Theme.down)
                 }
             }
             Section("交易明細（\(trades.count) 筆）") {
