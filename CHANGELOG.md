@@ -5,7 +5,13 @@
 
 ## [Unreleased]
 
-為 iOS 原生版做準備：改成 monorepo，並把計算邏輯抽成 web 與 iOS 共用的核心。web 的功能與行為不變。
+## [3.1.0] - 2026-11-22
+
+第一個 iOS 原生版本（`ios-v3.1.0`），與 web（`web-v3.1.0`）共用同一份 Firestore 資料與 `packages/core` 計算核心；同時改版兩邊的介面（首頁、月份明細與圖表、個股績效、新增畫面，紅漲綠跌）。也加入雲端歷史版本、正式站嚴格的 Firestore 規則與 Google 登入自訂網域。版本號規則：web 與 iOS 共用 MAJOR.MINOR、各自 PATCH，tag 分別為 `web-vX.Y.Z`、`ios-vX.Y.Z`。
+
+iOS 加上 App 圖示（與 web 相同的 logo，補滿四角成正方形）。
+
+iOS 以免費 Apple 帳號簽章安裝，每 7 天內需重新簽章：新增 `resign-release.sh` 與 `setup-launch-agent.sh schedule`，每週一、四自動用最新的 `ios-v*` tag 重新簽章並安裝（見 `apps/ios/README.md`）。
 
 ### 重構 (Refactor)
 - [core] 新增 `packages/core`（`@catlog/core`）：從 `App.jsx` 抽出 95 個純函式與常數（資料格式、負債與質押利息、持倉快照、CSV 與證券交易匯入、花費匯入、備份格式、差異比對、金額格式化），web 改為從 core import。
