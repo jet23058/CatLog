@@ -25,6 +25,8 @@ struct MonthDetailView: View {
     }()
     @AppStorage("isPrivacyMode") private var isPrivacyMode = false
     @State private var detail: MonthDetail?
+    @State private var trend: [MonthTrendPoint] = []
+    @State private var allocation: AssetAllocation?
     @State private var errorMessage: String?
     @State private var expenseAccount: String?
 
@@ -39,6 +41,7 @@ struct MonthDetailView: View {
             if let detail {
                 monthSwitcher(detail)
                 summarySection(detail)
+                chartsSection(detail)
                 assetsSection(detail)
                 if !detail.incomes.isEmpty { incomesSection(detail) }
                 debtsSection(detail)
@@ -122,6 +125,7 @@ struct MonthDetailView: View {
                         .background(.white, in: .rect(cornerRadius: 12))
                     Text("較上月").font(.footnote).foregroundStyle(Theme.onAccentSecondary)
                 }
+                MonthTrendSparkline(trend: trend)
                 Text("綜合損益 \(signedWan(summary.compositeScore))（收入成長＋資產成長）")
                     .font(.footnote.monospacedDigit())
                     .foregroundStyle(Theme.onAccentSecondary)
@@ -143,6 +147,21 @@ struct MonthDetailView: View {
                 }
             }
             .plainListRow()
+        }
+    }
+
+    /// 圖表：資產配置、近 6 個月收入與支出、本月花費類別（沒有資料的圖不顯示）。
+    private func chartsSection(_ detail: MonthDetail) -> some View {
+        Section {
+            if let allocation, !allocation.slices.isEmpty {
+                AssetAllocationCard(allocation: allocation, core: core, isPrivacyMode: isPrivacyMode).plainListRow()
+            }
+            if trend.contains(where: { $0.income > 0 || $0.cost > 0 }) {
+                IncomeCostCard(trend: trend, core: core, isPrivacyMode: isPrivacyMode).plainListRow()
+            }
+            if !detail.expenseCategories.isEmpty {
+                CostCategoryCard(categories: detail.expenseCategories, total: detail.summary.monthlyCost, core: core, isPrivacyMode: isPrivacyMode).plainListRow()
+            }
         }
     }
 
@@ -287,7 +306,10 @@ struct MonthDetailView: View {
 
     private func load() {
         do {
-            detail = try core.monthDetail(monthKey)
+            let loaded = try core.monthDetail(monthKey)
+            detail = loaded
+            trend = (try? core.recentMonthTrend(monthKey, count: 6)) ?? []
+            allocation = try? core.assetAllocation(loaded.assets, topN: 4)
             errorMessage = nil
         } catch {
             errorMessage = error.localizedDescription
