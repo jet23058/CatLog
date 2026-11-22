@@ -1433,7 +1433,7 @@ const AddIncomeModal = ({ onClose, onSave, assetNames, exchangeRateCache }) => {
                 </div>
                 <div className="mt-6 flex gap-3">
                     <button onClick={onClose} className="flex-1 py-2.5 rounded-xl text-slate-500 hover:bg-slate-100 font-bold text-sm transition-colors">取消</button>
-                    <button onClick={handleSubmit} className="flex-1 py-2.5 rounded-xl bg-teal-600 text-white font-bold text-sm hover:bg-teal-700 shadow-lg shadow-teal-200 transition-all">確認新增</button>
+                    <button onClick={handleSubmit} className="flex-1 py-2.5 rounded-xl bg-teal-700 text-white font-bold text-sm hover:bg-teal-800 shadow-lg shadow-teal-200 transition-all">確認新增</button>
                 </div>
             </div>
         </div>
@@ -1665,7 +1665,7 @@ const AddAssetModal = ({ onClose, onSave, historyRecords, exchangeRateCache }) =
                             <div className="flex items-center justify-between gap-3">
                                 <div>
                                     <div className="text-xs text-teal-700 font-bold flex items-center gap-1"><Sparkles size={12} /> 從上次資產紀錄帶入</div>
-                                    <div className="text-[10px] text-slate-400 mt-1">
+                                    <div className="text-xs text-slate-400 mt-1">
                                         {previousAssetSnapshot.date} · {previousAssetSnapshot.assets.length} 筆，帶入後可刪改再儲存
                                     </div>
                                 </div>
@@ -1684,7 +1684,7 @@ const AddAssetModal = ({ onClose, onSave, historyRecords, exchangeRateCache }) =
                     {/* --- 新增：快速帶入區域 --- */}
                     {suggestions.length > 0 && (
                         <div className="mb-1 -mt-1">
-                            <label className="text-[10px] text-teal-600 font-bold mb-2 ml-1 flex items-center gap-1">
+                            <label className="text-xs text-teal-600 font-bold mb-2 ml-1 flex items-center gap-1">
                                 <Sparkles size={10} /> 快速帶入 (來自上筆紀錄)
                             </label>
                             <div className="flex flex-wrap gap-2">
@@ -1757,14 +1757,14 @@ const AddAssetModal = ({ onClose, onSave, historyRecords, exchangeRateCache }) =
                         <div className="bg-slate-50 border border-slate-100 rounded-2xl p-3">
                             <div className="flex items-center justify-between mb-2">
                                 <span className="text-xs text-slate-500 font-bold">本次待新增 {pendingAssets.length} 筆</span>
-                                <span className="text-[10px] text-slate-400">最後一次儲存全部</span>
+                                <span className="text-xs text-slate-400">最後一次儲存全部</span>
                             </div>
                             <div className="space-y-2">
                                 {pendingAssets.map((asset) => (
                                     <div key={asset.id} className="flex items-center justify-between gap-3 bg-white border border-slate-100 rounded-xl px-3 py-2">
                                         <div className="min-w-0">
                                             <div className="font-serif-tc font-bold text-sm text-slate-700 truncate">{asset.name}</div>
-                                            <div className="text-[10px] text-slate-400 font-inter">{asset.date} · {asset.currency}</div>
+                                            <div className="text-xs text-slate-400 font-inter">{asset.date} · {asset.currency}</div>
                                         </div>
                                         <div className="flex items-center gap-2 shrink-0">
                                             <div className="w-24">
@@ -1775,7 +1775,7 @@ const AddAssetModal = ({ onClose, onSave, historyRecords, exchangeRateCache }) =
                                                     onChange={(e) => handlePendingAmountChange(asset.id, e.target.value)}
                                                     className="w-full px-2 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-right text-sm font-inter font-bold text-slate-600 focus:border-teal-500 outline-none"
                                                 />
-                                                {asset.currency !== 'TWD' && <div className="text-[10px] text-slate-400 text-right mt-0.5">≈ {formatMoney(asset.amount)}</div>}
+                                                {asset.currency !== 'TWD' && <div className="text-xs text-slate-400 text-right mt-0.5">≈ {formatMoney(asset.amount)}</div>}
                                             </div>
                                             <button type="button" onClick={() => handleRemovePending(asset.id)} className="p-1.5 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors" title="移除暫存"><Trash2 size={14} /></button>
                                         </div>
@@ -1787,7 +1787,7 @@ const AddAssetModal = ({ onClose, onSave, historyRecords, exchangeRateCache }) =
                 </div>
                 <div className="mt-6 flex gap-3">
                     <button onClick={onClose} className="flex-1 py-2.5 rounded-xl text-slate-500 hover:bg-slate-100 font-bold text-sm transition-colors">取消</button>
-                    <button onClick={handleSaveAll} className="flex-1 py-2.5 rounded-xl bg-teal-600 text-white font-bold text-sm hover:bg-teal-700 shadow-lg shadow-teal-200 transition-all">
+                    <button onClick={handleSaveAll} className="flex-1 py-2.5 rounded-xl bg-teal-700 text-white font-bold text-sm hover:bg-teal-800 shadow-lg shadow-teal-200 transition-all">
                         儲存全部{pendingAssets.length > 0 ? ` (${pendingAssets.length})` : ''}
                     </button>
                 </div>
@@ -1882,7 +1882,7 @@ const AddDebtModal = ({ onClose, onSave, debtNames = [], accountOptions = [], as
                             {selectableAccountOptions.map((item) => <option key={item} value={item}>{item}</option>)}
                         </select>
                         <input type="text" value={lender} onChange={(e) => setLender(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl focus:border-rose-500 focus:ring-1 focus:ring-rose-500 outline-none bg-white font-serif-tc text-slate-800 placeholder:text-slate-300" placeholder="例如：國泰證券 / 永豐金" />
-                        <p className="text-[10px] text-slate-400 mt-1 ml-1">會優先列出負債日期當月或之前最近一次資產紀錄中的帳戶，也可以自行輸入。</p>
+                        <p className="text-xs text-slate-400 mt-1 ml-1">會優先列出負債日期當月或之前最近一次資產紀錄中的帳戶，也可以自行輸入。</p>
                     </div>
                     <div>
                         <label className="text-xs text-slate-400 font-bold mb-1 block ml-1">金額 (TWD)</label>
@@ -1892,21 +1892,21 @@ const AddDebtModal = ({ onClose, onSave, debtNames = [], accountOptions = [], as
                         <div className="bg-rose-50/60 border border-rose-100 rounded-2xl p-3">
                             <div className="flex items-center justify-between mb-2">
                                 <label className="text-xs text-rose-500 font-bold block ml-1">質押股票與利率</label>
-                                <span className="text-[10px] text-slate-400">利率請輸入 % 數</span>
+                                <span className="text-xs text-slate-400">利率請輸入 % 數</span>
                             </div>
                             <div className="space-y-2">
                                 {pledgeStocks.map((row, index) => (
                                     <div key={row.id} className="grid grid-cols-[1fr_74px_82px_76px] gap-2 items-end">
                                         <div>
-                                            {index === 0 && <label className="text-[10px] text-slate-400 font-bold mb-1 block">股票代號 / 名稱</label>}
+                                            {index === 0 && <label className="text-xs text-slate-400 font-bold mb-1 block">股票代號 / 名稱</label>}
                                             <input type="text" value={row.symbol} onChange={(e) => updatePledgeStock(row.id, 'symbol', e.target.value)} className="w-full p-2.5 border border-rose-100 rounded-xl focus:border-rose-500 outline-none bg-white text-sm font-inter text-slate-800 placeholder:text-slate-300" placeholder="0050 / 台積電" />
                                         </div>
                                         <div>
-                                            {index === 0 && <label className="text-[10px] text-slate-400 font-bold mb-1 block">股數</label>}
+                                            {index === 0 && <label className="text-xs text-slate-400 font-bold mb-1 block">股數</label>}
                                             <input type="number" step="1" min="0" value={row.shares} onChange={(e) => updatePledgeStock(row.id, 'shares', e.target.value)} className="w-full p-2.5 border border-rose-100 rounded-xl focus:border-rose-500 outline-none bg-white text-sm font-inter text-right placeholder:text-slate-300" placeholder="0" />
                                         </div>
                                         <div>
-                                            {index === 0 && <label className="text-[10px] text-slate-400 font-bold mb-1 block">利率 %</label>}
+                                            {index === 0 && <label className="text-xs text-slate-400 font-bold mb-1 block">利率 %</label>}
                                             <input type="number" step="0.01" value={row.rate} onChange={(e) => updatePledgeStock(row.id, 'rate', e.target.value)} className="w-full p-2.5 border border-rose-100 rounded-xl focus:border-rose-500 outline-none bg-white text-sm font-inter text-right placeholder:text-slate-300" placeholder="2.5" />
                                         </div>
                                         <div className="flex gap-1">
@@ -1917,7 +1917,7 @@ const AddDebtModal = ({ onClose, onSave, debtNames = [], accountOptions = [], as
                                 ))}
                             </div>
                             {estimatedPledgeInterest.annual > 0 && (
-                                <div className="grid grid-cols-2 gap-2 mt-3 text-[10px]">
+                                <div className="grid grid-cols-2 gap-2 mt-3 text-xs">
                                     <div className="rounded-xl bg-white px-3 py-2 border border-rose-100">
                                         <div className="text-slate-400">預估月息</div>
                                         <div className="font-inter font-bold text-amber-700">{formatMoney(estimatedPledgeInterest.monthly)}</div>
@@ -1937,7 +1937,7 @@ const AddDebtModal = ({ onClose, onSave, debtNames = [], accountOptions = [], as
                 </div>
                 <div className="mt-6 flex gap-3">
                     <button onClick={onClose} className="flex-1 py-2.5 rounded-xl text-slate-500 hover:bg-slate-100 font-bold text-sm transition-colors">取消</button>
-                    <button onClick={handleSubmit} className="flex-1 py-2.5 rounded-xl bg-rose-600 text-white font-bold text-sm hover:bg-rose-700 shadow-lg shadow-rose-200 transition-all">確認新增</button>
+                    <button onClick={handleSubmit} className="flex-1 py-2.5 rounded-xl bg-teal-700 text-white font-bold text-sm hover:bg-teal-800 shadow-lg shadow-rose-200 transition-all">確認新增</button>
                 </div>
             </div>
         </div>
@@ -2051,21 +2051,21 @@ const AddDebtEventModal = ({ monthKey, onClose, onSave, debtNames = [], debtTarg
                         <div className="bg-amber-50/70 border border-amber-100 rounded-2xl p-3">
                             <div className="flex items-center justify-between mb-2">
                                 <label className="text-xs text-amber-700 font-bold block ml-1">調整後利率</label>
-                                <span className="text-[10px] text-slate-400">會用這個日期開始套用新利率</span>
+                                <span className="text-xs text-slate-400">會用這個日期開始套用新利率</span>
                             </div>
                             <div className="space-y-2">
                                 {rateChangeRows.map((row, index) => (
                                     <div key={row.id} className="grid grid-cols-[1fr_74px_82px_76px] gap-2 items-end">
                                         <div>
-                                            {index === 0 && <label className="text-[10px] text-slate-400 font-bold mb-1 block">股票代號 / 名稱</label>}
+                                            {index === 0 && <label className="text-xs text-slate-400 font-bold mb-1 block">股票代號 / 名稱</label>}
                                             <input type="text" value={row.symbol} onChange={(e) => updateRateChangeRow(row.id, 'symbol', e.target.value)} className="w-full p-2.5 border border-amber-100 rounded-xl focus:border-amber-500 outline-none bg-white text-sm font-inter text-slate-800 placeholder:text-slate-300" placeholder="0050 / 台積電" />
                                         </div>
                                         <div>
-                                            {index === 0 && <label className="text-[10px] text-slate-400 font-bold mb-1 block">股數</label>}
+                                            {index === 0 && <label className="text-xs text-slate-400 font-bold mb-1 block">股數</label>}
                                             <input type="number" step="1" min="0" value={row.shares} onChange={(e) => updateRateChangeRow(row.id, 'shares', e.target.value)} className="w-full p-2.5 border border-amber-100 rounded-xl focus:border-amber-500 outline-none bg-white text-sm font-inter text-right placeholder:text-slate-300" placeholder="0" />
                                         </div>
                                         <div>
-                                            {index === 0 && <label className="text-[10px] text-slate-400 font-bold mb-1 block">新利率 %</label>}
+                                            {index === 0 && <label className="text-xs text-slate-400 font-bold mb-1 block">新利率 %</label>}
                                             <input type="number" step="0.01" value={row.rate} onChange={(e) => updateRateChangeRow(row.id, 'rate', e.target.value)} className="w-full p-2.5 border border-amber-100 rounded-xl focus:border-amber-500 outline-none bg-white text-sm font-inter text-right placeholder:text-slate-300" placeholder="3.1" />
                                         </div>
                                         <div className="flex gap-1">
@@ -2081,7 +2081,7 @@ const AddDebtEventModal = ({ monthKey, onClose, onSave, debtNames = [], debtTarg
                         <div>
                             <label className="text-xs text-slate-400 font-bold mb-1 block ml-1">擔保品</label>
                             <input type="text" value={collateralText} onChange={(e) => setCollateralText(e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none bg-slate-50 text-sm font-inter text-slate-800 placeholder:text-slate-300" placeholder="例如：0050:2, 0052:1" />
-                            <p className="text-[10px] text-slate-400 mt-1 ml-1">多檔請用逗號分隔，格式：代號:張數</p>
+                            <p className="text-xs text-slate-400 mt-1 ml-1">多檔請用逗號分隔，格式：代號:張數</p>
                         </div>
                     )}
                     <div>
@@ -2211,89 +2211,88 @@ const DetailView = ({ monthKey, data, onBack, onUpdateData, assetNames, isPrivac
     const floatingAssets = localAssets.filter(i => i.type === 'floating');
 
     return (
-        <div className="fixed inset-0 bg-[#F9F9F7] z-40 overflow-y-auto animate-[slideIn_0.3s_ease-out]">
+        <div className="fixed inset-0 bg-[#F4F5F7] z-40 overflow-y-auto animate-[slideIn_0.3s_ease-out]">
             {showDebtEventModal && <AddDebtEventModal monthKey={monthKey} onClose={() => setShowDebtEventModal(false)} onSave={handleAddDebtEvent} debtNames={debtNames} debtTargets={debtEventTargets} />}
             {confirmDeleteId && <ConfirmModal title="刪除資產" message="確定要刪除這筆資產紀錄嗎？" onConfirm={confirmDeleteAsset} onCancel={() => setConfirmDeleteId(null)} />}
             {confirmDeleteMonth && <ConfirmModal title="刪除整月紀錄" message={`確定要刪除 ${monthKey} 的資產、負債與備忘嗎？\n收入與花費紀錄會保留。`} onConfirm={executeDeleteMonth} onCancel={() => setConfirmDeleteMonth(false)} />}
 
-            <header className="sticky top-0 bg-[#F9F9F7]/95 backdrop-blur-md border-b border-slate-200 px-6 py-4 flex items-center justify-between z-50">
-                <button onClick={onBack} className="p-2 -ml-2 text-slate-500 hover:text-slate-800 transition-colors" aria-label="返回"><ArrowLeft size={24} strokeWidth={1.5} /></button>
-                <div className="flex flex-col items-center">
-                    <div className="flex items-center gap-4">
-                        <button disabled={!prevMonth} onClick={() => handleNavigate(prevMonth)} className={`p-1 ${!prevMonth ? 'text-slate-200' : 'text-slate-400 hover:text-slate-800'}`} aria-label="上一月"><ChevronLeft size={20} /></button>
-                        <span className="font-serif-tc font-bold text-xl text-slate-800 tracking-wide">{monthKey}</span>
-                        <button disabled={!nextMonth} onClick={() => handleNavigate(nextMonth)} className={`p-1 ${!nextMonth ? 'text-slate-200' : 'text-slate-400 hover:text-slate-800'}`} aria-label="下一月"><ChevronRight size={20} /></button>
-                    </div>
-                </div>
-                <div className="flex items-center gap-2 -mr-2">
-                    <button onClick={handleDeleteMonth} className="p-2 rounded-full text-slate-400 hover:text-rose-500 hover:bg-rose-50 transition-colors" title="刪除整月紀錄" aria-label="刪除整月紀錄"><Trash2 size={20} strokeWidth={1.5} /></button>
+            <header className="sticky top-0 bg-white/95 backdrop-blur border-b border-slate-200 px-4 py-3 flex items-center justify-between gap-2 z-50">
+                <button onClick={onBack} className="w-10 h-10 -ml-1 rounded-xl flex items-center justify-center text-slate-600 hover:bg-slate-100 transition-colors" aria-label="返回"><ArrowLeft size={22} strokeWidth={1.75} /></button>
+                <h2 className="text-base font-bold text-slate-900">月份明細</h2>
+                <div className="flex items-center gap-1">
+                    <button onClick={handleDeleteMonth} className="w-10 h-10 rounded-xl flex items-center justify-center text-slate-500 hover:text-red-600 hover:bg-red-50 transition-colors" title="刪除整月紀錄" aria-label="刪除整月紀錄"><Trash2 size={18} strokeWidth={1.75} /></button>
                     {(activeTab === 'assets' || activeTab === 'income' || activeTab === 'debt') && (
-                        <button onClick={() => isEditing ? handleSave() : setIsEditing(true)} className={`p-2 rounded-full transition-colors flex items-center gap-1 ${isEditing ? 'bg-teal-600 text-white shadow-lg px-4' : 'text-slate-500 hover:bg-slate-200'}`} aria-label={isEditing ? "儲存" : "編輯"}>
-                            {isEditing ? <><Check size={18} /><span className="text-xs font-bold">儲存</span></> : <Edit2 size={20} strokeWidth={1.5} />}
+                        <button onClick={() => isEditing ? handleSave() : setIsEditing(true)} className={`h-10 px-3 rounded-xl flex items-center gap-1.5 text-sm font-semibold transition-colors ${isEditing ? 'bg-teal-700 text-white hover:bg-teal-800' : 'text-teal-700 hover:bg-teal-50'}`} aria-label={isEditing ? "儲存" : "編輯"}>
+                            {isEditing ? <><Check size={16} />儲存</> : <><Edit2 size={16} strokeWidth={1.75} />編輯</>}
                         </button>
                     )}
                 </div>
             </header>
 
-            <main className="px-6 py-8 pb-32 space-y-8">
+            <main className="px-4 py-5 pb-32 space-y-6">
+                {/* 上一月／下一月：獨立的大按鈕，夾著月份名稱（與首頁年份切換相同）。 */}
+                <div className="flex items-center gap-2">
+                    <button disabled={!prevMonth} onClick={() => handleNavigate(prevMonth)} className={`w-11 h-11 rounded-xl border flex items-center justify-center transition-colors ${!prevMonth ? 'border-slate-200 bg-slate-50 text-slate-300' : 'border-slate-300 bg-white text-teal-700 hover:bg-slate-100'}`} aria-label="上一月"><ChevronLeft size={20} /></button>
+                    <span className="flex-1 text-center text-xl font-bold text-slate-900 font-inter">{monthKey}</span>
+                    <button disabled={!nextMonth} onClick={() => handleNavigate(nextMonth)} className={`w-11 h-11 rounded-xl border flex items-center justify-center transition-colors ${!nextMonth ? 'border-slate-200 bg-slate-50 text-slate-300' : 'border-slate-300 bg-white text-teal-700 hover:bg-slate-100'}`} aria-label="下一月"><ChevronRight size={20} /></button>
+                </div>
+
+                <section className="space-y-3">
+                    <div className="bg-teal-700 text-white rounded-3xl p-5 flex flex-col gap-2">
+                        <span className="text-sm text-teal-100">本月淨資產</span>
+                        <span className="text-4xl font-bold font-inter leading-tight">{isPrivacyMode ? '****' : formatWan(stats.netAssets)}</span>
+                        <div className="flex items-center gap-2 flex-wrap">
+                            <span className={`bg-white rounded-xl px-2.5 py-1 text-sm font-semibold font-inter ${isPrivacyMode ? 'text-slate-900' : trendTextClass(stats.assetDiff)}`}>
+                                {isPrivacyMode ? '****' : `${trendArrow(stats.assetDiff)} ${stats.assetDiff > 0 ? '+' : ''}${formatWan(stats.assetDiff)}`}
+                            </span>
+                            <span className="text-sm text-teal-100">較上月</span>
+                        </div>
+                        <div className="text-sm text-teal-100 font-inter flex items-center gap-1 flex-wrap">
+                            <span>綜合損益 {isPrivacyMode ? '****' : `${stats.compositeScore >= 0 ? '+' : ''}${formatWan(stats.compositeScore)}`}・投資占比 {formatRate(stats.investmentRate)}</span>
+                            {!isPrivacyMode && (
+                                <div className="group/tooltip relative">
+                                    <Info size={12} className="cursor-help text-teal-200 hover:text-white transition-colors" aria-label="綜合損益計算方式" />
+                                    <AnalysisTooltip incomeDiff={stats.incomeDiff} assetDiff={stats.assetDiff} compositeScore={stats.compositeScore} />
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                    <p className="text-xs text-slate-500 px-1">點下面的卡片切換要看的明細。</p>
+                    <div className="grid grid-cols-2 gap-3">
+                        <button onClick={() => { setActiveTab('assets'); setIsEditing(false); }} aria-pressed={activeTab === 'assets'} className={`p-3 rounded-2xl text-left transition-all ${activeTab === 'assets' ? 'bg-white ring-2 ring-teal-700' : 'bg-white hover:ring-2 hover:ring-slate-200'}`}>
+                            <div className={`text-sm mb-1 ${activeTab === 'assets' ? 'text-teal-700 font-semibold' : 'text-slate-600'}`}>淨資產</div>
+                            <AmountWithTooltip amount={stats.netAssets} className="text-lg font-inter font-bold text-slate-900" align="left" masked={isPrivacyMode} />
+                        </button>
+                        <button onClick={() => { setActiveTab('income'); setIsEditing(false); }} aria-pressed={activeTab === 'income'} className={`p-3 rounded-2xl text-left transition-all ${activeTab === 'income' ? 'bg-white ring-2 ring-teal-700' : 'bg-white hover:ring-2 hover:ring-slate-200'}`}>
+                            <div className={`text-sm mb-1 ${activeTab === 'income' ? 'text-teal-700 font-semibold' : 'text-slate-600'}`}>本月收入</div>
+                            <AmountWithTooltip amount={stats.monthlyIncome} className="text-lg font-inter font-bold text-slate-900" align="left" prefix="+" masked={isPrivacyMode} />
+                        </button>
+                        <button onClick={() => { setActiveTab('cost'); setIsEditing(false); }} aria-pressed={activeTab === 'cost'} className={`p-3 rounded-2xl text-left transition-all ${activeTab === 'cost' ? 'bg-white ring-2 ring-teal-700' : 'bg-white hover:ring-2 hover:ring-slate-200'}`}>
+                            <div className={`text-sm mb-1 ${activeTab === 'cost' ? 'text-teal-700 font-semibold' : 'text-slate-600'}`}>本月花費</div>
+                            <AmountWithTooltip amount={stats.monthlyCost} className="text-lg font-inter font-bold text-slate-900" align="left" prefix="-" masked={isPrivacyMode} />
+                        </button>
+                        <button onClick={() => { setActiveTab('debt'); setIsEditing(false); }} aria-pressed={activeTab === 'debt'} className={`p-3 rounded-2xl text-left transition-all ${activeTab === 'debt' ? 'bg-white ring-2 ring-teal-700' : 'bg-white hover:ring-2 hover:ring-slate-200'}`}>
+                            <div className={`text-sm mb-1 ${activeTab === 'debt' ? 'text-teal-700 font-semibold' : 'text-slate-600'}`}>總負債</div>
+                            <AmountWithTooltip amount={stats.totalDebts} className="text-lg font-inter font-bold text-slate-900" align="left" masked={isPrivacyMode} />
+                        </button>
+                    </div>
+                </section>
+
                 <section>
-                    <div className="flex items-center gap-2 mb-2"><FileText size={16} className="text-teal-500" /><h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">當月備忘</h3></div>
+                    <div className="flex items-center gap-2 mb-2 px-1"><FileText size={16} className="text-teal-700" /><h3 className="text-base font-bold text-slate-900">當月備忘</h3></div>
                     {!isPrivacyMode && (
-                        <div className="mb-3 grid grid-cols-2 gap-2 text-[10px] text-slate-400">
-                            <div className="bg-white border border-slate-100 rounded-lg px-3 py-2">
-                                <span className="block font-bold text-slate-500 mb-0.5">資產快照</span>
+                        <div className="mb-3 grid grid-cols-2 gap-2 text-xs text-slate-500">
+                            <div className="bg-white rounded-xl px-3 py-2">
+                                <span className="block font-semibold text-slate-600 mb-0.5">資產快照</span>
                                 <span className="font-inter">{assetDate || '尚未記錄'}</span>
                             </div>
-                            <div className="bg-white border border-slate-100 rounded-lg px-3 py-2">
-                                <span className="block font-bold text-slate-500 mb-0.5">負債快照</span>
+                            <div className="bg-white rounded-xl px-3 py-2">
+                                <span className="block font-semibold text-slate-600 mb-0.5">負債快照</span>
                                 <span className="font-inter">{debtDate || '尚未記錄'}</span>
                             </div>
                         </div>
                     )}
-                    {isEditing ? <textarea value={localMemo} onChange={(e) => setLocalMemo(e.target.value)} className="w-full p-3 rounded-xl border border-slate-200 bg-white focus:border-teal-500 outline-none text-sm text-slate-700 font-serif-tc min-h-[80px]" placeholder="輸入本月備忘..." /> : <div className={`p-4 rounded-xl border border-slate-200/60 bg-white text-sm text-slate-700 font-serif-tc min-h-[60px] ${!localMemo ? 'text-slate-300 italic' : ''}`}>{localMemo || "無備忘紀錄"}</div>}
-                </section>
-
-                <section className="space-y-3">
-                    <div className="grid grid-cols-4 gap-3">
-                        <button onClick={() => { setActiveTab('assets'); setIsEditing(false); }} className={`p-4 rounded-xl border shadow-sm flex flex-col items-center justify-center text-center transition-all ${activeTab === 'assets' ? 'bg-teal-50 border-teal-500 ring-1 ring-teal-500 text-teal-900' : 'bg-white border-slate-100 text-slate-600 hover:bg-slate-50'}`}>
-                            <div className={`text-[10px] uppercase tracking-wider font-inter mb-1 ${activeTab === 'assets' ? 'text-teal-600 font-bold' : 'text-slate-400'}`}>淨資產</div>
-                            <AmountWithTooltip amount={stats.netAssets} className={`text-lg font-serif-tc font-bold justify-center ${activeTab === 'assets' ? 'text-teal-800' : 'text-slate-800'}`} align="center" masked={isPrivacyMode} />
-                        </button>
-                        <button onClick={() => { setActiveTab('income'); setIsEditing(false); }} className={`p-4 rounded-xl border shadow-sm flex flex-col items-center justify-center text-center transition-all ${activeTab === 'income' ? 'bg-emerald-50 border-emerald-500 ring-1 ring-emerald-500 text-emerald-900' : 'bg-white border-slate-100 text-slate-600 hover:bg-slate-50'}`}>
-                            <div className={`text-[10px] uppercase tracking-wider font-inter mb-1 ${activeTab === 'income' ? 'text-emerald-600 font-bold' : 'text-slate-400'}`}>本月收入 (Income)</div>
-                            <AmountWithTooltip amount={stats.monthlyIncome} className={`text-lg font-serif-tc font-bold justify-center ${activeTab === 'income' ? 'text-emerald-800' : 'text-emerald-700'}`} align="center" prefix="+" masked={isPrivacyMode} />
-                        </button>
-                        <button onClick={() => { setActiveTab('cost'); setIsEditing(false); }} className={`p-4 rounded-xl border shadow-sm flex flex-col items-center justify-center text-center transition-all ${activeTab === 'cost' ? 'bg-rose-50 border-rose-500 ring-1 ring-rose-500 text-rose-900' : 'bg-white border-slate-100 text-slate-600 hover:bg-slate-50'}`}>
-                            <div className={`text-[10px] uppercase tracking-wider font-inter mb-1 ${activeTab === 'cost' ? 'text-rose-600 font-bold' : 'text-slate-400'}`}>本月花費 (Cost)</div>
-                            <AmountWithTooltip amount={stats.monthlyCost} className={`text-lg font-serif-tc font-bold justify-center ${activeTab === 'cost' ? 'text-rose-800' : 'text-rose-700'}`} align="center" prefix="-" masked={isPrivacyMode} />
-                        </button>
-                        <button onClick={() => { setActiveTab('debt'); setIsEditing(false); }} className={`p-4 rounded-xl border shadow-sm flex flex-col items-center justify-center text-center transition-all ${activeTab === 'debt' ? 'bg-rose-50 border-rose-500 ring-1 ring-rose-500 text-rose-900' : 'bg-white border-slate-100 text-slate-600 hover:bg-slate-50'}`}>
-                            <div className={`text-[10px] uppercase tracking-wider font-inter mb-1 ${activeTab === 'debt' ? 'text-rose-600 font-bold' : 'text-slate-400'}`}>總負債</div>
-                            <AmountWithTooltip amount={stats.totalDebts} className={`text-lg font-serif-tc font-bold justify-center ${activeTab === 'debt' ? 'text-rose-800' : 'text-rose-700'}`} align="center" prefix="-" masked={isPrivacyMode} />
-                        </button>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-3">
-                        <div className="p-4 rounded-xl border border-slate-100 bg-white shadow-sm flex flex-col items-center justify-center text-center">
-                            <div className="text-[10px] text-slate-400 uppercase tracking-wider font-inter mb-1 flex items-center gap-1">
-                                綜合損益 <Activity size={12} />
-                                {!isPrivacyMode && (
-                                    <div className="group/tooltip relative">
-                                        <Info size={10} className="cursor-help text-slate-300 hover:text-slate-500 transition-colors" />
-                                        <AnalysisTooltip incomeDiff={stats.incomeDiff} assetDiff={stats.assetDiff} compositeScore={stats.compositeScore} />
-                                    </div>
-                                )}
-                            </div>
-                            <div className={`text-lg font-serif-tc font-bold ${stats.compositeScore >= 0 ? 'text-red-600' : 'text-green-700'} ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>
-                                {isPrivacyMode ? '****' : (stats.compositeScore >= 0 ? '+' : '') + formatWan(stats.compositeScore)}
-                            </div>
-                        </div>
-
-                        <div className="p-4 rounded-xl border border-slate-100 bg-white shadow-sm flex flex-col items-center justify-center text-center">
-                            <div className="text-[10px] text-slate-400 uppercase tracking-wider font-inter mb-1 flex items-center gap-1">投資占比 <PieChartIcon size={12} /></div>
-                            <div className="text-lg font-inter font-bold text-teal-600">{formatRate(stats.investmentRate)}</div>
-                        </div>
-                    </div>
+                    {isEditing ? <textarea value={localMemo} onChange={(e) => setLocalMemo(e.target.value)} className="w-full p-3 rounded-xl border border-slate-300 bg-white focus:border-teal-700 outline-none text-sm text-slate-800 min-h-[80px]" placeholder="輸入本月備忘..." /> : <div className={`p-4 rounded-xl bg-white text-sm min-h-[60px] ${!localMemo ? 'text-slate-400' : 'text-slate-800'}`}>{localMemo || "無備忘紀錄"}</div>}
                 </section>
 
                 {activeTab === 'assets' && (
@@ -3514,81 +3513,75 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
     const leaderboardModalTitle = leaderboardModalType === 'winners' ? '全部獲利股' : '全部虧損股';
 
     return (
-        <div className="min-h-screen bg-[#F9F9F7] text-slate-800 font-sans animate-[fadeIn_0.2s]">
-            <header className="sticky top-0 z-30 bg-[#F9F9F7]/95 backdrop-blur-md border-b border-slate-200/70 px-6 py-5">
-                <div className="flex items-center justify-between">
-                    <button onClick={onBack} className="p-2 -ml-2 text-slate-400 hover:text-slate-700 rounded-full hover:bg-white transition-colors" aria-label="返回"><ArrowLeft size={22} /></button>
-                    <div className="text-right">
-                        <div className="text-[10px] uppercase tracking-[0.2em] text-blue-400 font-inter">Stock Lab</div>
-                        <h2 className="text-xl font-serif-tc font-bold text-slate-800">個股績效</h2>
-                    </div>
-                </div>
+        <div className="min-h-screen bg-[#F4F5F7] text-slate-800 font-sans animate-[fadeIn_0.2s]">
+            <header className="sticky top-0 z-30 bg-white/95 backdrop-blur border-b border-slate-200 px-4 py-3 flex items-center gap-2">
+                <button onClick={onBack} className="w-10 h-10 -ml-1 rounded-xl flex items-center justify-center text-slate-600 hover:bg-slate-100 transition-colors" aria-label="返回"><ArrowLeft size={22} strokeWidth={1.75} /></button>
+                <h2 className="flex-1 text-center text-base font-bold text-slate-900 pr-9">個股績效</h2>
             </header>
 
-            <main className="px-6 py-6 pb-24 space-y-6">
-                <section className="bg-slate-900 text-white rounded-2xl p-5 shadow-xl shadow-slate-900/10 relative overflow-hidden">
-                    <div className="absolute -right-8 -top-8 w-32 h-32 bg-blue-500/20 rounded-full blur-2xl"></div>
+            <main className="px-4 py-5 pb-24 space-y-5">
+                <section className="bg-slate-900 text-white rounded-3xl p-5 relative overflow-hidden">
                     {marketFilter === 'US' && (
-                        <button onClick={() => setUsPnlCurrency((currency) => currency === 'USD' ? 'TWD' : 'USD')} className="absolute right-4 top-4 z-20 px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/20 border border-white/10 text-[10px] font-bold text-slate-200 transition-colors">
+                        <button onClick={() => setUsPnlCurrency((currency) => currency === 'USD' ? 'TWD' : 'USD')} className="absolute right-4 top-4 z-20 px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/20 border border-white/10 text-xs font-bold text-slate-200 transition-colors">
                             {usPnlCurrency === 'USD' ? '轉台幣' : '轉美金'}
                         </button>
                     )}
                     <div className="relative z-10">
-                        <div className="text-xs text-slate-400 mb-1">股票總損益</div>
-                        <div className={`text-3xl font-inter font-bold ${stockStats.totalPnl >= 0 ? 'text-red-300' : 'text-green-300'} ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>{totalPnlLabel}</div>
+                        <div className="text-sm text-slate-300 mb-1">股票總損益</div>
+                        <div className={`text-3xl font-inter font-bold ${stockStats.totalPnl >= 0 ? 'text-red-300' : 'text-green-300'} ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>{!isPrivacyMode && <span aria-hidden="true">{trendArrow(stockStats.totalPnl)} </span>}<span>{totalPnlLabel}</span></div>
                         {marketFilter === 'US' && !isPrivacyMode && (
-                            <div className="text-[10px] text-slate-500 mt-1">匯率 USD/TWD {formatExchangeRate(usdToTwdRate)}</div>
+                            <div className="text-xs text-slate-400 mt-1">匯率 USD/TWD {formatExchangeRate(usdToTwdRate)}</div>
                         )}
                         {latestSnapshotEstimate.hasEstimate && !hasStockRange && (
                             <div className="mt-3 rounded-xl bg-teal-400/10 border border-teal-300/20 px-4 py-3">
                                 <div className="flex items-start justify-between gap-3">
                                     <div>
-                                        <div className="text-[10px] uppercase tracking-wider text-teal-200 font-bold">若未賣出試算</div>
+                                        <div className="text-xs uppercase tracking-wider text-teal-200 font-bold">若未賣出試算</div>
                                         <div className={`text-lg font-inter font-bold mt-1 ${latestSnapshotEstimate.estimatedTotalPnl >= 0 ? 'text-red-300' : 'text-green-300'} ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>{latestEstimatePnlLabel}</div>
                                     </div>
                                     <div className="text-right shrink-0">
-                                        <div className="text-[10px] text-slate-500">最新估值</div>
+                                        <div className="text-xs text-slate-400">最新估值</div>
                                         <div className={`font-inter font-bold text-teal-100 ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>{summaryMoney(latestSnapshotEstimate.latestMarketValue)}</div>
                                     </div>
                                 </div>
-                                <div className="grid grid-cols-2 gap-2 mt-2 text-[10px]">
+                                <div className="grid grid-cols-2 gap-2 mt-2 text-xs">
                                     <div className="rounded-lg bg-white/5 px-3 py-2">
-                                        <div className="text-slate-500">較快照市值</div>
+                                        <div className="text-slate-400">較快照市值</div>
                                         <div className={`font-inter font-bold ${latestSnapshotEstimate.marketValueDiff >= 0 ? 'text-red-300' : 'text-green-300'} ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>{isPrivacyMode ? '****' : `${latestSnapshotEstimate.marketValueDiff >= 0 ? '+' : ''}${formatMoneyByMarket(latestSnapshotEstimate.marketValueDiff, marketFilter)}`}</div>
                                     </div>
                                     <div className="rounded-lg bg-white/5 px-3 py-2">
-                                        <div className="text-slate-500">已更新持倉</div>
+                                        <div className="text-slate-400">已更新持倉</div>
                                         <div className="font-inter font-bold text-slate-200">{latestSnapshotEstimate.quotedCount}/{latestSnapshotEstimate.holdingCount}</div>
                                     </div>
                                 </div>
-                                <div className="text-[10px] text-slate-500 mt-2">用 {selectedSnapshot?.month} 持倉與最新價試算，僅更新畫面顯示，不會改寫快照。</div>
+                                <div className="text-xs text-slate-400 mt-2">用 {selectedSnapshot?.month} 持倉與最新價試算，僅更新畫面顯示，不會改寫快照。</div>
                             </div>
                         )}
                         <div className="mt-3 rounded-xl bg-white/5 border border-white/10 px-4 py-3">
                             <div className="flex items-start justify-between gap-3">
                                 <div>
-                                    <div className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">扣除質押後淨損益</div>
+                                    <div className="text-xs uppercase tracking-wider text-slate-400 font-bold">扣除質押後淨損益</div>
                                     <div className={`text-lg font-inter font-bold mt-1 ${stockDebtStats.netPnlAfterDebt >= 0 ? 'text-red-300' : 'text-green-300'} ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>{netPnlAfterDebtLabel}</div>
                                 </div>
                                 <div className="text-right shrink-0">
-                                    <div className="text-[10px] text-slate-500">最新質押負債</div>
+                                    <div className="text-xs text-slate-400">最新質押負債</div>
                                     <div className={`font-inter font-bold text-rose-200 ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>{summaryMoney(stockDebtStats.marketPledgeDebt, marketFilter, '-')}</div>
                                 </div>
                             </div>
-                            <div className="text-[10px] text-slate-500 mt-2">
+                            <div className="text-xs text-slate-400 mt-2">
                                 {stockDebtStats.debtSnapshotDate
                                     ? `依 ${stockDebtStats.debtSnapshotDate} 的股票質押快照估算`
                                     : '尚未找到可對應的股票質押負債快照'}
                                 {stockDebtStats.unallocatedPledgeDebt > 0 ? '；部分質押未能判斷市場，暫未扣入。' : '。'}
                             </div>
                             {stockDebtStats.marketEstimatedAnnualInterest > 0 && (
-                                <div className="grid grid-cols-2 gap-2 mt-2 text-[10px]">
+                                <div className="grid grid-cols-2 gap-2 mt-2 text-xs">
                                     <div className="rounded-lg bg-white/5 px-3 py-2">
-                                        <div className="text-slate-500">預估月息</div>
+                                        <div className="text-slate-400">預估月息</div>
                                         <div className="font-inter font-bold text-amber-200">{summaryMoney(stockDebtStats.marketEstimatedMonthlyInterest, marketFilter, '-')}</div>
                                     </div>
                                     <div className="rounded-lg bg-white/5 px-3 py-2">
-                                        <div className="text-slate-500">預估年息</div>
+                                        <div className="text-slate-400">預估年息</div>
                                         <div className="font-inter font-bold text-amber-200">{summaryMoney(stockDebtStats.marketEstimatedAnnualInterest, marketFilter, '-')}</div>
                                     </div>
                                 </div>
@@ -3606,7 +3599,7 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
                                 <div className="bg-white/5 rounded-xl p-3"><div className="text-slate-400 mb-1">匯款淨額</div><div className="font-inter font-bold text-blue-200">{summaryMoney(remittanceNet, 'US', remittancePrefix)}</div></div>
                             </div>
                         )}
-                        <p className="text-[10px] text-slate-500 mt-3">
+                        <p className="text-xs text-slate-400 mt-3">
                             {hasStockRange
                                 ? '區間績效只計算日期內交易、股息與費用，不納入持倉快照市值；質押負債仍會對齊區間終點以前最近一次快照。'
                                 : '目前市值會以選定的持倉快照版本計算；質押負債則會對齊同時間點以前最近一次的股票質押快照。'}
@@ -3620,7 +3613,7 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
                         return (
                             <button key={market.value} onClick={() => setMarketFilter(market.value)} className={`py-2.5 rounded-xl text-sm font-bold transition-colors ${marketFilter === market.value ? 'bg-slate-900 text-white shadow-lg shadow-slate-200' : 'text-slate-500 hover:bg-slate-50'}`}>
                                 {market.label}
-                                <span className={`ml-1 text-[10px] ${marketFilter === market.value ? 'text-slate-300' : 'text-slate-300'}`}>{count}</span>
+                                <span className={`ml-1 text-xs ${marketFilter === market.value ? 'text-slate-300' : 'text-slate-300'}`}>{count}</span>
                             </button>
                         );
                     })}
@@ -3632,19 +3625,19 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
                             <h3 className="text-base font-serif-tc font-bold text-slate-800">資料匯入</h3>
                             <p className="text-xs text-slate-400 mt-1">股票交易採 append；持倉快照每次寫入都會新增版本。</p>
                         </div>
-                        <span className="text-[10px] bg-blue-50 text-blue-600 px-2 py-1 rounded-full font-bold">獨立功能</span>
+                        <span className="text-xs bg-blue-50 text-blue-600 px-2 py-1 rounded-full font-bold">獨立功能</span>
                     </div>
                     {errorMsg && <div className="bg-rose-50 text-rose-500 text-xs p-3 rounded-xl flex items-center gap-2 font-bold mb-3"><AlertCircle size={14} />{errorMsg}</div>}
                     <div className="grid grid-cols-2 gap-3">
                         <button onClick={() => { setErrorMsg(''); setShowTransactionImportModal(true); }} className="p-4 rounded-2xl bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors text-left">
                             <Upload size={18} className="mb-2" />
                             <div className="font-bold text-sm">匯入股票交易</div>
-                            <div className="text-[10px] text-blue-500 mt-1">檔案或直接貼上內容</div>
+                            <div className="text-xs text-blue-500 mt-1">檔案或直接貼上內容</div>
                         </button>
                         <button onClick={() => { setErrorMsg(''); setShowHoldingImportModal(true); }} className="p-4 rounded-2xl bg-teal-50 text-teal-700 hover:bg-teal-100 transition-colors text-left">
                             <Package size={18} className="mb-2" />
                             <div className="font-bold text-sm">匯入持倉快照</div>
-                            <div className="text-[10px] text-teal-500 mt-1">手動輸入持倉</div>
+                            <div className="text-xs text-teal-500 mt-1">手動輸入持倉</div>
                         </button>
                     </div>
                 </section>
@@ -3652,7 +3645,7 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
                 <section className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
                     <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
                         <h3 className="text-sm font-serif-tc font-bold text-slate-700">持倉快照版本</h3>
-                        <span className="text-[10px] text-slate-400">{getStockMarketLabel(marketFilter)} · {visibleHoldingSnapshots.length} 版</span>
+                        <span className="text-xs text-slate-400">{getStockMarketLabel(marketFilter)} · {visibleHoldingSnapshots.length} 版</span>
                     </div>
                     {visibleHoldingSnapshots.length > 0 ? (
                         <>
@@ -3662,7 +3655,7 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
                                 <div key={snapshot.id} className={`px-4 py-3 border-b border-slate-50 ${selectedSnapshot?.id === snapshot.id ? 'bg-teal-50/60' : ''}`}>
                                     <div className="flex justify-between gap-3">
                                         <button onClick={() => setSelectedSnapshotId(snapshot.id)} className="text-left flex-1">
-                                            <div className="font-bold text-sm text-slate-700">{snapshot.month} v{snapshot.version} {selectedSnapshot?.id === snapshot.id && <span className="text-[10px] text-teal-600 ml-1">使用中</span>}</div>
+                                            <div className="font-bold text-sm text-slate-700">{snapshot.month} v{snapshot.version} {selectedSnapshot?.id === snapshot.id && <span className="text-xs text-teal-600 ml-1">使用中</span>}</div>
                                             <div className="text-xs text-slate-400">{snapshotMarketHoldings.length} 檔 · {getStockMarketLabel(marketFilter)} · {snapshot.note || '無備註'} · {snapshot.importedAt?.slice(0, 10)}</div>
                                         </button>
                                         <button onClick={() => setConfirmDeleteSnapshot(snapshot)} className="p-2 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors" title="刪除版本"><Trash2 size={14} /></button>
@@ -3675,16 +3668,16 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
                                     <div className="flex justify-between items-start gap-3 mb-3">
                                         <div>
                                             <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">版本內容</h4>
-                                            <div className="text-[10px] text-slate-400 mt-1">快照價為當時記錄；最新估值只是試算，不會改寫快照。</div>
+                                            <div className="text-xs text-slate-400 mt-1">快照價為當時記錄；最新估值只是試算，不會改寫快照。</div>
                                         </div>
                                         <div className="text-right shrink-0">
-                                            <span className="block text-[10px] text-slate-400 mb-1">{selectedSnapshot.month} v{selectedSnapshot.version}</span>
-                                            <button onClick={handleFetchSnapshotQuotes} disabled={isFetchingSnapshotQuotes || selectedSnapshotHoldings.length === 0} className="px-2.5 py-1 rounded-full bg-white border border-slate-200 text-[10px] font-bold text-teal-600 hover:bg-teal-50 disabled:text-slate-300 transition-colors">
+                                            <span className="block text-xs text-slate-400 mb-1">{selectedSnapshot.month} v{selectedSnapshot.version}</span>
+                                            <button onClick={handleFetchSnapshotQuotes} disabled={isFetchingSnapshotQuotes || selectedSnapshotHoldings.length === 0} className="px-2.5 py-1 rounded-full bg-white border border-slate-200 text-xs font-bold text-teal-600 hover:bg-teal-50 disabled:text-slate-300 transition-colors">
                                                 {isFetchingSnapshotQuotes ? '抓取中...' : '最新估值'}
                                             </button>
                                         </div>
                                     </div>
-                                    {snapshotQuoteError && <div className="mb-3 text-[10px] text-amber-700 bg-amber-50 rounded-xl px-3 py-2">{snapshotQuoteError}</div>}
+                                    {snapshotQuoteError && <div className="mb-3 text-xs text-amber-700 bg-amber-50 rounded-xl px-3 py-2">{snapshotQuoteError}</div>}
                                     <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
                                         {selectedSnapshotHoldings.map((holding) => {
                                             const quote = latestHoldingQuotes[holding.id];
@@ -3696,15 +3689,15 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
                                                 <div className="flex justify-between gap-3">
                                                 <div className="min-w-0">
                                                     <div className="font-bold text-sm text-slate-700 truncate">{holding.name || holding.symbol}</div>
-                                                    <div className="text-[10px] text-slate-400 font-inter">{getStockMarketLabel(holding.market || 'TW')} · 快照價 {formatPriceUpToTwo(holding.marketPrice || 0)} x {formatMoneyByMarket(holding.shares || 0, holding.market || 'TW')} 股</div>
+                                                    <div className="text-xs text-slate-400 font-inter">{getStockMarketLabel(holding.market || 'TW')} · 快照價 {formatPriceUpToTwo(holding.marketPrice || 0)} x {formatMoneyByMarket(holding.shares || 0, holding.market || 'TW')} 股</div>
                                                 </div>
                                                 <div className="text-right">
                                                     <div className="font-inter font-bold text-teal-600">{formatMoneyByMarket(holding.marketValue || 0, holding.market || 'TW')}</div>
-                                                    <div className="text-[10px] text-slate-400">快照市值</div>
+                                                    <div className="text-xs text-slate-400">快照市值</div>
                                                 </div>
                                                 </div>
                                                 {quote && (
-                                                    <div className="mt-3 pt-3 border-t border-slate-50 grid grid-cols-3 gap-2 text-[10px]">
+                                                    <div className="mt-3 pt-3 border-t border-slate-50 grid grid-cols-3 gap-2 text-xs">
                                                         <div><div className="text-slate-400">最新價</div><div className="font-inter text-slate-700">{formatPriceUpToTwo(quote.price)}</div></div>
                                                         <div><div className="text-slate-400">最新估值</div><div className="font-inter text-slate-700">{formatMoneyByMarket(latestValue, holding.market || 'TW')}</div></div>
                                                         <div><div className="text-slate-400">差異</div><div className={`font-inter font-bold ${diff >= 0 ? 'text-red-600' : 'text-green-700'}`}>{diff >= 0 ? '+' : ''}{formatMoneyByMarket(diff, holding.market || 'TW')} · {formatRate(diffRate)}</div></div>
@@ -3753,24 +3746,24 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
 
                 <section className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
                     <div className="px-4 py-3 border-b border-slate-100 space-y-3">
-                        <div className="flex items-center justify-between"><h3 className="text-sm font-serif-tc font-bold text-slate-700">個股損益表</h3><span className="text-[10px] text-slate-400">{getStockMarketLabel(marketFilter)} · {filteredStockRows.length} / {marketFilteredStockRows.length} 檔{hasStockRange ? ' · 區間' : ''}</span></div>
+                        <div className="flex items-center justify-between"><h3 className="text-sm font-serif-tc font-bold text-slate-700">個股損益表</h3><span className="text-xs text-slate-400">{getStockMarketLabel(marketFilter)} · {filteredStockRows.length} / {marketFilteredStockRows.length} 檔{hasStockRange ? ' · 區間' : ''}</span></div>
                         <div className="relative">
                             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" />
                             <input value={stockSearch} onChange={(e) => setStockSearch(e.target.value)} className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 outline-none text-sm" placeholder="搜尋股票名稱或代號" />
                         </div>
                         <div className="grid grid-cols-[1fr_1fr_auto] gap-2 items-end">
                             <label className="block">
-                                <span className="block text-[10px] text-slate-400 font-bold mb-1">區間開始</span>
+                                <span className="block text-xs text-slate-400 font-bold mb-1">區間開始</span>
                                 <input aria-label="區間開始" type="date" value={stockRangeStart} onChange={(e) => setStockRangeStart(e.target.value)} className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 outline-none text-xs font-inter text-slate-700" />
                             </label>
                             <label className="block">
-                                <span className="block text-[10px] text-slate-400 font-bold mb-1">區間結束</span>
+                                <span className="block text-xs text-slate-400 font-bold mb-1">區間結束</span>
                                 <input aria-label="區間結束" type="date" value={stockRangeEnd} onChange={(e) => setStockRangeEnd(e.target.value)} className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 focus:border-blue-500 outline-none text-xs font-inter text-slate-700" />
                             </label>
                             <button type="button" onClick={() => { setStockRangeStart(''); setStockRangeEnd(''); }} disabled={!hasStockRange} className="px-3 py-2 rounded-xl bg-slate-100 text-slate-500 text-xs font-bold hover:bg-slate-200 disabled:text-slate-300 disabled:hover:bg-slate-100 transition-colors">清除</button>
                         </div>
                         {hasStockRange && (
-                            <div className="rounded-xl bg-blue-50 text-blue-600 px-3 py-2 text-[10px] leading-relaxed">
+                            <div className="rounded-xl bg-blue-50 text-blue-600 px-3 py-2 text-xs leading-relaxed">
                                 正在查看{stockRangeStart || '最早'} 至 {stockRangeEnd || '最新'} 的區間績效；此模式不納入持倉快照市值。
                             </div>
                         )}
@@ -3779,7 +3772,7 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
                         <div className="p-4 border-b border-slate-100 bg-slate-50/60">
                             <div className="flex items-center justify-between mb-3">
                                 <h4 className="text-xs font-bold text-slate-500 flex items-center gap-1"><Activity size={13} /> 個股損益圖表</h4>
-                                <span className="text-[10px] text-slate-400">依損益絕對值排序</span>
+                                <span className="text-xs text-slate-400">依損益絕對值排序</span>
                             </div>
                             {stockChartRows.length > 0 ? (
                                 <div className="space-y-2">
@@ -3800,15 +3793,15 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
                         <button key={item.key} type="button" onClick={() => setSelectedStockDetailKey(item.key)} className="w-full p-4 text-left hover:bg-slate-50 transition-colors">
                             <div className="flex justify-between gap-4">
                                 <div className="min-w-0">
-                                    <div className="flex items-center gap-2"><span className="font-serif-tc font-bold text-slate-800">{item.symbol}</span><span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">{getStockMarketLabel(item.market)}</span>{item.realizedOnly && <span className="text-[10px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded">已實現</span>}{!item.hasSnapshot && !item.realizedOnly && <span className="text-[10px] bg-amber-50 text-amber-600 px-1.5 py-0.5 rounded">未對應資產快照</span>}</div>
+                                    <div className="flex items-center gap-2"><span className="font-serif-tc font-bold text-slate-800">{item.symbol}</span><span className="text-xs bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">{getStockMarketLabel(item.market)}</span>{item.realizedOnly && <span className="text-xs bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded">已實現</span>}{!item.hasSnapshot && !item.realizedOnly && <span className="text-xs bg-amber-50 text-amber-600 px-1.5 py-0.5 rounded">未對應資產快照</span>}</div>
                                     <div className="text-xs text-slate-400 mt-1">{item.tradeCount} 筆交易，最近 {item.latestTradeDate}</div>
                                 </div>
                                 <div className="text-right">
                                     <div className={`font-inter font-bold ${item.totalPnl >= 0 ? 'text-red-600' : 'text-green-700'} ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>{stockMoney(item.totalPnl, item.market, item.totalPnl >= 0 ? '+' : '')}</div>
-                                    <div className="text-[10px] text-slate-400 font-inter">{formatRate(item.roi)}</div>
+                                    <div className="text-xs text-slate-400 font-inter">{formatRate(item.roi)}</div>
                                 </div>
                             </div>
-                            <div className="grid grid-cols-3 gap-2 mt-3 text-[10px]">
+                            <div className="grid grid-cols-3 gap-2 mt-3 text-xs">
                                 <div className="bg-slate-50 rounded-lg p-2"><div className="text-slate-400">買入</div><div className="font-inter text-slate-700">{stockMoney(item.buyAmount, item.market)}</div></div>
                                 <div className="bg-slate-50 rounded-lg p-2"><div className="text-slate-400">市值</div><div className="font-inter text-slate-700">{stockMoney(item.marketValue, item.market)}</div></div>
                                 <div className="bg-slate-50 rounded-lg p-2"><div className="text-slate-400">股息</div><div className="font-inter text-amber-600">{stockMoney(item.dividends, item.market, '+')}</div></div>
@@ -3859,7 +3852,7 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
                                 <option value="mdy">月/日/年，例如 06/03/2025</option>
                                 <option value="ymd">年/月/日，例如 2025/06/03</option>
                             </select>
-                            <div className="text-[10px] text-slate-400 mt-1">若券商格式改版或預覽日期不對，可在這裡手動指定美股日期格式；台股日期不受影響。</div>
+                            <div className="text-xs text-slate-400 mt-1">若券商格式改版或預覽日期不對，可在這裡手動指定美股日期格式；台股日期不受影響。</div>
                             <button onClick={() => parseImportText(inputText, { usDateFormat: usImportDateFormat })} disabled={!inputText.trim()} className="mt-3 w-full py-2.5 rounded-xl bg-blue-600 text-white font-bold text-sm hover:bg-blue-700 disabled:bg-slate-200 disabled:text-slate-400 transition-colors">預覽匯入明細</button>
                             <button onClick={() => parseImportText(inputText, { allowArchivedUSRealized: true, usDateFormat: usImportDateFormat })} disabled={!inputText.trim()} className="mt-2 w-full py-2.5 rounded-xl bg-amber-50 text-amber-700 font-bold text-sm hover:bg-amber-100 disabled:bg-slate-50 disabled:text-slate-300 transition-colors">封存 v1 格式預覽</button>
                         </div>
@@ -3907,20 +3900,20 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
                                     <div key={row.id} className="rounded-2xl border border-slate-100 bg-slate-50/70 p-2.5">
                                         <div className="grid grid-cols-[78px_minmax(0,1fr)] gap-2">
                                             <div>
-                                                {index === 0 && <label className="text-[10px] text-slate-400 font-bold mb-1 block">市場</label>}
+                                                {index === 0 && <label className="text-xs text-slate-400 font-bold mb-1 block">市場</label>}
                                                 <select value={row.market || 'TW'} onChange={(e) => updateHoldingRow(row.id, 'market', e.target.value)} className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:border-teal-500 outline-none text-sm">
                                                     <option value="TW">台股</option>
                                                     <option value="US">美股</option>
                                                 </select>
                                             </div>
                                             <div>
-                                                {index === 0 && <label className="text-[10px] text-slate-400 font-bold mb-1 block">股票名稱</label>}
+                                                {index === 0 && <label className="text-xs text-slate-400 font-bold mb-1 block">股票名稱</label>}
                                                 <input type="text" value={row.name} onChange={(e) => updateHoldingRow(row.id, 'name', e.target.value)} className="w-full p-2.5 rounded-xl border border-slate-200 bg-white focus:border-teal-500 outline-none text-sm" placeholder="AAPL / 2330 / 台積電" />
                                             </div>
                                         </div>
                                         <div className="mt-2 grid grid-cols-[minmax(0,1fr)_92px_64px] gap-2 items-end">
                                             <div>
-                                                {index === 0 && <label className="text-[10px] text-slate-400 font-bold mb-1 block">現價</label>}
+                                                {index === 0 && <label className="text-xs text-slate-400 font-bold mb-1 block">現價</label>}
                                                 <div className="flex overflow-hidden rounded-xl border border-slate-200 bg-white focus-within:border-teal-500 focus-within:ring-2 focus-within:ring-teal-50 transition-colors">
                                                     <input type="number" value={row.price} onChange={(e) => updateHoldingRow(row.id, 'price', e.target.value)} className="min-w-0 flex-1 p-2.5 bg-transparent outline-none text-sm text-right font-inter" placeholder="0" />
                                                     <button type="button" onClick={() => handleFetchHoldingRowPrice(row)} disabled={fetchingHoldingRowId === row.id || !row.name.trim()} className="shrink-0 border-l border-teal-100 bg-teal-50 px-3 text-[11px] font-bold text-teal-600 hover:bg-teal-100 disabled:bg-slate-50 disabled:text-slate-300 disabled:border-slate-100 transition-colors">
@@ -3929,7 +3922,7 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
                                                 </div>
                                             </div>
                                             <div>
-                                                {index === 0 && <label className="text-[10px] text-slate-400 font-bold mb-1 block">股數</label>}
+                                                {index === 0 && <label className="text-xs text-slate-400 font-bold mb-1 block">股數</label>}
                                                 <input type="number" value={row.shares} onChange={(e) => updateHoldingRow(row.id, 'shares', e.target.value)} className="w-full p-2.5 rounded-xl border border-slate-200 bg-white focus:border-teal-500 outline-none text-sm text-right font-inter" placeholder="0" />
                                             </div>
                                             <div className="flex gap-1">
@@ -3940,7 +3933,7 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
                                     </div>
                                 ))}
                             </div>
-                            <p className="text-[10px] text-slate-400 mt-2">至少保留一列資料。會依你目前所在分頁，自動帶入上一次同市場持倉；帶入時只會覆蓋同市場列。可用代號抓取最新價；存成快照後仍視為當下記錄，不會自動改寫。</p>
+                            <p className="text-xs text-slate-400 mt-2">至少保留一列資料。會依你目前所在分頁，自動帶入上一次同市場持倉；帶入時只會覆蓋同市場列。可用代號抓取最新價；存成快照後仍視為當下記錄，不會自動改寫。</p>
                             <button onClick={parseHoldingRows} className="mt-3 w-full py-2.5 rounded-xl bg-teal-600 text-white font-bold text-sm hover:bg-teal-700 transition-colors">預覽持倉快照</button>
                         </div>
                     </div>
@@ -3955,7 +3948,7 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
                             <div className="pr-8">
                                 <div className="flex items-center gap-2">
                                     <h3 className="text-xl font-serif-tc font-bold text-slate-800">{selectedStockDetail.symbol}</h3>
-                                    <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">{getStockMarketLabel(selectedStockDetail.market)}</span>
+                                    <span className="text-xs bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">{getStockMarketLabel(selectedStockDetail.market)}</span>
                                 </div>
                                 <p className="text-sm text-slate-400 mt-1">{selectedStockDetail.name || selectedStockDetail.symbol} 交易明細</p>
                             </div>
@@ -3969,7 +3962,7 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
                             <div className="border border-slate-100 rounded-2xl overflow-hidden">
                                 <div className="px-4 py-3 border-b border-slate-100 bg-slate-50/70 flex items-center justify-between">
                                     <h4 className="text-sm font-bold text-slate-700">逐筆交易</h4>
-                                    <span className="text-[10px] text-slate-400">{selectedStockTrades.length} 筆</span>
+                                    <span className="text-xs text-slate-400">{selectedStockTrades.length} 筆</span>
                                 </div>
                                 {selectedStockTrades.length > 0 ? selectedStockTrades.map((trade) => (
                                     <div key={trade.id} className="px-4 py-3 border-b border-slate-50 last:border-0 flex justify-between items-start gap-3">
@@ -4003,13 +3996,13 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
                             {leaderboardModalRows.length > 0 ? leaderboardModalRows.map((item, index) => (
                                 <div key={item.key} className="px-4 py-3 border-b border-slate-50 last:border-0 flex items-center justify-between gap-3">
                                     <div className="min-w-0">
-                                        <div className="text-[10px] text-slate-300 font-inter mb-1">#{index + 1}</div>
+                                        <div className="text-xs text-slate-300 font-inter mb-1">#{index + 1}</div>
                                         <div className="font-bold text-sm text-slate-700">{item.symbol}</div>
                                         <div className="text-xs text-slate-400 mt-1">{item.tradeCount} 筆交易 · 最近 {item.latestTradeDate}</div>
                                     </div>
                                     <div className="text-right shrink-0">
                                         <div className={`font-inter font-bold ${item.totalPnl >= 0 ? 'text-red-600' : 'text-green-700'} ${isPrivacyMode ? 'font-mono tracking-widest' : ''}`}>{stockMoney(item.totalPnl, item.market, item.totalPnl >= 0 ? '+' : '')}</div>
-                                        <div className="text-[10px] text-slate-400 font-inter">{formatRate(item.roi)}</div>
+                                        <div className="text-xs text-slate-400 font-inter">{formatRate(item.roi)}</div>
                                     </div>
                                 </div>
                             )) : <div className="p-8 text-center text-slate-300 text-sm">目前沒有可顯示的股票</div>}
@@ -4088,7 +4081,7 @@ const StockAnalysisView = ({ data, onBack, onImportTransactions, onClearTransact
                                     </div>
                                     <div className="text-right">
                                         <div className="font-inter font-bold text-teal-600">{formatMoneyByMarket(holding.marketValue, holding.market || 'TW')}</div>
-                                        <div className={`text-[10px] font-inter ${(holding.marketValue - holding.costAmount) >= 0 ? 'text-red-600' : 'text-green-700'}`}>{holding.costAmount ? `${(holding.marketValue - holding.costAmount) >= 0 ? '+' : ''}${formatMoneyByMarket(holding.marketValue - holding.costAmount, holding.market || 'TW')}` : '未填成本'}</div>
+                                        <div className={`text-xs font-inter ${(holding.marketValue - holding.costAmount) >= 0 ? 'text-red-600' : 'text-green-700'}`}>{holding.costAmount ? `${(holding.marketValue - holding.costAmount) >= 0 ? '+' : ''}${formatMoneyByMarket(holding.marketValue - holding.costAmount, holding.market || 'TW')}` : '未填成本'}</div>
                                     </div>
                                 </div>
                             ))}
