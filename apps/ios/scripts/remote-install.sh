@@ -7,16 +7,17 @@ LABEL="work.cloudjet.catlog.install-device"
 TARGET="gui/$(id -u)/${LABEL}"
 LOG="${HOME}/Library/Logs/catlog-install-device.log"
 
+if ! launchctl print "${TARGET}" >/dev/null 2>&1; then
+  echo "找不到 LaunchAgent：請先執行 apps/ios/scripts/setup-launch-agent.sh" >&2
+  exit 1
+fi
+# 確認 LaunchAgent 存在後才留下安裝設定，避免沒跑成時影響之後的本機安裝。
 # --production：建置 Release 版（連正式站），以「這台裝置唯讀」啟動。
 # --production-update：更新已在使用的正式站 App，不強制唯讀（保留手機上的設定）。
 case "${1:-}" in
   --production) mkdir -p "${HOME}/Library/Caches"; echo Release > "${HOME}/Library/Caches/catlog-install-configuration" ;;
   --production-update) mkdir -p "${HOME}/Library/Caches"; echo Release-keep > "${HOME}/Library/Caches/catlog-install-configuration" ;;
 esac
-if ! launchctl print "${TARGET}" >/dev/null 2>&1; then
-  echo "找不到 LaunchAgent：請先執行 apps/ios/scripts/setup-launch-agent.sh" >&2
-  exit 1
-fi
 : > "${LOG}"
 launchctl kickstart "${TARGET}"
 for _ in $(seq 1 900); do
