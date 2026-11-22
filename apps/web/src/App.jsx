@@ -328,7 +328,7 @@ const HomeHero = ({ yearStats, processedData, assetChartData, assetExtremes, isP
 };
 
 /// 主卡片下方的四張小卡：年度資產增長、年度總收入、負債、FIRE 達成率。
-/// 一張只放「標題、數字、一行補充」，桌機排成一列，手機兩欄。
+/// 一張只放「標題、數字、一行補充」。桌機放在左欄排成兩欄兩列；平板一列四張；手機兩欄。
 const HomeSummaryCards = ({ currentYear, yearStats, fireStats, isPrivacyMode, onOpenFire }) => {
     const mask = (text) => (isPrivacyMode ? '****' : text);
     const growth = yearStats.realAssetGrowthAmount;
@@ -339,7 +339,7 @@ const HomeSummaryCards = ({ currentYear, yearStats, fireStats, isPrivacyMode, on
     const detail = 'text-xs text-slate-500 font-inter truncate';
     const progress = Math.min(Math.max(fireStats.progress || 0, 0), 1);
     return (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-2 gap-3">
             <div className={card} title={isPrivacyMode ? undefined : `${yearStats.assetGrowthStartDate || '尚無紀錄'} 至 ${yearStats.assetGrowthEndDate || '尚無紀錄'}`}>
                 <span className={title}>年度資產增長</span>
                 <span className={`${value} ${isPrivacyMode ? 'text-slate-900' : trendTextClass(growth)}`}>{mask(`${growth > 0 ? '+' : ''}${formatWan(growth)}`)}</span>
@@ -5288,16 +5288,32 @@ const MainApp = ({ user, logout }) => {
                         assetExtremes={assetExtremes}
                         isPrivacyMode={isPrivacyMode}
                     />
-                    <HomeSummaryCards
-                        currentYear={currentYear}
-                        yearStats={yearStats}
-                        fireStats={fireStats}
-                        isPrivacyMode={isPrivacyMode}
-                        onOpenFire={() => setShowFIREModal(true)}
-                    />
+                    {/* 桌機：左欄放小卡、分析、資料，右欄放每月紀錄；手機與平板依序上下排列。 */}
+                    <div className="flex flex-col lg:flex-row gap-5 items-stretch lg:items-start">
+                        <aside className="w-full lg:w-[320px] lg:shrink-0 flex flex-col gap-4">
+                            <HomeSummaryCards
+                                currentYear={currentYear}
+                                yearStats={yearStats}
+                                fireStats={fireStats}
+                                isPrivacyMode={isPrivacyMode}
+                                onOpenFire={() => setShowFIREModal(true)}
+                            />
+                            <nav aria-labelledby="analysis-nav-title" className="bg-white rounded-[20px] px-5 py-2">
+                                <h2 id="analysis-nav-title" className="text-lg font-bold text-slate-900 pt-3 pb-1">分析</h2>
+                                <HomeNavButton icon={Mountain} label="FIRE 目標" onClick={() => setShowFIREModal(true)} />
+                                <HomeNavButton icon={TrendingUp} label="個股績效" onClick={() => setView('stock-analysis')} />
+                                <HomeNavButton icon={PieChartIcon} label="區間統計" onClick={() => setShowRangeStatsModal(true)} />
+                                <HomeNavButton icon={ClipboardCheck} label="對帳單" onClick={() => setShowStatementModal(true)} last />
+                            </nav>
+                            <nav aria-labelledby="data-nav-title" className="bg-white rounded-[20px] px-5 py-2">
+                                <h2 id="data-nav-title" className="text-lg font-bold text-slate-900 pt-3 pb-1">資料</h2>
+                                <HomeNavButton icon={FileJson} label="匯入檔案" onClick={() => setShowImportModal(true)} />
+                                <HomeNavButton icon={Download} label="下載備份檔" onClick={handleExportData} />
+                                <HomeNavButton icon={History} label="歷史版本與還原點" onClick={() => setShowHistoryModal(true)} last />
+                            </nav>
+                        </aside>
 
-                    <div className="flex flex-wrap gap-5 items-start">
-                        <section aria-labelledby="month-list-title" className="flex-[999_1_560px] min-w-0 bg-white rounded-[20px] px-5 pt-2 pb-3">
+                        <section aria-labelledby="month-list-title" className="w-full flex-1 min-w-0 bg-white rounded-[20px] px-5 pt-2 pb-3">
                             <div className="flex justify-between items-baseline py-3">
                                 <h2 id="month-list-title" className="text-lg font-bold text-slate-900">每月紀錄</h2>
                                 <span className="text-sm text-slate-500">點一列看月份明細</span>
@@ -5363,21 +5379,6 @@ const MainApp = ({ user, logout }) => {
                             <p className="text-xs text-slate-500 pt-3">右側是和上個月比的「收入變化＋淨資產變化」，▲ 紅色為增加、▼ 綠色為減少。</p>
                         </section>
 
-                        <aside className="flex-[1_1_280px] flex flex-col gap-4 order-first lg:order-none">
-                            <nav aria-labelledby="analysis-nav-title" className="bg-white rounded-[20px] px-5 py-2">
-                                <h2 id="analysis-nav-title" className="text-lg font-bold text-slate-900 pt-3 pb-1">分析</h2>
-                                <HomeNavButton icon={Mountain} label="FIRE 目標" onClick={() => setShowFIREModal(true)} />
-                                <HomeNavButton icon={TrendingUp} label="個股績效" onClick={() => setView('stock-analysis')} />
-                                <HomeNavButton icon={PieChartIcon} label="區間統計" onClick={() => setShowRangeStatsModal(true)} />
-                                <HomeNavButton icon={ClipboardCheck} label="對帳單" onClick={() => setShowStatementModal(true)} last />
-                            </nav>
-                            <nav aria-labelledby="data-nav-title" className="bg-white rounded-[20px] px-5 py-2">
-                                <h2 id="data-nav-title" className="text-lg font-bold text-slate-900 pt-3 pb-1">資料</h2>
-                                <HomeNavButton icon={FileJson} label="匯入檔案" onClick={() => setShowImportModal(true)} />
-                                <HomeNavButton icon={Download} label="下載備份檔" onClick={handleExportData} />
-                                <HomeNavButton icon={History} label="歷史版本與還原點" onClick={() => setShowHistoryModal(true)} last />
-                            </nav>
-                        </aside>
                     </div>
                     <footer className="text-center text-slate-500 text-xs py-2 font-inter">CatLog v{APP_VERSION}</footer>
                 </main>
