@@ -17,6 +17,41 @@ final class FirestoreChunkStore: ChunkStore, @unchecked Sendable {
     private var userRef: DocumentReference { db.collection("users").document(uid) }
     var metaRef: DocumentReference { userRef.collection("meta").document("storage") }
     private var chunksRef: CollectionReference { userRef.collection("chunks") }
+    private var historyRef: CollectionReference { userRef.collection("history") }
+
+    func readHistory() async throws -> [HistoryEntry] {
+        try await historyRef.getDocuments().documents.compactMap { document in
+            let data = document.data()
+            guard let generation = data["generation"] as? String else { return nil }
+            func int(_ key: String) -> Int { (data[key] as? NSNumber)?.intValue ?? 0 }
+            return HistoryEntry(generation: generation, revision: int("revision"), chunkCount: int("chunkCount"),
+                                checksum: data["checksum"] as? String ?? "", length: int("length"),
+                                savedAt: (data["savedAt"] as? NSNumber)?.doubleValue ?? 0,
+                                deviceId: data["deviceId"] as? String ?? "", schemaVersion: int("schemaVersion"),
+                                pinned: data["pinned"] as? Bool, label: data["label"] as? String)
+        }
+    }
+
+    func writeHistory(_ entries: [HistoryEntry]) async throws {
+        guard !entries.isEmpty else { return }
+        let batch = db.batch()
+        for entry in entries {
+            var data: [String: Any] = [
+                "generation": entry.generation, "revision": entry.revision, "chunkCount": entry.chunkCount,
+                "checksum": entry.checksum, "length": entry.length, "savedAt": Int64(entry.savedAt),
+                "deviceId": entry.deviceId, "schemaVersion": entry.schemaVersion,
+            ]
+            if let pinned = entry.pinned { data["pinned"] = pinned }
+            if let label = entry.label { data["label"] = label }
+            // merge：沒帶 pinned / label 時保留原本的還原點設定（與 web 相同）。
+            batch.setData(data, forDocument: historyRef.document(entry.generation), merge: true)
+        }
+        try await batch.commit()
+    }
+
+    func deleteHistory(generation: String) async throws {
+        try await historyRef.document(generation).delete()
+    }
 
     func readMeta() async throws -> CloudMeta? {
         let snapshot = try await metaRef.getDocument()

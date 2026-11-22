@@ -17,6 +17,23 @@ service cloud.firestore {
           && request.resource.data.content.size() <= 300000;
       }
 
+      // 歷史版本：每次存檔一筆，文件 ID 為 generation；資料塊仍放在 chunks。pinned / label 為手動還原點。
+      match /history/{generation} {
+        allow read, delete: if isOwner(userId);
+        allow create, update: if isOwner(userId)
+          && request.resource.data.keys().hasOnly(['generation', 'revision', 'chunkCount', 'checksum', 'length', 'savedAt', 'deviceId', 'schemaVersion', 'pinned', 'label'])
+          && request.resource.data.generation == generation
+          && request.resource.data.revision is int
+          && request.resource.data.chunkCount is int
+          && request.resource.data.checksum is string
+          && request.resource.data.length is int
+          && request.resource.data.savedAt is number
+          && request.resource.data.deviceId is string
+          && request.resource.data.schemaVersion is int
+          && (!('pinned' in request.resource.data) || request.resource.data.pinned is bool)
+          && (!('label' in request.resource.data) || (request.resource.data.label is string && request.resource.data.label.size() <= 60));
+      }
+
       // 指標文件：revision 只能遞增 1，避免舊版本覆蓋新版本。
       match /meta/{docId} {
         allow read: if isOwner(userId);

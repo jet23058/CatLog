@@ -43,9 +43,15 @@ vi.mock('firebase/firestore', () => {
         },
         writeBatch: () => {
             const deletes = [];
+            const sets = [];
             return {
+                set: (ref, value, options) => sets.push([ref.path, value, options]),
                 delete: (ref) => deletes.push(ref.path),
-                commit: async () => deletes.forEach((path) => store.docs.delete(path))
+                commit: async () => {
+                    if (sets.length && store.failBatchSet) throw new Error('permission-denied');
+                    sets.forEach(([path, value, options]) => store.docs.set(path, options?.merge ? { ...(store.docs.get(path) || {}), ...value } : value));
+                    deletes.forEach((path) => store.docs.delete(path));
+                }
             };
         }
     };
@@ -56,7 +62,11 @@ import {
     CloudConflictError,
     CloudIntegrityError,
     hashString,
+    clearRestorePoint,
+    createRestorePoint,
+    listHistory,
     readCloudData,
+    readHistoryVersion,
     splitIntoChunks,
     writeCloudData
 } from './cloudStorage';
@@ -69,6 +79,7 @@ describe('cloudStorage', () => {
     beforeEach(() => {
         store.docs.clear();
         store.failTransaction = null;
+        store.failBatchSet = false;
     });
 
     test('splits large payloads and hashes deterministically', () => {
@@ -85,14 +96,73 @@ describe('cloudStorage', () => {
         const loaded = await readCloudData(db, uid);
         expect(loaded).toMatchObject({ data: { records: { a: 1 } }, revision: 1 });
 
+        // 同一天再存一次：上一份會被併掉，只留當天最後一份。
         const second = await writeCloudData(db, uid, { records: { a: 2 } }, {
             expectedRevision: 1,
             previousChunkIds: loaded.chunkIds
         });
         expect(second.revision).toBe(2);
         expect((await readCloudData(db, uid)).data).toEqual({ records: { a: 2 } });
-        // Old generation chunks are cleaned up after the pointer switch.
+        expect((await listHistory(db, uid)).map((e) => e.revision)).toEqual([2]);
         expect(chunkKeys()).toHaveLength(1);
+    });
+
+    test('keeps manual restore points across same-day saves and can clear them', async () => {
+        const first = await writeCloudData(db, uid, { v: 1 }, { expectedRevision: 0 });
+        const pinned = await createRestorePoint(db, uid, '  匯入 MOZE 前 ');
+        const second = await writeCloudData(db, uid, { v: 2 }, { expectedRevision: 1, previousChunkIds: first.chunkIds });
+        let history = await listHistory(db, uid);
+        expect(history.map((e) => [e.revision, e.pinned === true, e.label || ''])).toEqual([[2, false, ''], [1, true, '匯入 MOZE 前']]);
+        expect(await readHistoryVersion(db, uid, history[1])).toEqual({ v: 1 });
+
+        await clearRestorePoint(db, uid, pinned);
+        await writeCloudData(db, uid, { v: 3 }, { expectedRevision: 2, previousChunkIds: second.chunkIds });
+        history = await listHistory(db, uid);
+        expect(history.map((e) => e.revision)).toEqual([3]);
+        expect(chunkKeys()).toHaveLength(1);
+    });
+
+    test('falls back to deleting the previous chunks when history cannot be written', async () => {
+        const first = await writeCloudData(db, uid, { v: 1 }, { expectedRevision: 0 });
+        store.failBatchSet = true; // 模擬 Firestore 規則還沒允許 history
+        await writeCloudData(db, uid, { v: 2 }, { expectedRevision: 1, previousChunkIds: first.chunkIds });
+        store.failBatchSet = false;
+        expect(chunkKeys()).toHaveLength(1);
+        expect((await readCloudData(db, uid)).data).toEqual({ v: 2 });
+    });
+
+    test('manual mode keeps only restore points and the current version', async () => {
+        const nowSpy = vi.spyOn(Date, 'now');
+        nowSpy.mockReturnValue(1767225600000);
+        const first = await writeCloudData(db, uid, { records: {}, historySettings: { mode: 'manual' }, v: 1 }, { expectedRevision: 0 });
+        await createRestorePoint(db, uid, '整理前');
+        nowSpy.mockReturnValue(1767225600000 + 86400000); // 隔天
+        const second = await writeCloudData(db, uid, { records: {}, historySettings: { mode: 'manual' }, v: 2 }, { expectedRevision: 1, previousChunkIds: first.chunkIds });
+        nowSpy.mockReturnValue(1767225600000 + 2 * 86400000);
+        await writeCloudData(db, uid, { records: {}, historySettings: { mode: 'manual' }, v: 3 }, { expectedRevision: 2, previousChunkIds: second.chunkIds });
+        nowSpy.mockRestore();
+        const history = await listHistory(db, uid);
+        expect(history.map((e) => [e.revision, e.pinned === true])).toEqual([[3, false], [1, true]]);
+    });
+
+    test('keeps one version per day', async () => {
+        const nowSpy = vi.spyOn(Date, 'now');
+        let revision = 0;
+        let chunkIds = [];
+        // 三天，每天存 3 次：每天只留最後一份。
+        for (let day = 0; day < 3; day++) {
+            for (let i = 0; i < 3; i++) {
+                nowSpy.mockReturnValue(1767225600000 + day * 86400000 + i * 60000);
+                const result = await writeCloudData(db, uid, { day, i }, { expectedRevision: revision, previousChunkIds: chunkIds });
+                revision = result.revision;
+                chunkIds = result.chunkIds;
+            }
+        }
+        const history = await listHistory(db, uid);
+        nowSpy.mockRestore();
+        expect(history.map((e) => e.revision)).toEqual([9, 6, 3]);
+        expect(chunkKeys()).toHaveLength(3);
+        expect((await readCloudData(db, uid)).data).toEqual({ day: 2, i: 2 });
     });
 
     test('rejects stale writes from another device', async () => {

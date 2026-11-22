@@ -93,6 +93,16 @@
       "content": "walRate\":4},\"futureField\":{\"keep\":tru",
       "generation": "gmjuohs00i"
     },
+    "users/fixture-user/history/gmjuohs00i": {
+      "generation": "gmjuohs00i",
+      "revision": 1,
+      "chunkCount": 11,
+      "checksum": "1f8be36be99fcd",
+      "length": 373,
+      "savedAt": 1767225600000,
+      "deviceId": "web-fixture",
+      "schemaVersion": 1
+    },
     "users/fixture-user/meta/storage": {
       "schema": 3,
       "revision": 1,

@@ -34,7 +34,57 @@ final class CloudRepositoryTests: XCTestCase {
 
         let second = try await repository.write(dataJSON: #"{"records":{"a":2}}"#, expectedRevision: 1, previousChunkIds: snapshot.chunkIds)
         XCTAssertEqual(second.revision, 2)
-        XCTAssertEqual(store.chunkCount, 1) // 舊 generation 已清除
+        // 同一天再存一次：上一份被併掉，只留當天最後一份。
+        XCTAssertEqual(store.chunkCount, second.chunkIds.count)
+        let sameDay = try await repository.listHistory()
+        XCTAssertEqual(sameDay.map(\.revision), [2])
+    }
+
+    func testRestorePointSurvivesSameDaySaves() async throws {
+        let first = try await repository.write(dataJSON: #"{"memos":{"a":"🐱🎉 中文"}}"#, expectedRevision: 0)
+        try await repository.createRestorePoint(label: "  匯入 MOZE 前 ")
+        let second = try await repository.write(dataJSON: #"{"v":2}"#, expectedRevision: 1, previousChunkIds: first.chunkIds)
+        var history = try await repository.listHistory()
+        XCTAssertEqual(history.map(\.revision), [2, 1])
+        XCTAssertEqual(history[1].label, "匯入 MOZE 前")
+        XCTAssertTrue(history[1].isRestorePoint)
+        let oldVersion = try await repository.readVersion(history[1])
+        XCTAssertTrue(oldVersion.contains("🐱🎉 中文"))
+
+        try await repository.clearRestorePoint(history[1])
+        _ = try await repository.write(dataJSON: #"{"v":3}"#, expectedRevision: 2, previousChunkIds: second.chunkIds)
+        history = try await repository.listHistory()
+        XCTAssertEqual(history.map(\.revision), [3])
+    }
+
+    func testManualModeKeepsOnlyRestorePoints() async throws {
+        let start = Date(timeIntervalSince1970: 1_767_225_600)
+        let data = { (v: Int) in #"{"records":{},"historySettings":{"mode":"manual"},"v":\#(v)}"# }
+        let first = try await repository.write(dataJSON: data(1), expectedRevision: 0, now: start)
+        try await repository.createRestorePoint(label: "整理前")
+        let second = try await repository.write(dataJSON: data(2), expectedRevision: 1, previousChunkIds: first.chunkIds, now: start.addingTimeInterval(86_400))
+        _ = try await repository.write(dataJSON: data(3), expectedRevision: 2, previousChunkIds: second.chunkIds, now: start.addingTimeInterval(2 * 86_400))
+        let history = try await repository.listHistory()
+        XCTAssertEqual(history.map(\.revision), [3, 1])
+        XCTAssertEqual(history.map(\.isRestorePoint), [false, true])
+    }
+
+    func testKeepsOneVersionPerDay() async throws {
+        var revision = 0
+        var chunkIds: [String] = []
+        let start = Date(timeIntervalSince1970: 1_767_225_600)
+        for day in 0..<3 {
+            for i in 0..<3 {
+                let result = try await repository.write(dataJSON: #"{"d":\#(day),"i":\#(i)}"#, expectedRevision: revision,
+                                                       previousChunkIds: chunkIds, now: start.addingTimeInterval(Double(day) * 86_400 + Double(i) * 60))
+                revision = result.revision
+                chunkIds = result.chunkIds
+            }
+        }
+        let daily = try await repository.listHistory()
+        XCTAssertEqual(daily.map(\.revision), [9, 6, 3])
+        let current = try await repository.read()
+        XCTAssertTrue(try XCTUnwrap(current.dataJSON).contains(#""d":2"#))
     }
 
     func testRejectsStaleWrites() async throws {
@@ -114,7 +164,9 @@ final class CloudRepositoryTests: XCTestCase {
         let docs = try XCTUnwrap(fixture["docs"] as? [String: [String: Any]])
 
         for (path, value) in docs {
-            if path.hasSuffix("/meta/storage") {
+            if path.contains("/history/") {
+                store.setHistory(try JSONDecoder().decode(HistoryEntry.self, from: JSONSerialization.data(withJSONObject: value)))
+            } else if path.hasSuffix("/meta/storage") {
                 let metaData = try JSONSerialization.data(withJSONObject: value)
                 store.setMeta(try JSONDecoder().decode(CloudMeta.self, from: metaData))
             } else {

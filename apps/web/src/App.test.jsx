@@ -37,6 +37,7 @@ vi.mock('firebase/firestore', () => ({
         set: (_ref, value) => { firestoreMeta.current = { ...value, generation: undefined }; }
     })),
     writeBatch: vi.fn(() => ({
+        set: vi.fn(),
         delete: vi.fn(),
         commit: vi.fn()
     })),
